@@ -1,0 +1,14 @@
+<Bindings>
+    <Binding name="LCM_MENU" header="LESCONTESMALVEILLANTS">
+        LCM_ToggleMenu()
+    </Binding>
+    <Binding name="LCM_FICHE">
+        LCM_ToggleFiche()
+    </Binding>
+    <Binding name="LCM_INVENTAIRE">
+        LCM_ToggleInventaire()
+    </Binding>
+    <Binding name="LCM_PERSONNAGE">
+        LCM_TogglePersonnage()
+    </Binding>
+</Bindings>
