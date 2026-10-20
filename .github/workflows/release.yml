@@ -1,0 +1,74 @@
+# Publie une Release GitHub a chaque tag de version (v0.2.0, v0.3.1…).
+#
+# Le joueur telecharge un zip qui contient le seul dossier
+# LesContesMalveillants/, a deposer tel quel dans Interface/AddOns. L'archive
+# « Source code » que GitHub ajoute d'office emporte aussi le readme et se
+# dezippe sous un autre nom : ce zip-ci est celui a prendre.
+#
+# Les notes de la Release sont le message du tag annote (git tag -a).
+# Un tag qui ne correspond pas a la version du .toc est refuse : une Release
+# « 0.3.0 » qui installerait un addon « 0.2.0 » mentirait au joueur.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Recuperer le depot et le tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verifier que le tag est la version du .toc
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          TOC="LesContesMalveillants/LesContesMalveillants.toc"
+          if [ ! -f "$TOC" ]; then
+            echo "::error::$TOC introuvable : le dossier de l'addon doit etre a la racine du depot."
+            exit 1
+          fi
+          DECLAREE="$(grep -m1 '^## Version:' "$TOC" | sed 's/^## Version:[[:space:]]*//' | tr -d '\r')"
+          if [ "$DECLAREE" != "$VERSION" ]; then
+            echo "::error::le tag $TAG ne correspond pas a la version du .toc ($DECLAREE)."
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Fabriquer le zip de l'addon
+        run: |
+          ZIP="LesContesMalveillants-${VERSION}.zip"
+          git archive --format=zip -o "$ZIP" "$GITHUB_REF_NAME" LesContesMalveillants
+          unzip -l "$ZIP" | tail -n 1
+          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
+
+      - name: Notes depuis le message du tag
+        run: |
+          git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > notes.md
+          if [ ! -s notes.md ]; then
+            echo "Les Contes Malveillants ${VERSION}." > notes.md
+          fi
+
+      - name: Publier la Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Relancer le workflow sur un tag deja publie remplace le zip au
+          # lieu d'echouer.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$ZIP" --clobber
+            gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" "$ZIP" \
+              --title "Les Contes Malveillants ${VERSION}" \
+              --notes-file notes.md
+          fi
