@@ -56,7 +56,7 @@ Coffres.SUJETS = { definition = "cof", retrait = "cof-", demande = "cof?",
 local S = Coffres.SUJETS
 local function Texte(v) return (tostring(v or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
 local function Moi() return LCM.PlayerId() end
-local function Signaler() if Coffres.onChange then pcall(Coffres.onChange) end end
+local function Signaler() if Coffres.onChange then LCM.Proteger("coffre", Coffres.onChange) end end
 local function RayonDefaut()
     local equilibrage = LCM.Equilibrage or {}
     return tonumber(equilibrage.coffres and equilibrage.coffres.rayon)
@@ -393,7 +393,7 @@ LCM.WhenReady(function()
         if definition and definition.auteur and definition.auteur ~= expediteur then return end
         Coffres.etat = data
         Signaler()
-        if Coffres.onReponse then pcall(Coffres.onReponse, expediteur, data) end
+        if Coffres.onReponse then LCM.Proteger("coffre (réponse)", Coffres.onReponse, expediteur, data) end
     end)
     LCM.Reseau.Ecouter(S.demande, function(expediteur)
         if not LCM.IsMaster() or not LCM.Reseau.Connu(expediteur) then return end

@@ -93,8 +93,7 @@ function Entities.SoiChange(avant)
     local apres = Entities.Self()
     if apres == avant then return end
     for _, fn in ipairs(Entities.ecouteursSoi) do
-        local ok, err = pcall(fn, avant, apres)
-        if not ok then LCM.Debug("soi : " .. tostring(err)) end
+        LCM.Proteger("changement de personnage", fn, avant, apres)
     end
 end
 
@@ -145,12 +144,10 @@ function Entities.Changed(entity, fieldId)
     if LCM.Direct and LCM.Direct.Differer(entity) then return end
     enNotification = true
     if type(Entities.onChange) == "function" then
-        local ok, err = pcall(Entities.onChange, entity, fieldId)
-        if not ok then LCM.Debug("onChange : " .. tostring(err)) end
+        LCM.Proteger("mise à jour de la fiche", Entities.onChange, entity, fieldId)
     end
     for _, ecouteur in ipairs(LCM.Direct and LCM.Direct.ecouteurs or {}) do
-        local ok, err = pcall(ecouteur, entity, fieldId)
-        if not ok then LCM.Debug("ecouteur : " .. tostring(err)) end
+        LCM.Proteger("mise à jour de la fiche", ecouteur, entity, fieldId)
     end
     enNotification = false
 end

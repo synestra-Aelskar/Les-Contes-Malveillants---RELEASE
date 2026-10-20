@@ -238,7 +238,7 @@ local function Changer(sol)
     local etat = Etat(sol)
     if C.courant == sol.id then
         C.etat = etat
-        if C.onChange then pcall(C.onChange) end
+        if C.onChange then LCM.Proteger("sac au sol", C.onChange) end
     end
     local canal = Canal()
     if canal then LCM.Reseau.Envoyer(C.SUJETS.etat, etat, canal) end
@@ -257,8 +257,8 @@ function Sol.Traiter(expediteur, req)
         for k, v in pairs(extra or {}) do data[k] = v end
         if expediteur == Moi() then
             C.etat = data
-            if C.onChange then pcall(C.onChange) end
-            if C.onReponse then pcall(C.onReponse, expediteur, data) end
+            if C.onChange then LCM.Proteger("sac au sol", C.onChange) end
+            if C.onReponse then LCM.Proteger("sac au sol (réponse)", C.onReponse, expediteur, data) end
         else
             LCM.Reseau.Envoyer(C.SUJETS.etat, data, "WHISPER", expediteur)
         end

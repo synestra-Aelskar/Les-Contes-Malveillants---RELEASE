@@ -14,6 +14,21 @@ local function Importer(ref, definition)
     end
 end
 
+-- Un transfert attend la reponse du proprietaire du coffre, et refuse le
+-- suivant tant qu'elle n'est pas la. Si elle ne vient jamais (proprietaire
+-- deconnecte, sans l'addon, message perdu, .gps qui ne repond pas ou qui
+-- trouve le joueur trop loin), le verrou restait pose jusqu'au /reload : le
+-- coffre refusait tout, « déjà en attente », et l'objet retire du sac ne
+-- revenait pas. Au bout de ce delai, on rend et on deverrouille.
+local DELAI_REPONSE = 10
+local function Expirer(f, champ, attendu, rendre)
+    LCM.Recolte.PlusTard(DELAI_REPONSE, function()
+        if f[champ] ~= attendu then return end
+        f[champ] = nil
+        rendre()
+    end)
+end
+
 local CASE, HAUTEUR_CASE, ECART, COLONNES_MAX = 68, 86, 8, 5
 local LARGEUR_MIN, LARGEUR_VERROUILLEE = 340, 390
 local VIDE = "Interface\\PaperDoll\\UI-Backpack-EmptySlot"
@@ -701,6 +716,13 @@ local function Construire()
             if transfert.rendre then transfert.rendre() end
             self.rangementEnAttente = nil
             LCM.Alerte(raison or "transfert impossible.")
+        else
+            Expirer(self, "rangementEnAttente", transfert, function()
+                if transfert.rendre then transfert.rendre() end
+                -- Une reponse tardive qui accepte le rangement le reprend.
+                self.rangementExpire = transfert
+                LCM.Alerte("le coffre n'a pas répondu : l'objet revient dans ton sac.")
+            end)
         end
         return ok, raison
     end
@@ -719,6 +741,16 @@ local function Construire()
                 if not ok then
                     demande.reponse = false
                     demande.raison = raison
+                else
+                    -- Sans reponse, la prise est refusee : l'objet pose d'avance
+                    -- dans le sac en ressort. Une reponse tardive qui l'accorde
+                    -- le redepose (branche « prendre » sans prise en attente).
+                    Expirer(f, "priseGlissee", demande, function()
+                        if not demande.annulee then
+                            for _ = 1, demande.quantite do LCM.Inventaire.Prendre(LCM.Entities.Self(), demande.ref) end
+                        end
+                        LCM.Alerte("le coffre n'a pas répondu : rien n'a été pris.")
+                    end)
                 end
             end,
             rendre = function() demande.annulee = true end,
@@ -1024,6 +1056,12 @@ function Ecran.Repondre(expediteur, data)
         local transfert = f.rangementEnAttente
         f.rangementEnAttente = nil
         if not data.ok and transfert.rendre then transfert.rendre() end
+    elseif (data.action == "ranger" or data.action == "ajouter_compendium") and f.rangementExpire then
+        -- Le coffre a fini par accepter un rangement deja rendu : sans ceci,
+        -- l'objet serait a la fois dans le coffre et dans le sac.
+        local transfert = f.rangementExpire
+        f.rangementExpire = nil
+        if data.ok and transfert.retirer then transfert.retirer() end
     elseif data.action == "prendre" and f.priseGlissee then
         local demande = f.priseGlissee
         demande.reponse = data.ok == true

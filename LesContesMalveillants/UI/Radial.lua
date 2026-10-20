@@ -948,6 +948,12 @@ end
 Dessiner = function(f, c, animeCategories, animeEntrees, animeSousMenu)
     MasquerSousMenu(c)
     Arreter(c.orbite) Arreter(c.fond) Arreter(c.secteur)
+    -- Arreter le bandeau annule aussi la fin d'un repli en cours, seule a
+    -- lever ce verrou. Laisse pose, il refusait ensuite tout dossier jusqu'a
+    -- la fermeture du sceau (constate le 20 octobre 2026 : un Rafraichir
+    -- tombe pendant le repli, et plus rien ne se deployait). Ce dessin-ci
+    -- remplace le repli : il montre deja la categorie retenue.
+    c.replie = nil
     c.orbite:SetAlpha(1)
     for _, b in ipairs(c.boutonsCategorie) do Arreter(b) b:SetAlpha(1) b:Hide() end
     for _, b in ipairs(c.boutonsEntree) do Arreter(b) b:SetAlpha(1) b:Hide() end

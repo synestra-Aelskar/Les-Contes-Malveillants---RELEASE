@@ -165,12 +165,12 @@ function Presence.QuandCanal(fn)
     Presence.attentes[#Presence.attentes + 1] = fn
     -- Deja rejoint : on ne fait pas attendre l'inscrit jusqu'au prochain
     -- evenement de canal.
-    if Presence.Canal() then pcall(fn) end
+    if Presence.Canal() then LCM.Proteger("canal", fn) end
 end
 
 -- Appelee a chaque fois que le canal devient (ou redevient) disponible.
 function Presence.Pret()
-    for _, fn in ipairs(Presence.attentes) do pcall(fn) end
+    for _, fn in ipairs(Presence.attentes) do LCM.Proteger("canal", fn) end
 end
 
 -- ===== Le ping =============================================================

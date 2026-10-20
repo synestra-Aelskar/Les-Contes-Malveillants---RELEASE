@@ -150,7 +150,7 @@ function Identite.AuChangement(fonction)
 end
 
 local function Prevenir()
-    for _, fonction in ipairs(Identite.abonnes) do pcall(fonction) end
+    for _, fonction in ipairs(Identite.abonnes) do LCM.Proteger("identité", fonction) end
 end
 
 LCM.On("ADDON_LOADED", function(nom)

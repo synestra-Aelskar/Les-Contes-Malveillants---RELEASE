@@ -404,7 +404,7 @@ end
 local function Prevenir()
     Recolte.Sauver()
     Recolte.Regler()
-    if Recolte.onChange then pcall(Recolte.onChange) end
+    if Recolte.onChange then LCM.Proteger("récolte", Recolte.onChange) end
 end
 
 -- Une definition arrive avec TOUS ses points : ceux qu'on avait pour elle et
@@ -523,7 +523,7 @@ function Recolte.Tick()
     if positions.gps == false then proche = Recolte.ProcheHorizontal() end
     local avant = Recolte.courant
     Recolte.courant = proche
-    if avant ~= proche and Recolte.onProche then pcall(Recolte.onProche, proche) end
+    if avant ~= proche and Recolte.onProche then LCM.Proteger("récolte proche", Recolte.onProche, proche) end
 end
 
 local horloge
@@ -548,7 +548,7 @@ function Recolte.Regler()
     if quelque then h:Show() else h:Hide() end
     if not quelque and Recolte.courant then
         Recolte.courant = nil
-        if Recolte.onProche then pcall(Recolte.onProche, nil) end
+        if Recolte.onProche then LCM.Proteger("récolte proche", Recolte.onProche, nil) end
     end
     return quelque
 end
@@ -807,7 +807,7 @@ function Recolte.PlusTard(secondes, fn)
                 local t = plusTard[index]
                 if self.cumul >= t.quand then
                     table.remove(plusTard, index)
-                    pcall(t.fn)
+                    LCM.Proteger("minuterie", t.fn)
                 end
             end
             if #plusTard == 0 then self:Hide() end

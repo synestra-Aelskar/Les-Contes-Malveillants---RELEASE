@@ -291,9 +291,9 @@ LCM.AddCommand("switch", "bascule entre maitre du jeu et joueur", function()
             if noeud and noeud.mjSeulement and not LCM.IsMaster() then
                 fenetre:Hide()
             elseif fenetre.Rafraichir then
-                pcall(fenetre.Rafraichir, fenetre)
+                LCM.Proteger("mode joueur", fenetre.Rafraichir, fenetre)
             elseif fenetre.Actualiser then
-                pcall(fenetre.Actualiser, fenetre)
+                LCM.Proteger("mode joueur", fenetre.Actualiser, fenetre)
             end
         end
     end

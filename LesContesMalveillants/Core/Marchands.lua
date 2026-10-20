@@ -174,7 +174,7 @@ end
 local function Prevenir()
     Marchands.Sauver()
     Marchands.Regler()
-    if Marchands.onChange then pcall(Marchands.onChange) end
+    if Marchands.onChange then LCM.Proteger("marchand", Marchands.onChange) end
 end
 Marchands.Prevenir = Prevenir
 
@@ -297,7 +297,7 @@ function Marchands.Tick()
     if positions.gps == false then proche = Marchands.ProcheHorizontal() end
     local avant = Marchands.courant
     Marchands.courant = proche
-    if avant ~= proche and Marchands.onProche then pcall(Marchands.onProche, proche) end
+    if avant ~= proche and Marchands.onProche then LCM.Proteger("marchand proche", Marchands.onProche, proche) end
 end
 
 local horloge
@@ -317,7 +317,7 @@ function Marchands.Regler()
     if quelque then horloge:Show() else horloge:Hide() end
     if not quelque and Marchands.courant then
         Marchands.courant = nil
-        if Marchands.onProche then pcall(Marchands.onProche, nil) end
+        if Marchands.onProche then LCM.Proteger("marchand proche", Marchands.onProche, nil) end
     end
     return quelque
 end

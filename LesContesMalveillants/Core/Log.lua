@@ -43,6 +43,26 @@ function LCM.Ok(text) Emit("ok", text) end
 function LCM.Alerte(text) Emit("alerte", text) end
 function LCM.Erreur(text) Emit("erreur", text) end
 
+-- Appeler un rappel (onChange, onReponse, un ecouteur...) sans qu'il casse
+-- l'appelant, mais SANS LE TAIRE. Une vingtaine de rappels passaient par un
+-- `pcall(fn)` nu : quand l'un tombait, la fenetre ne se mettait plus a jour,
+-- une reponse de coffre se perdait, et rien ne le disait — « ça casse sans
+-- raison » (20 octobre 2026). Chaque erreur distincte s'affiche une fois :
+-- un rappel appele a chaque battement ne doit pas noyer le chat.
+local dejaDites = {}
+function LCM.Proteger(contexte, fn, ...)
+    if type(fn) ~= "function" then return false end
+    local ok, erreur = pcall(fn, ...)
+    if not ok then
+        local message = string.format("%s : %s", tostring(contexte), tostring(erreur))
+        if not dejaDites[message] then
+            dejaDites[message] = true
+            LCM.Erreur(message)
+        end
+    end
+    return ok, erreur
+end
+
 -- Trace de developpement : muette tant que `/lcm debug` ne l'a pas activee.
 function LCM.Debug(text)
     if not (LCM.db and LCM.db.settings and LCM.db.settings.debug) then return end
