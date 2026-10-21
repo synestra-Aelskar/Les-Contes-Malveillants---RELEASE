@@ -134,23 +134,45 @@ function Coffres.Lire(paquet)
         coffre = coffre }, LCM.Recolte.Deplier(paquet.p)
 end
 
+-- Qui arbitre ce coffre-ci. Le proprietaire est celui du coffre POSE, pas du
+-- modele : deux MJ posent le meme modele, et chacun garde les siens (le MJ,
+-- 21 octobre 2026). Tenu par le modele, le dernier a annoncer ses coffres
+-- effacait ceux de l'autre — a chaque /reload d'un MJ, a chaque joueur qui
+-- arrivait. `definition.auteur` ne reste qu'en repli, pour une copie
+-- sauvegardee avant ce changement.
+function Coffres.Auteur(point)
+    if not point then return nil end
+    local d = Coffres.definitions[point.def]
+    return point.auteur or (d and d.auteur) or nil
+end
+
 function Coffres.Sauver()
     if not LCM.EnsureDatabase then return end
     LCM.EnsureDatabase()
     local defs, points = {}, {}
     -- Un sac au sol (`sol`) a sa propre sauvegarde, et sa propre garde
     -- (Core/SacsAuSol.lua) : il ne revient pas d'ici apres sa disparition.
-    for id, d in pairs(Coffres.definitions) do if d.auteur ~= Moi() and not d.sol then defs[id] = d end end
-    for id, p in pairs(Coffres.points) do if defs[p.def] then points[id] = p end end
+    -- Ce que j'ai pose vit dans le magasin du MJ, pas ici.
+    for id, p in pairs(Coffres.points) do
+        local d = Coffres.definitions[p.def]
+        if d and not d.sol and Coffres.Auteur(p) ~= Moi() then
+            points[id], defs[p.def] = p, d
+        end
+    end
     LCM.db.coffres = next(defs) and { definitions = defs, points = points } or nil
 end
 
+-- `points` : TOUS les coffres de ce modele que `auteur` arbitre. Ceux d'un
+-- autre proprietaire ne bougent pas.
 function Coffres.Connaitre(definition, points, auteur)
     if type(definition) ~= "table" or not definition.id then return false end
-    definition.auteur = auteur or definition.auteur
+    auteur = auteur or definition.auteur
+    definition.auteur = auteur
     Coffres.definitions[definition.id] = definition
-    for id, p in pairs(Coffres.points) do if p.def == definition.id then Coffres.points[id] = nil end end
-    for _, p in ipairs(points or {}) do p.def = definition.id; Coffres.points[p.id] = p end
+    for id, p in pairs(Coffres.points) do
+        if p.def == definition.id and Coffres.Auteur(p) == auteur then Coffres.points[id] = nil end
+    end
+    for _, p in ipairs(points or {}) do p.def, p.auteur = definition.id, auteur; Coffres.points[p.id] = p end
     Coffres.Sauver()
     if Positionner and next(Coffres.points) then Positionner() end
     Signaler()
@@ -257,7 +279,8 @@ end
 function Coffres.Envoyer(action, donnees)
     local p = Coffres.points[Coffres.courant or ""]
     local d = p and Coffres.definitions[p.def]
-    if not d or not d.auteur then return false, "propriétaire du coffre indisponible." end
+    local auteur = Coffres.Auteur(p)
+    if not d or not auteur then return false, "propriétaire du coffre indisponible." end
     if action ~= "fermer" and not Coffres.edition and Coffres.Proche() ~= p then
         if not GPSFrais() and Coffres.ProcheHorizontal() == p then
             return ApresVerificationGPS(p, function() Coffres.Envoyer(action, donnees) end)
@@ -267,16 +290,16 @@ function Coffres.Envoyer(action, donnees)
     donnees = donnees or {}; donnees.i = p.id; donnees.a = action
     if Coffres.edition then donnees.edition = true end
     -- Un sac au sol dont on est le gardien : on s'arbitre soi-meme.
-    if d.sol and d.auteur == Moi() and LCM.SacsAuSol then
+    if d.sol and auteur == Moi() and LCM.SacsAuSol then
         LCM.SacsAuSol.Traiter(Moi(), donnees)
         return true
     end
-    if d.auteur == Moi() and LCM.IsMaster() and LCM.CoffresMJ then
+    if auteur == Moi() and LCM.IsMaster() and LCM.CoffresMJ then
         local ok, raison = LCM.CoffresMJ.Traiter(Moi(), donnees)
         if ok == nil then return true end
         return ok, raison
     end
-    return LCM.Reseau.Envoyer(S.action, donnees, "WHISPER", d.auteur)
+    return LCM.Reseau.Envoyer(S.action, donnees, "WHISPER", auteur)
 end
 
 function Coffres.Ouvrir(id, edition)
@@ -366,7 +389,8 @@ LCM.WhenReady(function()
     local saved = LCM.db and LCM.db.coffres
     for id, d in pairs(type(saved) == "table" and saved.definitions or {}) do Coffres.definitions[id] = d end
     for id, p in pairs(type(saved) == "table" and saved.points or {}) do
-        if Coffres.definitions[p.def] then Coffres.points[id] = p end
+        local d = Coffres.definitions[p.def]
+        if d then p.auteur = p.auteur or d.auteur; Coffres.points[id] = p end
     end
     Positionner()
     LCM.Reseau.Ecouter(S.definition, function(expediteur, data)
@@ -388,9 +412,8 @@ LCM.WhenReady(function()
     end)
     LCM.Reseau.Ecouter(S.etat, function(expediteur, data)
         if tostring(data.i or "") ~= tostring(Coffres.courant or "") then return end
-        local point = Coffres.points[Coffres.courant]
-        local definition = point and Coffres.definitions[point.def]
-        if definition and definition.auteur and definition.auteur ~= expediteur then return end
+        local auteur = Coffres.Auteur(Coffres.points[Coffres.courant])
+        if auteur and auteur ~= expediteur then return end
         Coffres.etat = data
         Signaler()
         if Coffres.onReponse then LCM.Proteger("coffre (réponse)", Coffres.onReponse, expediteur, data) end

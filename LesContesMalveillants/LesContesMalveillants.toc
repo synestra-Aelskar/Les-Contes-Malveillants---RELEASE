@@ -2,7 +2,7 @@
 ## Title: Les Contes Malveillants
 ## Notes: Systeme de jeu des Contes Malveillants
 ## Author: Syn'estra
-## Version: 0.2.1
+## Version: 0.2.2
 ## SavedVariables: LCM_DB
 ## SavedVariablesPerCharacter: LCM_CharDB
 
