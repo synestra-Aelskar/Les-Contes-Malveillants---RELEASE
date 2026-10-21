@@ -1,32 +1,28 @@
--- Le livre est la fenetre : papier, reliure et coins interactifs, sans panneau.
+-- Lecteur de livres : mise en page native et sequences completes en BLP.
 local _, LCM = ...
-local UI = LCM.UI
-local Ecran = {}
+local UI, Ecran = LCM.UI, {}
 UI.Livres = Ecran
-
-local ART = "Interface\\AddOns\\LesContesMalveillants\\ressources\\livres\\"
-local UV_LIVRE = { 0, 1, 170 / 1024, 853 / 1024 }
-local UV_SIMPLE = { 0, 1, 128 / 1024, 896 / 1024 }
-local DUREE = 0.92
 local Animation = UI.LivresAnimation
+local ART = Animation.ART
 local POLICE = "Interface\\AddOns\\LesContesMalveillants\\ressources\\bannieres\\polices\\Caudex-Regular.ttf"
+local LARGEUR, HAUTEUR, FONDU = 940, 650, .12
 
 local function RGB(hexa)
-    hexa = tostring(hexa or "FFFFFF")
-    return (tonumber(hexa:sub(1, 2), 16) or 255) / 255,
-        (tonumber(hexa:sub(3, 4), 16) or 255) / 255,
-        (tonumber(hexa:sub(5, 6), 16) or 255) / 255
+    hexa = tostring(hexa or "302317")
+    return (tonumber(hexa:sub(1, 2), 16) or 48) / 255,
+        (tonumber(hexa:sub(3, 4), 16) or 35) / 255,
+        (tonumber(hexa:sub(5, 6), 16) or 23) / 255
 end
 
-local function Texte(parent, taille, titre)
-    local fs = parent:CreateFontString(nil, "OVERLAY")
-    fs:SetFont(POLICE, taille, "")
-    fs:SetShadowColor(0, 0, 0, 0)
-    fs:SetShadowOffset(0, 0)
-    fs:SetJustifyH(titre and "CENTER" or "LEFT")
-    fs:SetWordWrap(true)
-    if fs.SetNonSpaceWrap then fs:SetNonSpaceWrap(true) end
-    return fs
+local function Texte(parent, taille, centre)
+    local t = parent:CreateFontString(nil, "OVERLAY")
+    t:SetFont(POLICE, taille, "")
+    t:SetShadowOffset(0, 0)
+    t:SetJustifyH(centre and "CENTER" or "LEFT")
+    t:SetJustifyV("TOP")
+    t:SetWordWrap(true)
+    if t.SetNonSpaceWrap then t:SetNonSpaceWrap(true) end
+    return t
 end
 
 local function Feuillets(livre)
@@ -36,7 +32,7 @@ local function Feuillets(livre)
         feuilles[1] = { titre = face.titre and face.titre ~= "" and face.titre or livre.label,
             texte = face.texte or "", nature = "Couverture" }
     end
-    for i, page in ipairs(livre.pages or {}) do
+    for i, page in ipairs(livre.pages) do
         feuilles[#feuilles + 1] = { titre = page.titre or "", texte = page.texte or "",
             nature = livre.format == "note" and (i == 1 and "Recto" or "Verso") or "Page" }
     end
@@ -47,140 +43,117 @@ local function Feuillets(livre)
     return feuilles
 end
 
-local function Surface(parent, fichier, largeur, hauteur, uv)
+local function Surface(parent, largeur)
     local s = CreateFrame("Frame", nil, parent)
-    s:SetSize(largeur, hauteur)
+    s:SetSize(largeur, HAUTEUR)
     s:SetPoint("CENTER", parent, "CENTER", 0, 0)
-    s.largeur, s.hauteur = largeur, hauteur
     s.image = s:CreateTexture(nil, "BACKGROUND")
-    s.image:SetTexture(ART .. fichier .. ".tga")
-    s.image:SetTexCoord(unpack(uv))
     s.image:SetAllPoints(s)
     s.lecture = CreateFrame("Frame", nil, s)
     s.lecture:SetAllPoints(s)
     return s
 end
 
-local function Page(parent, x, y, largeur, hauteur)
+local function Page(parent, x, y, largeur, hauteur, couverture)
     local p = CreateFrame("Frame", nil, parent)
-    p:SetPoint("TOPLEFT", parent, "TOPLEFT", x, -y)
     p:SetSize(largeur, hauteur)
+    p:SetPoint("TOPLEFT", parent, "TOPLEFT", x, -y)
     p.largeur, p.hauteur = largeur, hauteur
-    p.pageX, p.pageY = x, y
-    p.titre = Texte(p, 22, true)
-    p.titre:SetPoint("TOPLEFT", p, "TOPLEFT", 4, 0)
-    p.titre:SetWidth(largeur - 8)
-    p.numero = Texte(p, 11)
-    p.numero:SetPoint("BOTTOM", p, "BOTTOM", 0, 0)
-    p.numero:SetJustifyH("CENTER")
+    p.titre = Texte(p, couverture and 28 or 24, true)
+    p.titre:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
+    p.titre:SetWidth(largeur)
     p.zone = UI.Defilement(p)
     p.zone:SetWidth(largeur)
-    -- Le rail est discret, dans la marge du papier, sans fond de panneau.
     p.zone.barre.gouttiere:SetAlpha(0)
-    p.zone.barre.poignee.fond:SetColorTexture(0.46, 0.32, 0.13, 0.45)
+    p.zone.barre.poignee.fond:SetColorTexture(.45, .32, .16, .55)
     p.zone.barre:SetWidth(3)
     p.zone.barre.poignee:SetWidth(3)
-    p.texte = Texte(p.zone.contenu, 14)
+    p.texte = Texte(p.zone.contenu, 18, couverture)
     p.texte:SetPoint("TOPLEFT", p.zone.contenu, "TOPLEFT", 0, 0)
-    p.texte:SetWidth(largeur - 4)
+    p.texte:SetWidth(largeur - 12)
+    p.texte:SetSpacing(4)
+    p.numero = Texte(p, 13, true)
+    p.numero:SetPoint("BOTTOM", p, "BOTTOM", 0, 0)
+    p.numero:SetSize(largeur, 20)
+    p.couverture = couverture
     return p
 end
 
-local function Remplir(p, feuille, style, numero, couverture)
+local function Remplir(p, feuille, style, numero, taille)
     p:SetShown(feuille ~= nil)
     if not feuille then return end
-    local er, eg, eb = RGB(couverture and "E6D5B5" or style.encre)
-    local ar, ag, ab = RGB(couverture and "D9B876" or style.accent)
+    p.titre:SetHeight(0)
+    local tailleTitre = p.couverture and 28 or 24
+    p.titre:SetFont(POLICE, tailleTitre, "")
     p.titre:SetText(feuille.titre or "")
-    p.titre:SetTextColor(ar, ag, ab)
+    while tailleTitre > 18 and p.titre:GetStringHeight() > (p.couverture and 125 or 94) do
+        tailleTitre = tailleTitre - 1
+        p.titre:SetFont(POLICE, tailleTitre, "")
+    end
+    p.titre:SetTextColor(RGB(p.couverture and "E4C78E" or style.accent or "73512D"))
+    p.texte:SetFont(POLICE, taille, "")
     p.texte:SetText(feuille.texte or "")
-    p.texte:SetTextColor(er, eg, eb)
-    p.texte:SetJustifyH(couverture and "CENTER" or (style.alignement or "LEFT"))
-    local haut = (feuille.titre or "") ~= "" and math.max(38, (p.titre:GetStringHeight() or 22) + 17) or 6
+    p.texte:SetTextColor(RGB(p.couverture and "F1E4C6" or style.encre or "302317"))
+    p.texte:SetJustifyH(p.couverture and "CENTER" or style.alignement or "LEFT")
+    -- Deux zones distinctes de part et d'autre du motif de couverture.
+    local haut = p.couverture and (p.hautTexte or 365) or ((feuille.titre or "") ~= ""
+        and math.min(112, math.max(42, p.titre:GetStringHeight() + 18)) or 4)
+    p.titre:SetHeight(p.couverture and 125 or math.max(1, haut - 10))
     p.zone:ClearAllPoints()
     p.zone:SetPoint("TOPLEFT", p, "TOPLEFT", 0, -haut)
-    p.zone:SetHeight(math.max(50, p.hauteur - haut - 27))
-    p.zone:Regler((p.texte:GetStringHeight() or 0) + 12)
+    p.zone:SetHeight(p.hauteur - haut - 30)
+    p.zone:Regler(math.max(1, p.texte:GetStringHeight() + 12))
     p.zone:Aller(0)
     p.numero:SetText(numero and tostring(numero) or "")
-    p.numero:SetTextColor(ar, ag, ab)
-    Animation.Encrer(p)
+    p.numero:SetTextColor(RGB(style.accent or "73512D"))
 end
 
-local function Teinter(surface, style)
-    -- Une teinte sur la texture complete conserve le relief et ne dessine
-    -- aucun rectangle par-dessus le papier. Le preset Parchemin est neutre.
-    local r, g, b = RGB(style.fond or "E5D3A3")
-    surface.teinte = { math.min(1, r / (229 / 255)), math.min(1, g / (211 / 255)), math.min(1, b / (163 / 255)) }
-    surface.image:SetVertexColor(unpack(surface.teinte))
-end
-
-local function Info(b, texte)
-    b.aide = Texte(b, 10)
-    b.aide:SetPoint("TOP", b, "BOTTOM", 0, -2)
-    b.aide:SetWidth(145)
-    b.aide:SetJustifyH("CENTER")
-    b.aide:SetTextColor(0.74, 0.59, 0.34)
-    b.aide:Hide()
-    b:SetScript("OnEnter", function(self)
-        if self.label then self.label:SetAlpha(0.9) end
-        self.aide:SetText(type(texte) == "function" and texte() or texte)
-        self.aide:Show()
-    end)
-    b:SetScript("OnLeave", function(self)
-        if self.label then self.label:SetAlpha(self.repos or 0) end
-        self.aide:Hide()
-    end)
+local function Disposer(p, parent, x, y, largeur, hauteur, hautTexte)
+    p:ClearAllPoints()
+    p:SetPoint("TOPLEFT", parent, "TOPLEFT", x, -y)
+    p:SetSize(largeur, hauteur)
+    p.largeur, p.hauteur, p.hautTexte = largeur, hauteur, hautTexte
+    p.titre:SetWidth(largeur)
+    p.zone:SetWidth(largeur)
+    p.texte:SetWidth(largeur - 12)
+    p.numero:SetWidth(largeur)
 end
 
 local function Construire()
-    -- Pas de UI.Fenetre : ni aplat noir, ni bordure rectangulaire, ni bandeau.
     local f = CreateFrame("Frame", "LCM_lecture_livre", UIParent)
-    f.cle, f.defautPosition = "lecture_livre", { x = 50, y = 0 }
-    f:SetSize(900, 600)
-    f:SetPoint("CENTER", UIParent, "CENTER", 50, 0)
+    f.cle, f.defautPosition = "lecture_livre", { x = 0, y = 0 }
+    f:SetSize(LARGEUR, HAUTEUR)
+    f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     f:SetFrameStrata("DIALOG")
     f:SetToplevel(true)
     f:SetMovable(true)
     f:SetClampedToScreen(true)
-    f:EnableMouse(false)
-    f.contenu = f
+    f.contenu, f.tailleTexte = f, 18
     UI.fenetres[#UI.fenetres + 1] = f
     if UISpecialFrames then UISpecialFrames[#UISpecialFrames + 1] = f:GetName() end
     local db = LCM.EnsureDatabase()
     local position = db.fenetres and db.fenetres[f.cle]
     if type(position) == "table" then
         f:ClearAllPoints()
-        f:SetPoint(position.point or "CENTER", UIParent, position.relPoint or "CENTER", position.x or 50, position.y or 0)
+        f:SetPoint(position.point or "CENTER", UIParent, position.relPoint or "CENTER", position.x or 0, position.y or 0)
     end
-
-    f.ouvert = Surface(f, "necronicon-ouvert", 900, 600, UV_LIVRE)
-    f.couverture = Surface(f, "necronicon-couverture", 400, 560, UV_SIMPLE)
-    f.note = Surface(f, "note", 400, 550, UV_SIMPLE)
-    f.gauche = Page(f.ouvert.lecture, 127, 89, 280, 365)
-    f.droite = Page(f.ouvert.lecture, 494, 89, 280, 365)
-    f.couverture.page = Page(f.couverture.lecture, 86, 150, 243, 277)
-    f.couverture.page.titre:SetFont(POLICE, 27, "")
-    f.couverture.indice = Texte(f.couverture.lecture, 12)
-    f.couverture.indice:SetPoint("BOTTOM", f.couverture, "BOTTOM", 14, 67)
-    f.couverture.indice:SetTextColor(0.85, 0.70, 0.43)
-    f.couverture.indice:SetAlpha(0)
-    f.couverture:SetScript("OnEnter", function(self) self.indice:SetAlpha(0.85) end)
-    f.couverture:SetScript("OnLeave", function(self) self.indice:SetAlpha(0) end)
-    f.note.page = Page(f.note.lecture, 54, 72, 292, 411)
-
-    -- Toute partie libre du volume, notamment la reliure, permet de le deplacer.
-    for _, s in ipairs({ f.ouvert, f.couverture, f.note }) do
-        s:EnableMouse(true)
-        s:RegisterForDrag("LeftButton")
-        s:SetScript("OnMouseDown", function() UI.Devant(f) end)
-        s:SetScript("OnDragStart", function(self) self.glisse = true; f:StartMoving() end)
-        s:SetScript("OnDragStop", function()
+    f.ouvert, f.couverture, f.note = Surface(f, 940), Surface(f, 470), Surface(f, 470)
+    f.gauche = Page(f.ouvert.lecture, 65, 69, 355, 505)
+    f.droite = Page(f.ouvert.lecture, 520, 69, 355, 505)
+    f.couverture.page = Page(f.couverture.lecture, 80, 88, 310, 485, true)
+    f.note.page = Page(f.note.lecture, 56, 65, 358, 520)
+    f.note.image:SetTexture(ART .. "chronique\\note.blp")
+    for _, surface in ipairs({ f.ouvert, f.couverture, f.note }) do
+        surface:EnableMouse(true)
+        surface:RegisterForDrag("LeftButton")
+        surface:SetScript("OnMouseDown", function() UI.Devant(f) end)
+        surface:SetScript("OnDragStart", function(self) self.glisse = true; f:StartMoving() end)
+        surface:SetScript("OnDragStop", function()
             f:StopMovingOrSizing()
-            local point, _, relatif, x, y = f:GetPoint()
+            local point, _, relPoint, x, y = f:GetPoint()
             local database = LCM.EnsureDatabase()
             database.fenetres = database.fenetres or {}
-            database.fenetres[f.cle] = { point = point, relPoint = relatif, x = x, y = y }
+            database.fenetres[f.cle] = { point = point, relPoint = relPoint, x = x, y = y }
         end)
     end
     f.couverture:SetScript("OnMouseUp", function(self, bouton)
@@ -188,199 +161,205 @@ local function Construire()
         if bouton == "LeftButton" then f:Tourner(f.index == 1 and 1 or -1) end
     end)
 
-    local function Coin(direction)
+    local function Bouton(label, largeur, action)
         local b = CreateFrame("Button", nil, f)
-        b:SetSize(67, 53)
-        b.label = Texte(b, 26)
-        b.label:SetPoint("CENTER", b, "CENTER", 0, 0)
-        b.label:SetText(direction < 0 and "<" or ">")
-        b.label:SetTextColor(0.43, 0.29, 0.12)
-        b.label:SetAlpha(0)
-        b:SetScript("OnClick", function() f:Tourner(direction) end)
-        Info(b, direction < 0 and "Page précédente" or "Page suivante")
+        b:SetSize(largeur, 30)
+        b.label = Texte(b, 15, true)
+        b.label:SetAllPoints(b)
+        b.label:SetJustifyV("MIDDLE")
+        b.label:SetText(label)
+        b.label:SetTextColor(.85, .72, .48)
+        b.label:SetShadowColor(0, 0, 0, 1)
+        b.label:SetShadowOffset(1, -1)
+        b:SetScript("OnClick", action)
+        b:SetScript("OnEnter", function(self) self.label:SetTextColor(1, .9, .68) end)
+        b:SetScript("OnLeave", function(self) self.label:SetTextColor(.85, .72, .48) end)
         return b
     end
-    f.precedent, f.suivant = Coin(-1), Coin(1)
-    f.fermer = CreateFrame("Button", nil, f)
-    f.fermer.label = Texte(f.fermer, 12)
-    f.fermer.label:SetPoint("CENTER", f.fermer, "CENTER", 0, 0)
-    f.fermer.label:SetJustifyH("CENTER")
-    f.fermer.label:SetTextColor(0.89, 0.76, 0.48)
-    f.fermer:SetScript("OnClick", function() f:Hide() end)
-    Info(f.fermer, "Fermer · Échap")
-    f.compteur = Texte(f, 11)
-    f.compteur:Hide() -- informations de lecture pour l'infobulle de la reliure.
-
+    f.precedent = Bouton("‹ Précédent", 115, function() f:Tourner(-1) end)
+    f.suivant = Bouton("Suivant ›", 115, function() f:Tourner(1) end)
+    f.fermer = Bouton("Fermer ×", 80, function() f:Fermer() end)
+    f.fermer:SetPoint("BOTTOM", f, "BOTTOM", 0, 8)
+    f.compteur = Texte(f, 12, true)
+    f.compteur:SetPoint("BOTTOM", f, "BOTTOM", 0, 42)
+    f.compteur:SetSize(240, 20)
+    f.compteur:SetTextColor(.43, .31, .17)
+    f.zoom = Bouton("A+", 38, function()
+        if f.animation then return end
+        f.tailleTexte = f.tailleTexte == 18 and 21 or (f.tailleTexte == 21 and 24 or 18)
+        f:AfficherPage()
+    end)
+    f.zoom:SetPoint("LEFT", f.fermer, "RIGHT", 4, 0)
     f.tourne = Animation.Creer(f)
-    f.brouillon = Page(f, 0, 0, 280, 365)
-    f.brouillon:Hide()
 
     function f:SurfaceActive()
         if self.livre.format == "note" then return self.note end
         if self.index == 1 or self.index == #self.feuillets then return self.couverture end
         return self.ouvert
     end
-
+    function f:AlphaTexte(alpha)
+        for _, s in ipairs({ self.ouvert, self.couverture, self.note }) do s.lecture:SetAlpha(alpha) end
+    end
     function f:AfficherPage()
-        local feuilles, style = self.feuillets, self.livre.style or {}
         local surface = self:SurfaceActive()
-        self.couverture.indice:SetText(self.index == 1 and "Ouvrir l’ouvrage" or "Reprendre la lecture")
         self.ouvert:SetShown(surface == self.ouvert)
         self.couverture:SetShown(surface == self.couverture)
         self.note:SetShown(surface == self.note)
-        self:SetSize(surface.largeur, surface.hauteur)
-        local w, h = UIParent:GetWidth(), UIParent:GetHeight()
-        self:SetScale(math.min(1, w > 0 and (w - 30) / 900 or 1, h > 0 and (h - 30) / 600 or 1))
+        local style, feuilles = self.livre.style or {}, self.feuillets
+        local necroOuvert = surface == self.ouvert and self.livre.modele == "necronicon"
         if surface == self.ouvert then
-            local numero, nombre = self.index - 1, #self.livre.pages
-            Remplir(self.gauche, feuilles[self.index], style, numero)
-            Remplir(self.droite, numero < nombre and feuilles[self.index + 1] or nil, style, numero + 1)
-            Teinter(surface, style)
-            self.compteur:SetText(numero < nombre and string.format("Pages %d–%d / %d", numero, numero + 1, nombre)
-                or string.format("Page %d / %d", numero, nombre))
+            local numero = self.index - 1
+            Remplir(self.gauche, feuilles[self.index], style, numero, self.tailleTexte)
+            Remplir(self.droite, numero < #self.livre.pages and feuilles[self.index + 1] or nil,
+                style, numero + 1, self.tailleTexte)
+            self.compteur:SetText(numero < #self.livre.pages and string.format("Pages %d–%d / %d", numero, numero + 1, #self.livre.pages)
+                or string.format("Page %d / %d", numero, #self.livre.pages))
+            if necroOuvert then
+                self.gauche.numero:SetText(numero .. " / " .. #self.livre.pages)
+                self.droite.numero:SetText((numero + 1) .. " / " .. #self.livre.pages)
+            end
         else
-            Remplir(surface.page, feuilles[self.index], style,
-                surface == self.note and feuilles[self.index].nature or nil, surface == self.couverture)
-            if surface == self.note then Teinter(surface, style) end
+            Remplir(surface.page, feuilles[self.index], style, nil, self.tailleTexte)
             self.compteur:SetText(feuilles[self.index].nature)
         end
+        local dos = self.index == #feuilles and self.livre.format == "livre"
+        self.couverture.image:SetTexCoord(dos and 1 or 0, dos and 0 or 1, 0, 1)
         self.precedent:ClearAllPoints()
         self.suivant:ClearAllPoints()
-        self.fermer:ClearAllPoints()
-        if surface == self.ouvert then
-            self.precedent:SetPoint("BOTTOMLEFT", surface, "BOTTOMLEFT", 102, 115)
-            self.suivant:SetPoint("BOTTOMRIGHT", surface, "BOTTOMRIGHT", -102, 115)
-            self.fermer:SetSize(47, 68)
-            self.fermer:SetPoint("BOTTOM", surface, "BOTTOM", 0, 0)
-            self.fermer.label:SetText("Fermer")
-            self.fermer.repos = 0
-        else
-            self.precedent:SetPoint("BOTTOMLEFT", surface, "BOTTOMLEFT", 30, 28)
-            self.suivant:SetPoint("BOTTOMRIGHT", surface, "BOTTOMRIGHT", -30, 28)
-            self.fermer:SetSize(30, 30)
-            self.fermer:SetPoint("TOPRIGHT", surface, "TOPRIGHT", -22, -27)
-            self.fermer.label:SetText("×")
-            self.fermer.repos = 0.5
-        end
-        self.fermer.label:SetAlpha(self.fermer.repos)
-        self.precedent.aide:Hide()
-        self.suivant.aide:Hide()
-        self.fermer.aide:Hide()
+        self.precedent:SetPoint("BOTTOMLEFT", surface, "BOTTOMLEFT", 35, 8)
+        self.suivant:SetPoint("BOTTOMRIGHT", surface, "BOTTOMRIGHT", -35, 8)
         self.precedent:SetShown(self.index > 1)
         self.suivant:SetShown(self.index < #feuilles)
+        self.suivant.label:SetText(self.index == 1 and self.livre.format == "livre" and "Ouvrir ›" or "Suivant ›")
+        self.compteur:SetTextColor(RGB((surface == self.couverture or (surface == self.ouvert and self.livre.modele == "necronicon"))
+            and "E4C78E" or style.encre or "73512D"))
+        -- Le crane au pied de la reliure reste libre de textes et de boutons.
+        self.compteur:SetShown(not necroOuvert)
+        self.fermer:ClearAllPoints()
+        self.fermer:SetPoint("BOTTOM", self, "BOTTOM", necroOuvert and -65 or 0, 8)
+        self.zoom:ClearAllPoints()
+        if necroOuvert then self.zoom:SetPoint("BOTTOM", self, "BOTTOM", 65, 8)
+        else self.zoom:SetPoint("LEFT", self.fermer, "RIGHT", 4, 0) end
+        self.zoom:Show()
     end
-
     function f:PositionSuivante(direction)
-        local actuel, total = self.index or 1, #self.feuillets
+        local actuel, total = self.index, #self.feuillets
         if self.livre.format == "note" then return actuel + direction end
         if direction > 0 then return actuel == 1 and 2 or math.min(total, actuel + 2) end
         if actuel == total then return 2 + 2 * math.floor((#self.livre.pages - 1) / 2) end
         return math.max(1, actuel - 2)
     end
-
-    function f:CapturerFeuillet(feuille, modele, cote, mode, numero)
-        local p = self.brouillon
-        p.largeur,p.hauteur,p.pageX,p.pageY=modele.largeur,modele.hauteur,modele.pageX,modele.pageY
-        p:SetSize(p.largeur,p.hauteur)
-        p.zone:SetWidth(p.largeur)
-        p.texte:SetWidth(p.largeur-4)
-        p.titre:SetWidth(p.largeur-8)
-        p.titre:SetFont(POLICE,mode=="couverture" and 27 or 22,"")
-        Remplir(p,feuille,self.livre.style or {},numero,mode=="couverture")
-        local encre=Animation.Capturer(p,cote,mode)
-        p:Hide()
-        return encre
-    end
-
     function f:AnnulerAnimation()
         self.animation = nil
         self:SetScript("OnUpdate", nil)
-        self.tourne:Hide()
-        self.gauche:SetAlpha(1)
-        self.droite:SetAlpha(1)
-        for _, s in ipairs({ self.ouvert, self.couverture, self.note }) do
-            s:SetAlpha(1)
-            s.image:ClearAllPoints()
-            s.image:SetAllPoints(s)
-            s.lecture:SetAlpha(1)
-        end
+        Animation.Arreter(self.tourne)
+        self:AlphaTexte(1)
+        if self.livre then self:AfficherPage() end
     end
-
-    function f:Tourner(direction)
-        if not self.feuillets or self.animation then return end
-        direction = direction < 0 and -1 or 1
-        local cible = self:PositionSuivante(direction)
-        if cible < 1 or cible > #self.feuillets or cible == self.index then return end
-        self.precedent.aide:Hide()
-        self.suivant.aide:Hide()
-        local depart = self:SurfaceActive()
-        local versPage = self.livre.format == "livre" and cible > 1 and cible < #self.feuillets
-        local mode = self.livre.format=="note" and "note" or
-            (depart==self.couverture and "ouvrir" or (versPage and "feuille" or "fermer"))
-        local recto,verso
-        local feuilles,style=self.feuillets,self.livre.style or {}
-        if mode=="feuille" then
-            local source=direction>0 and self.droite or self.gauche
-            local arrivee=direction>0 and self.gauche or self.droite
-            recto=Animation.Capturer(source,direction)
-            local i=direction>0 and cible or cible+1
-            verso=self:CapturerFeuillet(i<#feuilles and feuilles[i] or nil,arrivee,-direction,nil,i-1)
-            -- La page dessous est deja la suivante. L'autre page ne change pas
-            -- tant que le feuillet qui la recouvre n'est pas retombe.
-            local dessous=direction>0 and cible+1 or cible
-            Remplir(source,dessous<#feuilles and feuilles[dessous] or nil,style,dessous-1)
-        elseif mode=="ouvrir" then
-            recto=Animation.Capturer(self.couverture.page,1,"couverture")
-            verso=self:CapturerFeuillet(feuilles[cible],self.gauche,-1,nil,cible-1)
-            local ancien=self.index
-            self.index=cible;self:AfficherPage();self.index=ancien
-            self.ouvert:SetAlpha(0);self.gauche:SetAlpha(0)
-        elseif mode=="fermer" then
-            recto=self:CapturerFeuillet(feuilles[cible],self.couverture.page,1,"couverture")
-            verso=Animation.Capturer(self.gauche,-1)
-            self.gauche:SetAlpha(0)
-        else
-            recto=Animation.Capturer(self.note.page,1,"note")
-            verso=self:CapturerFeuillet(feuilles[cible],self.note.page,-1,"note",feuilles[cible].nature)
-            self.note:Hide()
-        end
-        self.animation = { temps=0,cible=cible,direction=mode=="feuille" and direction or 1,
-            mode=mode,depart=depart,recto=recto,verso=verso }
-        self.precedent:Hide();self.suivant:Hide()
-        self.tourne:SetFrameLevel(self:GetFrameLevel()+30)
-        self.tourne:Show()
-        Animation.Rendre(self.tourne,0,self.animation.direction,mode,recto,verso,self.ouvert.teinte or {1,1,1})
-        if PlaySound and SOUNDKIT and SOUNDKIT.IG_SPELLBOOK_TURNPAGE then
-            PlaySound(SOUNDKIT.IG_SPELLBOOK_TURNPAGE, "SFX")
-        end
+    function f:TerminerAnimation()
+        local a = self.animation
+        self.index = a.cible
+        self:AnnulerAnimation()
+        if a.fermeture then self:Hide() end
+    end
+    function f:Animer(cible, fermeture)
+        if self.animation then return end
+        local note = self.livre.format == "note"
+        local debutFerme = self:SurfaceActive() == self.couverture
+        local finFermee = cible == 1 or cible == #self.feuillets
+        local sequence = note and "note" or ((debutFerme or finFermee) and "opening" or "turning")
+        local spec = Animation.Sequences[sequence]
+        local inverse = sequence == "opening" and not debutFerme
+        local miroir = sequence == "opening" and ((debutFerme and self.index == #self.feuillets)
+            or (not debutFerme and cible == #self.feuillets)) or (sequence == "turning" and cible < self.index)
+        self.animation = { cible = cible, fermeture = fermeture, sequence = sequence, temps = 0,
+            attente = 0, phase = "attente", premier = inverse and spec.images - 1 or 0,
+            dernier = inverse and 0 or spec.images - 1, miroir = miroir, duree = spec.duree }
+        self.precedent:Hide(); self.suivant:Hide(); self.zoom:Hide(); self.compteur:Hide()
         self:SetScript("OnUpdate", function(cadre, dt)
             local a = cadre.animation
             if not a then return end
-            a.temps = a.temps + (dt or 0)
-            local p = math.min(1, a.temps / DUREE)
-            if a.mode=="ouvrir" then cadre.ouvert:SetAlpha(math.min(1,p*4)) end
-            if a.mode=="fermer" then cadre.ouvert:SetAlpha(math.min(1,(1-p)*4)) end
-            Animation.Rendre(cadre.tourne,p,a.direction,a.mode,a.recto,a.verso,cadre.ouvert.teinte or {1,1,1})
-            if p>=1 then
-                cadre.index=a.cible
-                cadre:AnnulerAnimation()
-                cadre:AfficherPage()
+            if a.phase == "attente" then
+                a.attente = a.attente + dt
+                if not Animation.Pret(cadre.tourne, a.sequence) then
+                    if a.attente > 5 then cadre:TerminerAnimation() end
+                    return
+                end
+                a.phase, a.temps = "sortie", 0
+                if PlaySound and SOUNDKIT and SOUNDKIT.IG_SPELLBOOK_TURNPAGE then
+                    PlaySound(SOUNDKIT.IG_SPELLBOOK_TURNPAGE, "SFX")
+                end
+            end
+            -- A faible FPS, prolonger le mouvement au lieu de sauter des poses.
+            local pas = math.min(dt, a.phase == "mouvement"
+                and a.duree / math.max(1, math.abs(a.dernier - a.premier)) or .05)
+            a.temps = a.temps + pas
+            if a.phase == "sortie" then
+                cadre:AlphaTexte(math.max(0, 1 - a.temps / FONDU))
+                if a.temps >= FONDU then
+                    if not Animation.Dessiner(cadre.tourne, a.sequence, a.premier, a.miroir) then return end
+                    cadre.ouvert:Hide(); cadre.couverture:Hide(); cadre.note:Hide()
+                    cadre.tourne:Show()
+                    a.phase, a.temps = "mouvement", 0
+                end
+            elseif a.phase == "mouvement" then
+                if not Animation.Pret(cadre.tourne, a.sequence) then a.temps = a.temps - pas; return end
+                local p = math.min(1, a.temps / a.duree)
+                Animation.Dessiner(cadre.tourne, a.sequence, math.floor(a.premier + (a.dernier - a.premier) * p + .5), a.miroir)
+                if p == 1 then
+                    cadre.index = a.cible
+                    Animation.Arreter(cadre.tourne)
+                    cadre:AfficherPage()
+                    cadre.precedent:Hide(); cadre.suivant:Hide(); cadre.zoom:Hide()
+                    cadre:AlphaTexte(0)
+                    a.phase, a.temps = "entree", 0
+                end
+            else
+                cadre:AlphaTexte(math.min(1, a.temps / FONDU))
+                if a.temps >= FONDU then cadre:TerminerAnimation() end
             end
         end)
     end
-
+    function f:Tourner(direction)
+        if not self.feuillets or self.animation then return end
+        local cible = self:PositionSuivante(direction < 0 and -1 or 1)
+        if cible < 1 or cible > #self.feuillets or cible == self.index then return end
+        self:Animer(cible)
+    end
+    function f:Fermer()
+        self:AnnulerAnimation()
+        if self:SurfaceActive() == self.ouvert then self:Animer(1, true) else self:Hide() end
+    end
     function f:Ouvrir(livre)
         self:AnnulerAnimation()
         self.livre, self.feuillets, self.index = livre, Feuillets(livre), 1
+        local modele = livre.modele or LCM.Livres.MODELE_DEFAUT
+        if modele == "necronicon" then
+            -- Les ferrures et le pendentif ont leurs propres marges reservees.
+            Disposer(self.gauche, self.ouvert.lecture, 112, 94, 310, 468)
+            Disposer(self.droite, self.ouvert.lecture, 518, 94, 310, 468)
+            Disposer(self.couverture.page, self.couverture.lecture, 105, 170, 285, 385, 155)
+        else
+            Disposer(self.gauche, self.ouvert.lecture, 65, 69, 355, 505)
+            Disposer(self.droite, self.ouvert.lecture, 520, 69, 355, 505)
+            Disposer(self.couverture.page, self.couverture.lecture, 80, 88, 310, 485, 365)
+        end
+        self.ouvert.image:SetTexture(ART .. modele .. "\\ouvert.blp")
+        self.couverture.image:SetTexture(ART .. modele .. "\\couverture.blp")
+        Animation.Preparer(self.tourne, modele, livre.format == "note")
+        local r, g, b = RGB(livre.style and livre.style.fond or "E5D3A3")
+        local teinte = { math.min(1, r * 255 / 229), math.min(1, g * 255 / 211), math.min(1, b * 255 / 163) }
+        for _, surface in ipairs({ self.ouvert, self.couverture, self.note }) do
+            surface.image:SetVertexColor(unpack(teinte))
+        end
+        for _, image in ipairs(self.tourne.planches) do image:SetVertexColor(unpack(teinte)) end
+        local w, h = UIParent:GetWidth(), UIParent:GetHeight()
+        self:SetScale(math.min(1, w > 0 and (w - 30) / LARGEUR or 1, h > 0 and (h - 30) / HAUTEUR or 1))
         self:AfficherPage()
         self:Show()
         UI.Devant(self)
     end
-    f:SetScript("OnHide", function(self)
-        self:AnnulerAnimation()
-        self:StopMovingOrSizing()
-        if self.livre then self:AfficherPage() end
-    end)
+    f:SetScript("OnHide", function(self) self:AnnulerAnimation(); self:StopMovingOrSizing() end)
     f:Hide()
     return f
 end
@@ -388,8 +367,7 @@ end
 function Ecran.Ouvrir(ref)
     local livre = LCM.Compendium.Resoudre(ref)
     if not livre or tostring(ref or ""):match("^livres/") == nil then
-        LCM.Alerte("livre inconnu du compendium.")
-        return false
+        LCM.Alerte("livre inconnu du compendium."); return false
     end
     Ecran.frame = Ecran.frame or Construire()
     Ecran.frame:Ouvrir(livre)

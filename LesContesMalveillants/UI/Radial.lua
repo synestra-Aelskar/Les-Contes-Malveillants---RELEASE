@@ -292,16 +292,27 @@ local function Battement(_, ecoule)
     for cible, mouvement in pairs(transitions) do
         en_cours[#en_cours + 1] = { cible, mouvement }
     end
+    -- Chaque mouvement est protege : une erreur dans l'un s'arretait a chaque
+    -- image au meme endroit, et ceux qui le suivaient dans la boucle ne
+    -- finissaient jamais — dont la fin d'un repli, seule a lever le verrou des
+    -- dossiers (constate le 21 octobre 2026 : « Système » retenu, plus rien ne
+    -- s'ouvrait). Celui qui echoue est retire, et on le dit.
     for _, entree in ipairs(en_cours) do
         local cible, mouvement = entree[1], entree[2]
         if transitions[cible] == mouvement then
             mouvement.temps = mouvement.temps + ecoule
             if mouvement.temps >= 0 then
                 local t = math.min(1, mouvement.temps / mouvement.duree)
-                mouvement.pas(1 - (1 - t) ^ 3)
-                if t == 1 and transitions[cible] == mouvement then
+                local ok, erreur = pcall(mouvement.pas, 1 - (1 - t) ^ 3)
+                if not ok then LCM.Erreur("menu (animation) : " .. tostring(erreur)) end
+                -- Un mouvement qui a echoue se termine quand meme : sa fin
+                -- remet l'etat d'aplomb (le verrou du repli, l'orbite cachee).
+                if (not ok or t == 1) and transitions[cible] == mouvement then
                     transitions[cible] = nil
-                    if mouvement.fin then mouvement.fin() end
+                    if mouvement.fin then
+                        ok, erreur = pcall(mouvement.fin)
+                        if not ok then LCM.Erreur("menu (fin d'animation) : " .. tostring(erreur)) end
+                    end
                 end
             end
         end
@@ -311,8 +322,18 @@ end
 
 local function Mouvement(cible, duree, delai, pas, fin)
     Arreter(cible)
+    -- Le premier pas, protege comme les suivants (voir Battement) : il plantait
+    -- dans le clic lui-meme, avant que le repli ait pu poser sa fin.
+    local ok, erreur = pcall(pas, 0)
+    if not ok then
+        LCM.Erreur("menu (animation) : " .. tostring(erreur))
+        if fin then
+            ok, erreur = pcall(fin)
+            if not ok then LCM.Erreur("menu (fin d'animation) : " .. tostring(erreur)) end
+        end
+        return
+    end
     transitions[cible] = { temps = -(delai or 0), duree = duree, pas = pas, fin = fin }
-    pas(0)
     animateur:SetScript("OnUpdate", Battement)
 end
 
@@ -785,11 +806,24 @@ local function ReplierEntrees(f, c, apres)
     end
     if not une then if apres then apres() end return end
     c.replie = true
+    -- Le repli dure 0,3 s ; au-dela d'une seconde, le verrou ne vaut plus
+    -- rien (voir Verrouille).
+    c.replieJusqua = (GetTime and GetTime() or 0) + 1
     Mouvement(c.secteur, 0.3, 0, function(t) c.secteur:SetAlpha(1 - t) end, function()
         c.replie = nil
         c.secteur:Hide()
         if apres then apres() end
     end)
+end
+
+-- Le repli est-il en cours ? Un verrou dont l'echeance est passee ne refuse
+-- plus rien : quoi qu'il ait interrompu la fin du repli, le menu ne reste
+-- jamais bloque sur un dossier jusqu'a la fermeture du sceau.
+local function Verrouille(c)
+    if not c.replie then return false end
+    if (GetTime and GetTime() or 0) <= (c.replieJusqua or 0) then return true end
+    c.replie = nil
+    return false
 end
 
 local function Fermer(f, c, anime)
@@ -1012,7 +1046,7 @@ Dessiner = function(f, c, animeCategories, animeEntrees, animeSousMenu)
             c.sousChoisi = nil
             -- Un clic pendant le repli : le choix est memorise, le dessin qui
             -- suit la fin du repli l'utilisera.
-            if c.replie then return end
+            if Verrouille(c) then return end
             ReplierEntrees(f, c, function() if c.ouvert then Dessiner(f, c, false, true) end end)
         end)
         b:Show()
@@ -1082,7 +1116,7 @@ Dessiner = function(f, c, animeCategories, animeEntrees, animeSousMenu)
         b:SetScript("OnClick", function(bouton)
             local cible = bouton.cible
             if cible.enfants then
-                if c.replie then return end
+                if Verrouille(c) then return end
                 c.sousChoisi = c.sousChoisi ~= cible.id and cible.id or nil
                 Dessiner(f, c, false, false, true)
             else

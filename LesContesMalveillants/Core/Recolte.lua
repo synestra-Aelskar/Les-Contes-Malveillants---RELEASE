@@ -361,16 +361,31 @@ end
 -- Ecrit en entier a chaque changement, et efface quand tout est vide : une
 -- table vide ne reste pas en sauvegarde.
 
+-- Qui arbitre ce point-ci : celui qui l'a POSE, pas l'auteur du modele. Deux
+-- MJ posent le meme modele de filon, et chacun garde les siens (21 octobre
+-- 2026) : tenu par le modele, le dernier a annoncer ses points effacait ceux
+-- de l'autre. `definition.auteur` ne reste qu'en repli, pour une copie
+-- sauvegardee avant ce changement. Meme regle que les coffres.
+function Recolte.Auteur(p)
+    if not p then return nil end
+    local d = Recolte.definitions[p.def]
+    return p.auteur or (d and d.auteur) or nil
+end
+
 function Recolte.Sauver()
     if not LCM.EnsureDatabase then return end
     LCM.EnsureDatabase()
     local moi = Moi()
     local definitions, points = {}, {}
-    for id, d in pairs(Recolte.definitions) do
-        if d.auteur ~= moi then definitions[id] = d end
-    end
     for id, p in pairs(Recolte.points) do
-        if definitions[p.def] then points[id] = p end
+        local d = Recolte.definitions[p.def]
+        if d and Recolte.Auteur(p) ~= moi then points[id], definitions[p.def] = p, d end
+    end
+    -- Un modele dont on doit encore dire une recolte a son MJ reste connu,
+    -- meme sans point.
+    for _, a in pairs(Recolte.attente) do
+        local d = type(a) == "table" and Recolte.definitions[a.d or ""]
+        if d then definitions[d.id] = d end
     end
     if next(definitions) or next(Recolte.attente) or next(Recolte.echecs) then
         LCM.db.recolte = { definitions = definitions, points = points,
@@ -389,7 +404,8 @@ function Recolte.Charger()
         if type(d) == "table" then Recolte.definitions[id] = d end
     end
     for id, p in pairs(type(garde.points) == "table" and garde.points or {}) do
-        if type(p) == "table" and Recolte.definitions[p.def] then Recolte.points[id] = p end
+        local d = type(p) == "table" and Recolte.definitions[p.def]
+        if d then p.auteur = p.auteur or d.auteur; Recolte.points[id] = p end
     end
     for id, a in pairs(type(garde.attente) == "table" and garde.attente or {}) do
         if type(a) == "table" then Recolte.attente[id] = a end
@@ -407,23 +423,25 @@ local function Prevenir()
     if Recolte.onChange then LCM.Proteger("récolte", Recolte.onChange) end
 end
 
--- Une definition arrive avec TOUS ses points : ceux qu'on avait pour elle et
--- qu'elle ne porte plus ont ete recoltes ou retires. Ceux qu'on a recoltes en
--- attendant de le dire au MJ ne reviennent pas : il ne le sait pas encore.
+-- Une definition arrive avec TOUS les points que `auteur` arbitre : ceux qu'on
+-- avait de lui pour elle et qu'elle ne porte plus ont ete recoltes ou retires.
+-- Ceux d'un autre MJ ne bougent pas. Ceux qu'on a recoltes en attendant de le
+-- dire au MJ ne reviennent pas : il ne le sait pas encore.
 function Recolte.Connaitre(definition, points, auteur)
     if type(definition) ~= "table" or not definition.id then return false end
-    definition.auteur = auteur or definition.auteur
+    auteur = auteur or definition.auteur
+    definition.auteur = auteur
     Recolte.definitions[definition.id] = definition
     local gardes = {}
     for id, p in pairs(Recolte.points) do
-        if p.def == definition.id then
+        if p.def == definition.id and Recolte.Auteur(p) == auteur then
             if Recolte.attente[id] or Recolte.echecs[id] then gardes[id] = p end
             Recolte.points[id] = nil
         end
     end
     for _, p in ipairs(points or {}) do
         if not Recolte.attente[p.id] and not Recolte.echecs[p.id] then
-            p.def = definition.id
+            p.def, p.auteur = definition.id, auteur
             Recolte.points[p.id] = p
         end
     end
@@ -676,6 +694,7 @@ function Recolte.Tenter(pointId)
     if not p then return false, "il n'y a rien à récolter ici." end
     local definition = Recolte.definitions[p.def]
     if not definition then return false, "point inconnu." end
+    local auteur = Recolte.Auteur(p)
     local maintenant = (GetTime and GetTime()) or 0
     local demande = Recolte.enAttente[pointId]
     if demande and maintenant - (type(demande) == "table" and demande.quand or demande) < DELAI_REPONSE then
@@ -700,13 +719,13 @@ function Recolte.Tenter(pointId)
         Annoncer(definition, r)
         if not r.reussi then
             if not definition.echecConsomme then return false, "jet raté : tu peux retenter." end
-            if definition.auteur == Moi() then
+            if auteur == Moi() then
                 if Recolte.Echec then Recolte.Echec(pointId, Moi()) end
-            elseif Recolte.EnLigne(definition.auteur) then
-                LCM.Reseau.Envoyer(S.echec, { i = pointId }, "WHISPER", definition.auteur)
+            elseif Recolte.EnLigne(auteur) then
+                LCM.Reseau.Envoyer(S.echec, { i = pointId }, "WHISPER", auteur)
             else
                 p.usages = (tonumber(p.usages) or 0) + 1
-                Recolte.echecs[pointId] = { a = definition.auteur, n = p.usages }
+                Recolte.echecs[pointId] = { a = auteur, n = p.usages }
                 Prevenir()
                 LCM.Info("Le MJ sera averti de cet échec à son retour.")
             end
@@ -716,7 +735,7 @@ function Recolte.Tenter(pointId)
 
     -- Le MJ lui-meme : il est son propre arbitre, et un message a soi-meme ne
     -- revient pas (Reseau ignore ce qu'on s'envoie).
-    if definition.auteur == Moi() then
+    if auteur == Moi() then
         if not Recolte.Arbitre then return false, "aucun arbitre." end
         local lots, raison = Recolte.Arbitre(pointId, Moi())
         if not lots then return false, raison or "déjà récolté." end
@@ -728,10 +747,10 @@ function Recolte.Tenter(pointId)
     end
 
     -- Son MJ est la : il arbitre.
-    if Recolte.EnLigne(definition.auteur) then
+    if Recolte.EnLigne(auteur) then
         Recolte.enAttente[pointId] = { quand = maintenant,
-            auteur = definition.auteur, defId = definition.id }
-        LCM.Reseau.Envoyer(S.prendre, { i = pointId }, "WHISPER", definition.auteur)
+            auteur = auteur, defId = definition.id }
+        LCM.Reseau.Envoyer(S.prendre, { i = pointId }, "WHISPER", auteur)
         return true
     end
 
@@ -742,7 +761,7 @@ function Recolte.Tenter(pointId)
     local ok, raison = Recolte.Recevoir(pointId, lots, nil, definition.id)
     if not ok then return false, raison end
     p.usages, p.consomme, p.prochain = etat.usages, etat.consomme, etat.prochain
-    Recolte.attente[pointId] = { a = definition.auteur, d = definition.id,
+    Recolte.attente[pointId] = { a = auteur, d = definition.id,
         q = lots[1] and lots[1].quantite or 0, n = p.usages,
         c = p.consomme, p = p.prochain, t = (time and time()) or 0 }
     if not Recolte.Epuise(p, definition) then Recolte.points[pointId] = p end
@@ -862,12 +881,17 @@ LCM.WhenReady(function()
         local id, defId = Texte(donnees.i), Texte(donnees.d)
         -- Seul celui qui a pose peut retirer.
         if id ~= "" then
-            local p = Recolte.points[id]
-            local definition = p and Recolte.definitions[p.def]
-            if definition and definition.auteur == expediteur then Recolte.Oublier(id) end
+            if Recolte.Auteur(Recolte.points[id]) == expediteur then Recolte.Oublier(id) end
         elseif defId ~= "" then
-            local definition = Recolte.definitions[defId]
-            if definition and definition.auteur == expediteur then Recolte.OublierDefinition(defId) end
+            -- SES points de ce modele, pas ceux d'un autre MJ ; le modele ne
+            -- s'oublie que s'il n'en reste aucun.
+            local reste = false
+            for pid, p in pairs(Recolte.points) do
+                if p.def == defId then
+                    if Recolte.Auteur(p) == expediteur then Recolte.points[pid] = nil else reste = true end
+                end
+            end
+            if reste then Prevenir() else Recolte.OublierDefinition(defId) end
         end
     end)
 
@@ -878,8 +902,10 @@ LCM.WhenReady(function()
         local p = Recolte.points[id]
         local definition = Recolte.definitions[(type(demande) == "table" and demande.defId)
             or (p and p.def) or ""]
-        if (type(demande) == "table" and demande.auteur ~= expediteur)
-            or (definition and definition.auteur ~= expediteur) then return end
+        -- La reponse vient de celui a qui on a demande : l'arbitre du POINT.
+        local attendu = (type(demande) == "table" and demande.auteur) or Recolte.Auteur(p)
+            or (definition and definition.auteur)
+        if attendu and attendu ~= expediteur then return end
         local quantite = tonumber(donnees.q)
         if not quantite and type(donnees.l) ~= "table" then
             Recolte.enAttente[id] = nil

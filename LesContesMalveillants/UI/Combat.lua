@@ -282,15 +282,22 @@ local function Construire()
     end)
     Placer(f.suivant, f, 940 + EXTRA, 84, 16, 25)
 
-    -- « Passer le tour », seule action du panneau de droite.
+    -- « Fin de tour », seule action du panneau de droite. Plus grand et en
+    -- plus gros que le « Passer le tour » de Necronicon (82 x 46, police par
+    -- defaut) : a 70 %, il ne se lisait pas (21 octobre 2026). Il garde la
+    -- marge avant la bougie du decor.
+    local BOUTON_L, BOUTON_H = 98, 56
     f.passer = CreateFrame("Button", nil, f)
-    Placer(f.passer, f, 970 + EXTRA, 65, 82, 46)
-    f.passer.label = UI.Texte(f.passer, "Passer\nle tour", UI.C.titre)
-    f.passer.label:SetAllPoints(f.passer)
+    Placer(f.passer, f, 962 + EXTRA, 60, BOUTON_L, BOUTON_H)
+    f.passer.label = UI.Texte(f.passer, "Fin\nde tour", UI.C.titre)
+    UI.Police(f.passer.label, 16)
+    f.passer.label:SetPoint("TOPLEFT", f.passer, "TOPLEFT", 6, -4)
+    f.passer.label:SetPoint("BOTTOMRIGHT", f.passer, "BOTTOMRIGHT", -6, 4)
     f.passer.label:SetJustifyH("CENTER")
     for _, b in ipairs(BORDS) do
         local t = Atlas(f.passer, "BORDER", 217 + b[1], 69 + b[2], b[3], b[4])
-        Placer(t, f.passer, b[1] * 82 / 92, b[2] * 46 / 90, b[3] * 82 / 92, b[4] * 46 / 90)
+        Placer(t, f.passer, b[1] * BOUTON_L / 92, b[2] * BOUTON_H / 90,
+            b[3] * BOUTON_L / 92, b[4] * BOUTON_H / 90)
         t:SetAlpha(0.65)
     end
     f.passer.survol = UI.Aplat(f.passer, { 0.8, 0.61, 0.28, 0.12 }, "HIGHLIGHT")
@@ -388,9 +395,24 @@ function Ecran.Fenetre()
     return Ecran.frame or Construire()
 end
 
-local function Positionner(f)
+local Positionner
+
+-- La taille du bandeau, reglee dans les Parametres comme celle du bandeau de
+-- personnage : de 0 a 100, et 50 vaut sa taille de reference (ECHELLE). Elle
+-- ne passe jamais la largeur de l'ecran : un bandeau qui deborde cache le
+-- bouton « Fin de tour ».
+function UI.EchelleCombat(pourcent)
+    LCM.EnsureDatabase()
+    if pourcent then LCM.db.settings.echelleCombat = (pourcent ~= 50) and pourcent or nil end
+    local v = tonumber(LCM.db.settings.echelleCombat) or 50
+    local facteur = ECHELLE * (0.5 + math.max(0, math.min(v, 100)) / 100)
+    if pourcent and Ecran.frame then Positionner(Ecran.frame) end
+    return v, facteur
+end
+
+function Positionner(f)
     local largeurEcran = (UIParent and UIParent:GetWidth()) or LARGEUR
-    f:SetScale(math.min(ECHELLE, (largeurEcran - 24) / LARGEUR))
+    f:SetScale(math.min(select(2, UI.EchelleCombat()), (largeurEcran - 24) / LARGEUR))
     if not f.deplace then
         f:ClearAllPoints()
         f:SetPoint("TOP", UIParent, "TOP", 0, RAIL_HAUT)

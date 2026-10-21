@@ -27,6 +27,8 @@ local Marchands = {
     enAttente = {},
     -- Et la facon de payer choisie pour chacun : la reponse du MJ arrive apres.
     choix = {},
+    -- Et a qui on l'a demande : seul lui peut repondre (« v/o » -> joueur).
+    arbitres = {},
     -- Achats faits en l'absence du MJ, a lui dire : « v/o » -> { a, v, o, n }.
     attente = {},
 }
@@ -135,16 +137,40 @@ end
 -- Ce que les MJ nous ont envoye et ce qu'on a achete sans eux. Pas ce que le
 -- MJ local pose lui-meme : il le reconstruit a chaque connexion.
 
+-- Qui arbitre ce vendeur-ci : celui qui l'a POSE, pas l'auteur du modele. Deux
+-- MJ posent la meme echoppe, et chacun garde les siennes (21 octobre 2026) :
+-- tenu par le modele, le dernier a annoncer ses points effacait ceux de
+-- l'autre. `definition.auteur` ne reste qu'en repli, pour une copie
+-- sauvegardee avant ce changement. Meme regle que les coffres et la recolte.
+function Marchands.Auteur(p)
+    if not p then return nil end
+    local d = Marchands.definitions[p.def]
+    return p.auteur or (d and d.auteur) or nil
+end
+
+-- `nom` arbitre-t-il au moins un vendeur pose de ce modele ?
+local function ArbitreDe(defId, nom)
+    for _, p in pairs(Marchands.points) do
+        if p.def == defId and Marchands.Auteur(p) == nom then return true end
+    end
+    local d = Marchands.definitions[defId]
+    return d ~= nil and d.auteur == nom
+end
+
 function Marchands.Sauver()
     if not LCM.EnsureDatabase then return end
     LCM.EnsureDatabase()
     local moi = Moi()
     local definitions, points = {}, {}
-    for id, d in pairs(Marchands.definitions) do
-        if d.auteur ~= moi then definitions[id] = d end
-    end
     for id, p in pairs(Marchands.points) do
-        if definitions[p.def] then points[id] = p end
+        local d = Marchands.definitions[p.def]
+        if d and Marchands.Auteur(p) ~= moi then points[id], definitions[p.def] = p, d end
+    end
+    -- Un modele dont on doit encore dire un achat a son MJ reste connu, meme
+    -- sans point.
+    for _, a in pairs(Marchands.attente) do
+        local d = type(a) == "table" and Marchands.definitions[a.v or ""]
+        if d then definitions[d.id] = d end
     end
     if next(definitions) or next(Marchands.attente) then
         LCM.db.marche = { definitions = definitions, points = points, attente = Marchands.attente }
@@ -162,7 +188,8 @@ function Marchands.Charger()
         if type(d) == "table" then Marchands.definitions[id] = d end
     end
     for id, p in pairs(type(garde.points) == "table" and garde.points or {}) do
-        if type(p) == "table" and Marchands.definitions[p.def] then Marchands.points[id] = p end
+        local d = type(p) == "table" and Marchands.definitions[p.def]
+        if d then p.auteur = p.auteur or d.auteur; Marchands.points[id] = p end
     end
     for cle, a in pairs(type(garde.attente) == "table" and garde.attente or {}) do
         if type(a) == "table" then Marchands.attente[cle] = a end
@@ -178,15 +205,18 @@ local function Prevenir()
 end
 Marchands.Prevenir = Prevenir
 
+-- `points` : TOUS les vendeurs de ce modele que `auteur` arbitre. Ceux d'un
+-- autre MJ ne bougent pas.
 function Marchands.Connaitre(definition, points, auteur)
     if type(definition) ~= "table" or not definition.id then return false end
-    definition.auteur = auteur or definition.auteur
+    auteur = auteur or definition.auteur
+    definition.auteur = auteur
     Marchands.definitions[definition.id] = definition
     for id, p in pairs(Marchands.points) do
-        if p.def == definition.id then Marchands.points[id] = nil end
+        if p.def == definition.id and Marchands.Auteur(p) == auteur then Marchands.points[id] = nil end
     end
     for _, p in ipairs(points or {}) do
-        p.def = definition.id
+        p.def, p.auteur = definition.id, auteur
         Marchands.points[p.id] = p
     end
     Prevenir()
@@ -373,9 +403,11 @@ function Marchands.Acheter(defId, offreId, choix)
         return false, "achat déjà en cours."
     end
     Marchands.enAttente[cle] = nil
+    -- L'arbitre est celui du vendeur DEVANT lequel on se tient.
+    local auteur = Marchands.Auteur(Marchands.Proche()) or definition.auteur
 
     -- Le MJ lui-meme : son propre arbitre.
-    if definition.auteur == Moi() then
+    if auteur == Moi() then
         if not reste then return Livrer(definition, offre, facon) end
         if not Marchands.Arbitre then return false, "aucun arbitre." end
         local ok, raison = Marchands.Arbitre(defId, offreId, Moi())
@@ -389,17 +421,18 @@ function Marchands.Acheter(defId, offreId, choix)
     -- Sans stock a partager, rien a arbitrer : on achete.
     if not reste then return Livrer(definition, offre, facon) end
 
-    if LCM.Recolte.EnLigne(definition.auteur) then
+    if LCM.Recolte.EnLigne(auteur) then
         Marchands.enAttente[cle] = maintenant
         Marchands.choix[cle] = facon
-        LCM.Reseau.Envoyer(S.acheter, { v = defId, o = offreId }, "WHISPER", definition.auteur)
+        Marchands.arbitres[cle] = auteur
+        LCM.Reseau.Envoyer(S.acheter, { v = defId, o = offreId }, "WHISPER", auteur)
         return true
     end
 
     -- MJ absent : on achete, et on le lui dira.
     local ok, raison = Livrer(definition, offre, facon)
     if not ok then return false, raison end
-    local a = Marchands.attente[cle] or { a = definition.auteur, v = defId, o = offreId, n = 0 }
+    local a = Marchands.attente[cle] or { a = auteur, v = defId, o = offreId, n = 0 }
     a.n = a.n + 1
     Marchands.attente[cle] = a
     Prevenir()
@@ -497,18 +530,23 @@ LCM.WhenReady(function()
         if not LCM.Reseau.Connu(expediteur) then return end
         local id, defId = Texte(donnees.i), Texte(donnees.d)
         if id ~= "" then
-            local p = Marchands.points[id]
-            local d = p and Marchands.definitions[p.def]
-            if d and d.auteur == expediteur then Marchands.Oublier(id) end
+            if Marchands.Auteur(Marchands.points[id]) == expediteur then Marchands.Oublier(id) end
         elseif defId ~= "" then
-            local d = Marchands.definitions[defId]
-            if d and d.auteur == expediteur then Marchands.OublierDefinition(defId) end
+            -- SES vendeurs de ce modele, pas ceux d'un autre MJ ; le modele ne
+            -- s'oublie que s'il n'en reste aucun.
+            local reste = false
+            for pid, p in pairs(Marchands.points) do
+                if p.def == defId then
+                    if Marchands.Auteur(p) == expediteur then Marchands.points[pid] = nil else reste = true end
+                end
+            end
+            if reste then Prevenir() else Marchands.OublierDefinition(defId) end
         end
     end)
 
     LCM.Reseau.Ecouter(S.stock, function(expediteur, donnees)
         local offre, d = Marchands.Offre(Texte(donnees.v), Texte(donnees.o))
-        if not offre or d.auteur ~= expediteur then return end
+        if not offre or not ArbitreDe(d.id, expediteur) then return end
         offre.restant = math.max(0, math.floor(tonumber(donnees.r) or 0))
         Prevenir()
     end)
@@ -518,8 +556,10 @@ LCM.WhenReady(function()
         local cle = Cle(v, o)
         if not Marchands.enAttente[cle] then return end
         local offre, d = Marchands.Offre(v, o)
-        if not offre or d.auteur ~= expediteur then return end
+        -- La reponse vient de celui a qui on a demande.
+        if not offre or (Marchands.arbitres[cle] or d.auteur) ~= expediteur then return end
         Marchands.enAttente[cle] = nil
+        Marchands.arbitres[cle] = nil
         local facon = Marchands.choix[cle] or LCM.Prix.Choisir(LCM.Prix.DeLOffre(offre))
         Marchands.choix[cle] = nil
         if tonumber(donnees.r) then offre.restant = math.max(0, math.floor(tonumber(donnees.r))) end

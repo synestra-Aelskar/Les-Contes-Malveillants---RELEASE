@@ -142,9 +142,15 @@ local function Construire()
         curseur:Regler(100, depart)
         curseur.lire = lire
         valeur:SetText(lire(depart))
+        -- Les deux bords, et le retour a la ligne : ancree a gauche seulement,
+        -- une aide longue sortait de la fenetre (21 octobre 2026).
         local note = UI.Texte(parent, aide, UI.C.discret)
         UI.Police(note, 10)
         note:SetPoint("TOPLEFT", parent, "TOPLEFT", 4, -dy - 36)
+        note:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -4, -dy - 36)
+        note:SetJustifyH("LEFT")
+        note:SetWordWrap(true)
+        curseur.note = note
         return curseur, valeur
     end
 
@@ -159,11 +165,19 @@ local function Construire()
     -- Le bandeau de personnage n'est pas une fenetre qu'on ouvre : il reste a
     -- l'ecran, contre les cadres de groupe du jeu. Sa taille se regle a part
     -- (11 octobre 2026) — il grandit sans que tout grandisse.
+    -- Un pas de 74 : l'aide d'une barre peut tenir sur deux lignes.
     app.echelleHud, app.echelleHudValeur = Barre(app.general, "Taille du bandeau de personnage",
         "Les points de vie, la fatigue et les zones, en haut à gauche. Indépendant de la taille de l'interface.",
-        128, UI.EchelleHUD(),
+        138, UI.EchelleHUD(),
         function(v) return string.format("%d %%", math.floor((0.5 + v / 100) * 100)) end,
         function(v) UI.EchelleHUD(v) end, true)
+    -- Le bandeau d'initiative, en haut de l'ecran pendant un combat : lui
+    -- aussi a sa taille a part (21 octobre 2026).
+    app.echelleCombat, app.echelleCombatValeur = Barre(app.general, "Taille du bandeau d'initiative",
+        "L'ordre des combattants et « Fin de tour », en haut de l'écran pendant un combat.",
+        212, UI.EchelleCombat(),
+        function(v) return string.format("%d %%", math.floor((0.5 + v / 100) * 100)) end,
+        function(v) UI.EchelleCombat(v) end, true)
 
     app.theme = CreateFrame("Frame", nil, app)
     app.theme:SetPoint("TOPLEFT", app, "TOPLEFT", 0, -32)
@@ -227,6 +241,9 @@ local function Construire()
         local echelleHud = UI.EchelleHUD()
         app.echelleHud:Poser(echelleHud)
         app.echelleHudValeur:SetText(app.echelleHud.lire(echelleHud))
+        local echelleCombat = UI.EchelleCombat()
+        app.echelleCombat:Poser(echelleCombat)
+        app.echelleCombatValeur:SetText(app.echelleCombat.lire(echelleCombat))
         local echelle = UI.Echelle()
         app.opacite:Poser(opacite)
         app.echelle:Poser(echelle)

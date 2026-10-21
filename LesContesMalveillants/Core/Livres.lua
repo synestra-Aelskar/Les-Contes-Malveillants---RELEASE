@@ -1,6 +1,17 @@
 -- Livres lisibles : definitions partagees, sans statistiques ni forge.
 local _, LCM = ...
 
+-- Catalogue livre avec l'addon ; seul l'identifiant choisi voyage avec le texte.
+local MODELES = {
+    { id = "chronique", label = "Chronique · cuir brun" },
+    { id = "astral", label = "Atlas · cuir bleu" },
+    { id = "herbier", label = "Herbier · cuir vert" },
+    { id = "necronicon", label = "Necronicon · cuir noir et or" },
+}
+local function Modele(id)
+    for _, modele in ipairs(MODELES) do if modele.id == id then return modele end end
+end
+
 local Livres = LCM.Registre({
     nom = "livre", prefixe = "Livres",
     construire = function(definition, livre, Erreur)
@@ -9,6 +20,8 @@ local Livres = LCM.Registre({
             Erreur(livre.id .. " : format de livre inconnu")
         end
         livre.format = format
+        livre.modele = tostring(definition.modele or "necronicon")
+        if not Modele(livre.modele) then Erreur(livre.id .. " : modèle de livre inconnu") end
         livre.forge, livre.etat = nil, nil
         livre.pileMax = livre.pileMax or 1
         local style = type(definition.style) == "table" and definition.style or {}
@@ -55,6 +68,9 @@ local Livres = LCM.Registre({
     end,
 })
 LCM.Livres = Livres
+Livres.Modeles = MODELES
+Livres.MODELE_DEFAUT = "necronicon"
+Livres.Modele = Modele
 
 function Livres.Remplacer(definition)
     local neuf = Livres.Construire(definition)

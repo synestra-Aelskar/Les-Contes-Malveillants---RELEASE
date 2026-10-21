@@ -2625,6 +2625,122 @@ function Glisser.Cible(frame, accepte, depose)
     return frame
 end
 
+-- ===== Liste deroulante ======================================================
+-- Un vrai menu deroulant : le bouton montre la valeur et une fleche, la liste
+-- s'ouvre juste dessous, a sa largeur, la valeur en cours marquee. Elle se
+-- ferme au choix, a Echap ou au premier clic ailleurs (un voile, comme le menu
+-- contextuel). Les boutons qui tournaient d'une valeur a la suivante a chaque
+-- clic obligeaient a tout parcourir pour atteindre la derniere (le MJ,
+-- 21 octobre 2026).
+--
+--   local d = UI.Deroulant(parent, 260, 22, function()
+--       return { { id = "a", label = "A" }, { id = "b", label = "B" } }
+--   end, function(id) ... end)
+--   d:Definir("a")
+--
+-- Une seule liste pour tous les deroulants : on n'en ouvre jamais deux a la fois.
+
+local LIGNE_DEROULANT = 22
+
+local function ListeDeroulante()
+    if UI.listeDeroulante then return UI.listeDeroulante end
+    local l = CreateFrame("Frame", "LCM_ListeDeroulante", UIParent)
+    l:SetFrameStrata("FULLSCREEN_DIALOG")
+    l:SetClampedToScreen(true)
+    l:EnableMouse(true)
+    l.voile = CreateFrame("Frame", nil, UIParent)
+    l.voile:SetFrameStrata("FULLSCREEN_DIALOG")
+    l.voile:SetAllPoints(UIParent)
+    l.voile:EnableMouse(true)
+    l.voile:SetScript("OnMouseDown", function() l:Hide() end)
+    l.voile:Hide()
+    l.fond = UI.Aplat(l, { 0.05, 0.05, 0.05, 0.98 })
+    l.fond:SetAllPoints(l)
+    UI.BordureFine(l, 0.45)
+    l.lignes = {}
+    l:SetScript("OnShow", function(self)
+        self.voile:Show()
+        self.voile:SetFrameLevel(math.max(1, self:GetFrameLevel() - 1))
+    end)
+    l:SetScript("OnHide", function(self) self.voile:Hide() self.ouvertPar = nil end)
+    if UISpecialFrames then UISpecialFrames[#UISpecialFrames + 1] = l:GetName() end
+    l:Hide()
+    UI.listeDeroulante = l
+    return l
+end
+
+function UI.Deroulant(parent, largeur, hauteur, fournir, choisir)
+    local d
+    d = UI.Bouton(parent, "", largeur, hauteur, function()
+        local l = ListeDeroulante()
+        if l:IsShown() and l.ouvertPar == d then l:Hide() return end
+        d:Ouvrir()
+    end)
+    d.label:ClearAllPoints()
+    d.label:SetPoint("LEFT", d, "LEFT", 10, 0)
+    d.label:SetPoint("RIGHT", d, "RIGHT", -26, 0)
+    d.label:SetJustifyH("LEFT")
+    d.label:SetWordWrap(false)
+    d.fleche = d:CreateTexture(nil, "OVERLAY")
+    d.fleche:SetTexture("Interface\\Buttons\\Arrow-Down-Up")
+    d.fleche:SetSize(14, 14)
+    d.fleche:SetPoint("RIGHT", d, "RIGHT", -8, -3)
+
+    -- `libelle` : ce que le bouton affiche, quand il ne se deduit pas de la
+    -- liste (une valeur qui n'y figure pas encore).
+    function d:Definir(valeur, libelle)
+        self.valeur = valeur
+        if not libelle then
+            for _, option in ipairs(fournir() or {}) do
+                if option.id == valeur then libelle = option.label break end
+            end
+        end
+        self.label:SetText(libelle or tostring(valeur or ""))
+    end
+
+    function d:Ouvrir()
+        local l = ListeDeroulante()
+        local options = fournir() or {}
+        for index, option in ipairs(options) do
+            local b = l.lignes[index]
+            if not b then
+                -- La valeur est portee par la ligne : une fermeture qui
+                -- capturerait l'index de boucle renverrait toujours la derniere.
+                b = UI.Bouton(l, "", 10, LIGNE_DEROULANT - 2, function(ligne)
+                    local proprietaire = l.ouvertPar
+                    l:Hide()
+                    if proprietaire then
+                        proprietaire:Definir(ligne.choix, ligne.label:GetText())
+                        if proprietaire.choisir then proprietaire.choisir(ligne.choix) end
+                    end
+                end)
+                b.label:ClearAllPoints()
+                b.label:SetPoint("LEFT", b, "LEFT", 10, 0)
+                b.label:SetPoint("RIGHT", b, "RIGHT", -8, 0)
+                b.label:SetJustifyH("LEFT")
+                l.lignes[index] = b
+            end
+            b.choix = option.id
+            b.label:SetText(option.label or tostring(option.id))
+            b:ClearAllPoints()
+            b:SetPoint("TOPLEFT", l, "TOPLEFT", 2, -2 - (index - 1) * LIGNE_DEROULANT)
+            b:SetPoint("TOPRIGHT", l, "TOPRIGHT", -2, -2 - (index - 1) * LIGNE_DEROULANT)
+            b:Selectionner(option.id == self.valeur)
+            b:Show()
+        end
+        for index = #options + 1, #l.lignes do l.lignes[index]:Hide() end
+        l:SetSize(self:GetWidth(), 4 + math.max(1, #options) * LIGNE_DEROULANT)
+        l:ClearAllPoints()
+        l:SetPoint("TOPLEFT", self, "BOTTOMLEFT", 0, -2)
+        l.ouvertPar = self
+        l:Show()
+        l:Raise()
+    end
+
+    d.choisir = choisir
+    return d
+end
+
 -- ===== Menu contextuel (clic droit) ========================================
 -- Repris de Necronicon (Inventory.lua : GetEntryContextMenu) : 150 de large,
 -- lignes de 24 tous les 26, un sous-menu a droite pour « Deplacer > », et un
