@@ -307,9 +307,15 @@ local function Construire()
         if not ok and raison then LCM.Alerte(raison) end
     end)
 
-    f.avis = UI.Texte(f, "C'est votre tour", { 0.94, 0.83, 0.60 }, "GameFontNormalSmall")
+    -- En grand, et detache du fond : en petite police, une fois le bandeau
+    -- ramene a 70 %, on ne le lisait plus sur un decor clair (21 octobre 2026).
+    f.avis = UI.Texte(f, "C'est votre tour", { 0.94, 0.83, 0.60 })
+    UI.Police(f.avis, 26, "OUTLINE")
+    f.avis:SetShadowColor(0, 0, 0, 1)
+    f.avis:SetShadowOffset(2, -2)
     f.avis:SetJustifyH("CENTER")
-    Placer(f.avis, f, 430 + EXTRA / 2, 201, 240, 18)
+    -- Assez bas pour ne pas toucher l'ornement aux lunes sous le bandeau.
+    Placer(f.avis, f, 330 + EXTRA / 2, 212, 440, 36)
 
     -- Les ressources personnelles restent sous les extremites du rail afin de
     -- ne jamais concurrencer l'ordre d'initiative ni l'avis central.
