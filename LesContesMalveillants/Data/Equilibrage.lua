@@ -887,6 +887,20 @@ E.campement = {
     pasRapide = 60,
 }
 
+-- ===== La lanterne ========================================================
+-- Repris du module Lanterne d'OmegaSurvive (Core/Lanternes.lua, 22 octobre
+-- 2026). La charge s'ecoule a `multiplicateur de la lanterne x variateur`.
+--   * `variateurs` : les rythmes que le joueur choisit (« Variateur de
+--     temps » de Survive, RATE_OPTIONS), 1 etant le rythme de la lanterne ;
+--   * `attenteConsommation` : combien de secondes on attend que le serveur
+--     retire un cristal consommable avant d'annuler la recharge (0,6 dans
+--     Survive).
+E.lanterne = {
+    variateurs = { 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5 },
+    variateurDefaut = 1,
+    attenteConsommation = 0.6,
+}
+
 -- ===== Lecture d'un bareme =================================================
 -- Budget mecanique independant de la forge classique. Pas de multiplicateur
 -- pour les armes a deux emplacements, ni de remboursement de malus en IC.

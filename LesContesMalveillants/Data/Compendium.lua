@@ -386,6 +386,57 @@ local categorieOutils = C.Get("outils")
 categorieOutils.blocExtra = bonusMetiers
 categorieOutils.dossiers = dossiersOutils
 
+-- Ajout de l'addon (22 octobre 2026) : la lanterne et ses cristaux, repris
+-- du module Lanterne d'OmegaSurvive (Core/Lanternes.lua). Absents du
+-- template. Les regles d'aura et les phrases du MJ se saisissent en texte, une
+-- par ligne, en attendant l'interface plus profonde annoncee :
+--   auras      « condition : commande » ou « condition : commande : phrase »,
+--              condition parmi allumer, eteindre, vide, pause, reprise ; un
+--              numero seul devient `.aura N` (posee) ou `.unaura N` (retiree) ;
+--   phrases    une par ligne ; « phrase : eteindre » met en pause ET eteint ;
+--   canaux     alerte, raid, groupe (ou le MJ parle).
+local function ChampsLumiere()
+    return {
+        { cle = "verifInventaire", label = "Vérifier l'inventaire du jeu", type = "case", emplacement = "meta", carte = false },
+        { cle = "itemId", label = "ID de l'objet requis", type = "nombre", emplacement = "meta", min = 1, carte = false },
+        { cle = "aurasPosees", label = "Auras posées (condition : commande)", type = "texte_long", emplacement = "body", carte = false },
+        { cle = "aurasRetirees", label = "Auras retirées (condition : commande)", type = "texte_long", emplacement = "body", carte = false },
+        { cle = "canaux", label = "Canaux du MJ (alerte, raid, groupe)", type = "texte", emplacement = "meta", carte = false },
+        { cle = "phrasesPause", label = "Phrases de pause (une par ligne)", type = "texte_long", emplacement = "body", carte = false },
+        { cle = "phrasesReprise", label = "Phrases de reprise (une par ligne)", type = "texte_long", emplacement = "body", carte = false },
+    }
+end
+
+local function Lumiere(def, propres)
+    def.type = "generic"
+    def.dossiers = { "Général" }
+    def.champs = { Icone(), Description(true) }
+    for _, champ in ipairs(propres) do def.champs[#def.champs + 1] = champ end
+    for _, champ in ipairs(ChampsLumiere()) do def.champs[#def.champs + 1] = champ end
+    def.colonnesTableau = def.colonnesTableau or { "description" }
+    return C.Categorie(def)
+end
+
+Lumiere({
+    id = "lanternes", label = "Lanternes",
+    icone = "Interface\\ICONS\\inv_misc_trinket6oih_lanterna2",
+    registre = "Lanternes", famille = "lanternes",
+    -- Le multiplicateur de Survive valait 1 par defaut : une lanterne neuve
+    -- consomme au rythme de son cristal.
+    defaut = { multiplicateur = 1 },
+}, {
+    { cle = "multiplicateur", label = "Multiplicateur de consommation", type = "nombre", emplacement = "meta", min = 0 },
+})
+
+Lumiere({
+    id = "cristaux", label = "Cristaux",
+    icone = "Interface\\ICONS\\inv_enchanting_80_veiledcrystal",
+    registre = "Cristaux", famille = "cristaux",
+}, {
+    { cle = "duree", label = "Durée (minutes)", type = "nombre", emplacement = "meta", min = 0 },
+    { cle = "consommable", label = "Consommé à la recharge", type = "case", emplacement = "meta" },
+})
+
 -- Ajout de l'addon (10 octobre 2026) : le campement (Core/Campement.lua).
 -- Absent du template ; les colonnes viennent de la feuille de calcul du MJ.
 -- Le bloc de statistiques est celui du campement, en pourcentage entier, et

@@ -61,6 +61,11 @@ Menu.STRUCTURE = {
           -- Ajout a la structure du template : chaque joueur voit sa bourse.
           { id = "bourse",      label = "Bourse",      icone = RADIAL .. "fenetres-bourse.tga" },
           { id = "metiers",     label = "Métiers",     icone = RADIAL .. "fenetres-metiers.tga" },
+          -- Ajout de l'addon (22 octobre 2026) : ce qu'on tient en main. Pour
+          -- l'instant la lanterne et son cristal (UI/Lanterne.lua) ; le nom
+          -- est provisoire. L'id n'est pas « outils », deja pris par le
+          -- dossier du premier niveau.
+          { id = "outils_portes", label = "Outils",    icone = RADIAL .. "fenetres-outils.tga" },
       } },
     { id = "grimoires", label = "Grimoires", icone = RADIAL .. "fenetres-grimoires.tga" },
     { id = "systeme", label = "Système", icone = RADIAL .. "fenetres-compendium.tga",

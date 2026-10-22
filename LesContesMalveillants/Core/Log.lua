@@ -43,6 +43,45 @@ function LCM.Ok(text) Emit("ok", text) end
 function LCM.Alerte(text) Emit("alerte", text) end
 function LCM.Erreur(text) Emit("erreur", text) end
 
+-- Le suivi de garde est un journal local, pas une annonce de jeu ni un canal
+-- reseau. Ne pas envoyer ces informations techniques a tout le groupe.
+local NOM_JOURNAL = "LesContesMalveillants"
+local attente, pret = {}, false
+local function FenetreJournal()
+    for i = 1, (NUM_CHAT_WINDOWS or 10) do
+        local frame = _G["ChatFrame" .. i]
+        if frame and GetChatWindowInfo and GetChatWindowInfo(i) == NOM_JOURNAL then return frame end
+    end
+    if not pret or (InCombatLockdown and InCombatLockdown()) or not FCF_OpenNewWindow then return nil end
+    local selection = SELECTED_CHAT_FRAME
+    local frame = FCF_OpenNewWindow(NOM_JOURNAL)
+    if not frame then return nil end
+    -- Un nouvel onglet herite parfois du General : seul celui que nous venons
+    -- de creer est nettoye. Les preferences d'un onglet existant sont gardees.
+    if ChatFrame_RemoveAllMessageGroups then ChatFrame_RemoveAllMessageGroups(frame) end
+    if ChatFrame_RemoveAllChannels then ChatFrame_RemoveAllChannels(frame) end
+    if selection and FCF_SelectDockFrame then FCF_SelectDockFrame(selection) end
+    return frame
+end
+local function ViderJournal()
+    if #attente == 0 then return end
+    local frame = FenetreJournal()
+    if not frame then return end -- Aucun repli vers le General en cas de limite d'onglets.
+    for _, ligne in ipairs(attente) do frame:AddMessage(ligne) end
+    attente = {}
+end
+function LCM.Journal(text)
+    attente[#attente + 1] = PREFIX .. COLORS.info .. Phrase(tostring(text)) .. "|r"
+    ViderJournal()
+end
+local journalEvenements = CreateFrame("Frame")
+journalEvenements:RegisterEvent("PLAYER_LOGIN")
+journalEvenements:RegisterEvent("PLAYER_REGEN_ENABLED")
+journalEvenements:SetScript("OnEvent", function(_, evenement)
+    if evenement == "PLAYER_LOGIN" then pret = true end
+    ViderJournal()
+end)
+
 -- Appeler un rappel (onChange, onReponse, un ecouteur...) sans qu'il casse
 -- l'appelant, mais SANS LE TAIRE. Une vingtaine de rappels passaient par un
 -- `pcall(fn)` nu : quand l'un tombait, la fenetre ne se mettait plus a jour,

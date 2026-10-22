@@ -2863,7 +2863,10 @@ function UI.Demande()
     d.valider:SetPoint("BOTTOMRIGHT", d, "BOTTOMRIGHT", -12, 12)
     d.saisie:SetScript("OnEnterPressed", function() d.valider:Click() end)
     -- `bouton` : le verbe du geste (« Scinder »), « Valider » sinon.
-    function d:Demander(titre, valeur, onValider, bouton)
+    -- `longueur` : 15 caracteres suffisent a un montant, pas a une phrase
+    -- (les emotes de la lanterne). Remis a chaque demande.
+    function d:Demander(titre, valeur, onValider, bouton, longueur)
+        self.saisie:SetMaxLetters(longueur or 15)
         self.valider.label:SetText(bouton or "Valider")
         self.titre:SetText(titre)
         self.saisie:SetText(tostring(valeur or ""))

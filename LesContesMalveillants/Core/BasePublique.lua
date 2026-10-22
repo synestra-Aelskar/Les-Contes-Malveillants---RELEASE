@@ -36,6 +36,7 @@ local REGISTRES = {
     listes = "Listes", objets = "Objets", livres = "Livres", races = "Races",
     ressources = "Ressources", sacs = "Sacs", tentes = "Tentes",
     traits = "Traits", resolutions = "Resolutions",
+    lanternes = "Lanternes", cristaux = "Cristaux",
 }
 Base.REGISTRES = REGISTRES
 

@@ -280,6 +280,7 @@ local FAMILLES = {
     connaissances = "Connaissances", resolutions = "Resolutions",
     calculateurs = "Calculateurs", pnj = "PNJ",
     tentes = "Tentes", accessoires_camping = "AccessoiresCamping",
+    lanternes = "Lanternes", cristaux = "Cristaux",
     -- Les jeux d'equilibrage de la forge : du contenu, sans categorie a eux.
     jeux = "Forge",
 }
