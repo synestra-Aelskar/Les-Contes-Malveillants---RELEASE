@@ -31,11 +31,112 @@ local function Phrase(text)
     return (CAPITALES[premier] or premier:upper()) .. suite
 end
 
+-- ===== Le journal ecrit =====================================================
+-- Une trace qui survit a la session (23 octobre 2026) : une erreur affichee
+-- au chat disparaissait avec lui, et on ne pouvait plus dire apres coup ce
+-- qui s'etait passe — ni chez le MJ, ni chez un joueur qui ne repondait pas.
+--
+-- Il a SA PROPRE variable de sauvegarde, `LCM_Journal`, et pas une place dans
+-- LCM_DB : ce n'est ni un reglage ni du contenu, et on doit pouvoir l'ouvrir,
+-- l'envoyer ou l'effacer sans toucher au reste. WoW l'ecrit dans
+-- WTF\Account\<compte>\SavedVariables\LesContesMalveillants.lua a chaque
+-- /reload et a la deconnexion.
+--
+-- Ce qui y va : les erreurs, les alertes, les erreurs Lua venues de l'addon,
+-- les traces (`LCM.Debug`, ecrites meme quand /lcm debug est coupe, et
+-- `LCM.Trace`, qui n'ecrit QUE la), et le journal de garde. Pas les messages
+-- d'information ordinaires : ils noieraient ce qu'on cherche.
+--
+-- Une ligne par evenement, lisible telle quelle dans le fichier :
+--   « 2026-10-23 01:30:12  erreur  Blud'Sh'Idah  message »
+-- La meme ligne repetee d'affilee ne se recopie pas : elle compte (« x12 »).
+-- Les plus anciennes partent au-dela de JOURNAL_MAX.
+
+local JOURNAL_MAX = 3000
+local journalLignes          -- la table sauvegardee, une fois la session chargee
+local avantChargement = {}   -- ce qui arrive avant PLAYER_LOGIN
+local derniere, repetitions  -- la derniere ligne ecrite, pour les repetitions
+
+local function SansCouleur(texte)
+    return (tostring(texte or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+        :gsub("|T.-|t", ""):gsub("\r?\n", " / "))
+end
+
+local function Horodatage()
+    local d = date or (os and os.date)
+    return d and d("%Y-%m-%d %H:%M:%S") or "?"
+end
+
+local function QuiJe()
+    local nom = UnitName and UnitName("player")
+    return nom and tostring(nom) or "?"
+end
+
+local function Ecrire(ligne)
+    if not journalLignes then
+        avantChargement[#avantChargement + 1] = ligne
+        return
+    end
+    journalLignes[#journalLignes + 1] = ligne
+    while #journalLignes > JOURNAL_MAX do table.remove(journalLignes, 1) end
+end
+
+local function Noter(niveau, texte)
+    local message = SansCouleur(texte)
+    local cle = niveau .. "\1" .. message
+    if cle == derniere and journalLignes and #journalLignes > 0 then
+        -- La meme chose encore : on compte au lieu de recopier.
+        repetitions = repetitions + 1
+        journalLignes[#journalLignes] = journalLignes[#journalLignes]:gsub("  x%d+$", "")
+            .. "  x" .. repetitions
+        return
+    end
+    derniere, repetitions = cle, 1
+    Ecrire(string.format("%s  %s  %s  %s", Horodatage(), niveau, QuiJe(), message))
+end
+LCM.NoterJournal = Noter
+
+-- Une trace qui ne va QUE dans le journal ecrit : ce qui aide a comprendre
+-- une panne sans encombrer le chat (une fiche demandee, recue, refusee).
+function LCM.Trace(text) Noter("trace", text) end
+
+-- Le journal tel qu'il est, pour le banc et pour qui voudrait l'afficher.
+function LCM.LignesJournal() return journalLignes or avantChargement end
+
+local function ChargerJournal()
+    if journalLignes then return end
+    _G.LCM_Journal = type(_G.LCM_Journal) == "table" and _G.LCM_Journal or {}
+    local j = _G.LCM_Journal
+    j.lignes = type(j.lignes) == "table" and j.lignes or {}
+    journalLignes = j.lignes
+    for _, ligne in ipairs(avantChargement) do Ecrire(ligne) end
+    avantChargement = {}
+    Noter("session", "début de session (" .. tostring(LCM.version or "?") .. ")")
+end
+
+-- Les erreurs Lua de l'addon : elles ne passent ni par LCM.Erreur ni par
+-- Proteger, et ce sont les pires. On s'intercale devant le gestionnaire en
+-- place (celui de WoW, ou celui d'un BugGrabber) sans le remplacer : il voit
+-- toujours tout, nous ne gardons que ce qui vient de nos fichiers.
+local function SurveillerErreursLua()
+    if not (geterrorhandler and seterrorhandler) then return end
+    local precedent = geterrorhandler()
+    seterrorhandler(function(message, ...)
+        local texte = tostring(message or "")
+        if texte:find("LesContesMalveillants", 1, true) then
+            local pile = debugstack and debugstack(3, 6, 0) or ""
+            Noter("lua", texte .. (pile ~= "" and ("  |  " .. pile) or ""))
+        end
+        if precedent then return precedent(message, ...) end
+    end)
+end
+
 local function Emit(kind, text)
     local frame = DEFAULT_CHAT_FRAME
     local color = COLORS[kind] or COLORS.info
     local line = PREFIX .. color .. Phrase(tostring(text)) .. "|r"
     if frame then frame:AddMessage(line) else print(line) end
+    if kind == "erreur" or kind == "alerte" then Noter(kind, Phrase(tostring(text))) end
 end
 
 function LCM.Info(text) Emit("info", text) end
@@ -71,6 +172,7 @@ local function ViderJournal()
     attente = {}
 end
 function LCM.Journal(text)
+    Noter("garde", text)
     attente[#attente + 1] = PREFIX .. COLORS.info .. Phrase(tostring(text)) .. "|r"
     ViderJournal()
 end
@@ -78,7 +180,11 @@ local journalEvenements = CreateFrame("Frame")
 journalEvenements:RegisterEvent("PLAYER_LOGIN")
 journalEvenements:RegisterEvent("PLAYER_REGEN_ENABLED")
 journalEvenements:SetScript("OnEvent", function(_, evenement)
-    if evenement == "PLAYER_LOGIN" then pret = true end
+    if evenement == "PLAYER_LOGIN" then
+        pret = true
+        ChargerJournal()
+        SurveillerErreursLua()
+    end
     ViderJournal()
 end)
 
@@ -103,7 +209,10 @@ function LCM.Proteger(contexte, fn, ...)
 end
 
 -- Trace de developpement : muette tant que `/lcm debug` ne l'a pas activee.
+-- Ecrite au journal dans tous les cas : c'est quand on n'y pensait pas qu'on
+-- en a besoin.
 function LCM.Debug(text)
+    Noter("trace", text)
     if not (LCM.db and LCM.db.settings and LCM.db.settings.debug) then return end
     Emit("info", "|cff888888[debug]|r " .. tostring(text))
 end

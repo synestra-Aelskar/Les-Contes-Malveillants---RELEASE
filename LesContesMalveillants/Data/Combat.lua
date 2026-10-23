@@ -11,8 +11,24 @@
 local _, LCM = ...
 local Schema = LCM.Schema
 
+local SUJET = {
+    attaque = "une attaque", defense = "une défense", bouclier = "un bouclier",
+    soin = "un soin", buff = "un effet bénéfique", perce_armure = "une percée d'armure",
+    brise_armure = "une brisure d'armure", provocation = "une provocation",
+    intimidation = "une intimidation", saignement = "un saignement",
+    empoisonnement = "un empoisonnement", debuff = "un effet néfaste",
+}
+local STAT = {
+    force = "Force", mystique = "Mystique", perception = "Perception",
+    constitution = "Constitution", esprit = "Esprit", duree = "Durée", puissance = "Puissance",
+}
+
 local function stat(id, label)
-    return { id = id, kind = "stat", label = label, default = 0 }
+    local partie, action = id:match("^([^_]+)_(.+)$")
+    if id == "defense_constitution" then partie, action = "constitution", "defense" end
+    local note = string.format("Modificateur de %s pour %s. Il vient des effets portés, pas des points investis ici.",
+        STAT[partie] or label, SUJET[action] or action)
+    return { id = id, kind = "stat", label = label, default = 0, note = note }
 end
 
 Schema.AddTab({

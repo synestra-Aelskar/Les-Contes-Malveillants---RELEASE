@@ -20,7 +20,8 @@ local champs = {}
 for _, mecanique in ipairs(E.mecaniques) do
     champs[#champs + 1] = {
         id = "meca_" .. mecanique.id, kind = "stat", label = mecanique.label, default = 0,
-        note = "Points investis dans cette mécanique.",
+        note = LCM.Creation.Note("mecaniques", "meca_" .. mecanique.id)
+            or "Points investis dans cette mécanique.",
     }
 end
 

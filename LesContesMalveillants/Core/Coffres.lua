@@ -38,11 +38,11 @@ function Coffres.Places(ref, quantite)
 end
 
 local ACCUEILLIS = { objets = true, livres = true, ressources = true, devises = true,
-                     sacs = true, accessoires_camping = true }
+                     sacs = true, accessoires_camping = true, lanternes = true, cristaux = true }
 function Coffres.Accepte(ref)
     local famille, entree = tostring(ref or ""):match("^([%w_]+)/(.+)$")
     if not ACCUEILLIS[famille or ""] then
-        return false, "le coffre accepte des objets, des livres, des ressources, des sacs ou des devises."
+        return false, "le coffre accepte des objets, des livres, des ressources, des sacs, des lanternes, des cristaux ou des devises."
     end
     if famille == "devises" and not (LCM.Bourse and LCM.Bourse.EstMateriel(entree)) then
         return false, "cette monnaie ne se transporte pas : elle reste dans la bourse."

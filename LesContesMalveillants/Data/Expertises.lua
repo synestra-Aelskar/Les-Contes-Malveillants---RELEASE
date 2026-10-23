@@ -8,9 +8,38 @@
 local _, LCM = ...
 local Schema = LCM.Schema
 
+local AIDE = {
+    vue = "Repérer et distinguer ce qui est visible, même à distance ou dans une scène chargée.",
+    odorat_gout = "Reconnaître une odeur ou une saveur et remarquer ce qu'elle révèle.",
+    ouie = "Percevoir et identifier les sons autour de soi.",
+    toucher = "Reconnaître une forme, une matière ou un détail par le contact.",
+    investigation = "Examiner des indices et relier les détails d'une scène.",
+    elementaire = "Observer et interpréter les phénomènes élémentaires.",
+    cosmique = "Observer et interpréter les phénomènes cosmiques.",
+    pistage = "Suivre des traces et reconstituer un passage.",
+    communication = "Faire passer un message et comprendre celui d'autrui.",
+    puissance = "Déployer sa force dans un effort athlétique.",
+    projection = "Projeter une cible ou un objet par un mouvement du corps.",
+    prise = "Saisir, maintenir ou dégager une prise.",
+    equilibre = "Garder son appui sur une surface instable ou étroite.",
+    acrobaties = "Exécuter un mouvement du corps qui demande agilité et coordination.",
+    escalade = "Grimper et conserver ses prises pendant l'ascension.",
+    resistance = "Tenir face à un effort ou une contrainte physique.",
+    endurance = "Soutenir un effort dans la durée.",
+    course = "Se déplacer rapidement à pied.",
+    nage = "Se déplacer et agir dans l'eau.",
+    discretion = "Agir ou se déplacer sans attirer l'attention.",
+    deguisement = "Modifier son apparence pour passer pour quelqu'un d'autre.",
+    vol_a_la_tire = "Subtiliser un objet porté par une autre personne.",
+    crochetage = "Manipuler une serrure ou un mécanisme de fermeture.",
+    escamotage = "Dissimuler ou déplacer un petit objet à la vue d'autrui.",
+    evasion = "Se libérer d'une entrave ou s'échapper d'une prise.",
+    sabotage = "Altérer discrètement un objet ou un mécanisme.",
+}
+
 local function expertise(id, label)
     return { id = id, kind = "roll", label = label, default = 0, dice = { min = 0, max = 15 },
-        jetExpertise = true }
+        jetExpertise = true, note = AIDE[id] }
 end
 
 Schema.AddTab({

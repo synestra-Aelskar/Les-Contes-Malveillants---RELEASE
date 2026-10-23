@@ -145,6 +145,8 @@ end)
 -- ===== Regain des ressources ==============================================
 -- Le panneau MJ choisit plusieurs personnages, les ressources concernees et
 -- une seule operation : remplir, vider, ou rendre un nombre precis de points.
+-- Le nombre precis peut etre NEGATIF (le MJ, 23 octobre 2026) : on retire
+-- des PA comme on en donne. La jauge reste bornee entre 0 et son maximum.
 -- Le client joueur ne possede aucune commande d'envoi pour ce protocole.
 
 local Regain = {}
@@ -198,7 +200,7 @@ function Regain.Appliquer(entity, selection, mode, montant)
     mode = tostring(mode or "")
     montant = math.floor(tonumber(montant) or 0)
     if mode ~= "max" and mode ~= "min" and mode ~= "exact" then return nil, "choisis Max, Min ou Chiffre précis." end
-    if mode == "exact" and montant <= 0 then return nil, "indique un chiffre positif." end
+    if mode == "exact" and montant == 0 then return nil, "indique un chiffre, positif ou négatif." end
 
     local resultat = { mode = mode, ressources = {} }
     for _, def in ipairs(RESSOURCES) do
@@ -208,12 +210,14 @@ function Regain.Appliquer(entity, selection, mode, montant)
                 if def.partie then
                     for _, partie in ipairs(jauge.parties) do
                         local cible = mode == "max" and partie.max
-                            or (mode == "min" and 0 or math.min(partie.max, partie.current + montant))
+                            or (mode == "min" and 0
+                                or math.max(0, math.min(partie.max, partie.current + montant)))
                         LCM.Body.SetCurrent(entity, partie.id, cible)
                     end
                 else
                     local cible = mode == "max" and jauge.max
-                        or (mode == "min" and 0 or math.min(jauge.max, jauge.current + montant))
+                        or (mode == "min" and 0
+                            or math.max(0, math.min(jauge.max, jauge.current + montant)))
                     LCM.Entities.SetGauge(entity, def.cle, cible)
                 end
                 local apres = Regain.Etat(entity, def.cle)
@@ -233,10 +237,18 @@ function Regain.Texte(resultat)
     if type(resultat) ~= "table" then return "" end
     local morceaux = {}
     if resultat.mode == "exact" then
+        -- Ce qui monte et ce qui descend se disent a part : « Vous gagnez -3
+        -- PA » ne se lit pas.
+        local gagnes, perdus = {}, {}
         for _, r in ipairs(resultat.ressources or {}) do
-            morceaux[#morceaux + 1] = string.format("%d %s", tonumber(r.gain) or 0, r.label)
+            local gain = tonumber(r.gain) or 0
+            if gain < 0 then perdus[#perdus + 1] = string.format("%d %s", -gain, r.label)
+            else gagnes[#gagnes + 1] = string.format("%d %s", gain, r.label) end
         end
-        return "Vous gagnez " .. table.concat(morceaux, " - ") .. "."
+        local phrases = {}
+        if #gagnes > 0 then phrases[#phrases + 1] = "Vous gagnez " .. table.concat(gagnes, " - ") .. "." end
+        if #perdus > 0 then phrases[#phrases + 1] = "Vous perdez " .. table.concat(perdus, " - ") .. "." end
+        return table.concat(phrases, " ")
     end
     for _, r in ipairs(resultat.ressources or {}) do morceaux[#morceaux + 1] = r.phrase end
     if resultat.mode == "max" then
@@ -258,7 +270,7 @@ function Regain.Envoyer(joueur, selection, mode, montant)
     end
     if nombre == 0 then return false, "coche au moins une ressource." end
     if mode ~= "max" and mode ~= "min" and mode ~= "exact" then return false, "choisis Max, Min ou Chiffre précis." end
-    if mode == "exact" and paquet.m <= 0 then return false, "indique un chiffre positif." end
+    if mode == "exact" and paquet.m == 0 then return false, "indique un chiffre, positif ou négatif." end
     LCM.Reseau.Envoyer(SUJET_REGAIN, paquet, "WHISPER", joueur)
     return true
 end

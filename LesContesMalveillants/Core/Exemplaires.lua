@@ -5,6 +5,11 @@
 -- (ce qu'il a perdu d'etat) et `viesPerdues`, absents tant qu'il est neuf.
 -- Ils etaient sur le personnage, au nom du modele : six kits de crochetage
 -- partageaient un seul compteur, et un kit detruit le leguait au suivant.
+--
+-- Les CRISTAUX ont aussi leurs exemplaires (23 octobre 2026) : un cristal
+-- entame porte `charge`, les secondes d'eclairage qui lui restent
+-- (Core/Lanternes.lua). Absente, il est plein. Elle le suit comme l'usure suit
+-- une arme : d'un sac a l'autre, dans un coffre, dans un echange.
 local _, LCM = ...
 local X = {}
 LCM.Exemplaires = X
@@ -22,7 +27,7 @@ local function Donnees(v, vus, profondeur)
 end
 
 function X.Concerne(ref)
-    return type(ref) == "string" and ref:match("^objets/.+") ~= nil
+    return type(ref) == "string" and (ref:match("^objets/.+") ~= nil or ref:match("^cristaux/.+") ~= nil)
 end
 
 function X.Nouveau(ref)
@@ -31,6 +36,9 @@ function X.Nouveau(ref)
     local auteur = UnitGUID("player") or LCM.PlayerId()
     assert(auteur, "identité du porteur indisponible")
     local id = tostring(auteur) .. ":" .. tostring(time()) .. ":" .. db.sequenceExemplaires
+    -- Un cristal n'a pas de proprietes IC : seulement son identite, et sa
+    -- charge quand il est entame.
+    if ref:match("^cristaux/") then return { version = 1, id = id, ref = ref, usages = {} } end
     return LCM.IC.Charges.Nouveau(id, ref)
 end
 
@@ -56,6 +64,10 @@ function X.Lire(ref, quantite, liste)
             if n ~= nil and (type(n) ~= "number" or n < 1 or n ~= math.floor(n)) then
                 return nil, "état d'exemplaire illisible."
             end
+        end
+        -- La charge d'un cristal entame : des secondes, zero au moins.
+        if e.charge ~= nil and (type(e.charge) ~= "number" or e.charge < 0) then
+            return nil, "charge de cristal illisible."
         end
         vus[e.id] = true
         for propriete, historique in pairs(e.usages) do

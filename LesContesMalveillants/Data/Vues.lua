@@ -134,17 +134,21 @@ Vues.Add({
     blocs = { { conteneur = { "apprentissages", "apprentissage" }, label = "Apprentissages" } },
 })
 
--- Expertises : un onglet par domaine.
+-- Capacités : deux familles, chacune avec ses propres domaines.
 Vues.Add({
-    id = "expertise", titre = "Expertises",
+    id = "expertise", titre = "Capacité",
     largeur = 340, hauteur = 460,
-    -- Les trois familles cote a cote (demande du 13 octobre 2026) : sur deux
-    -- rangees, Filouterie restait seule en dessous.
     ongletsUneRangee = true,
+    groupes = {
+        { id = "expertise", label = "Expertise" },
+        { id = "mecanique", label = "Mécanique" },
+    },
     onglets = {
-        { id = "observations", label = "Observations", blocs = { { section = { "expertises", "observations" } } } },
-        { id = "athletisme",   label = "Athlétisme",   blocs = { { section = { "expertises", "athletisme" } } } },
-        { id = "filouterie",   label = "Filouterie",   blocs = { { section = { "expertises", "filouterie" } } } },
+        { id = "observations", groupe = "expertise", label = "Observations", blocs = { { section = { "expertises", "observations" } } } },
+        { id = "athletisme",   groupe = "expertise", label = "Athlétisme",   blocs = { { section = { "expertises", "athletisme" } } } },
+        { id = "filouterie",   groupe = "expertise", label = "Filouterie",   blocs = { { section = { "expertises", "filouterie" } } } },
+        { id = "competence",   groupe = "mecanique", label = "Compétence",   blocs = { { onglet = "mecaniques" } } },
+        { id = "defense",      groupe = "mecanique", label = "Défense",      blocs = { { onglet = "defenses" } } },
     },
 })
 

@@ -29,6 +29,8 @@ local CARTE = 60
 
 local function Tuile(parent)
     local t = CreateFrame("Button", nil, parent)
+    UI.Bulle(t, function(self) return self.nom:GetText() end,
+        function(self) return self.description:GetText() end, 0.2)
     if UI.SurfaceLigne then UI.SurfaceLigne(t) end
     t.survol = UI.Aplat(t, UI.C.survol, "HIGHLIGHT")
     t.survol:SetAllPoints(t)
@@ -246,6 +248,9 @@ end
 
 local function Carte(parent)
     local c = CreateFrame("Frame", nil, parent)
+    c:EnableMouse(true)
+    UI.Bulle(c, function(self) return self.nom:GetText() end,
+        function(self) return self.description:GetText() end, 0.2)
     if UI.SurfaceLigne then UI.SurfaceLigne(c) end
 
     c.icone = c:CreateTexture(nil, "ARTWORK")

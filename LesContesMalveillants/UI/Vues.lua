@@ -246,6 +246,38 @@ local function Construire(vue, rang)
         f.sommaire = Sommaire(f, vue)
         f.sommaire:SetPoint("TOPLEFT", f.contenu, "TOPLEFT", 0, -haut)
         f.sommaire:SetPoint("BOTTOMLEFT", f.contenu, "BOTTOMLEFT", 0, 0)
+    elseif vue.groupes then
+        f.groupesOnglets = {}
+        f.barresSousOnglets = {}
+        local principaux = {}
+        for _, groupe in ipairs(vue.groupes) do
+            principaux[#principaux + 1] = { id = groupe.id, label = groupe.label }
+            local sousOnglets = {}
+            for _, onglet in ipairs(vue.onglets) do
+                if onglet.groupe == groupe.id then
+                    sousOnglets[#sousOnglets + 1] = { id = onglet.id, label = onglet.label }
+                end
+            end
+            assert(#sousOnglets > 0, "vue " .. vue.id .. " : groupe vide " .. groupe.id)
+            f.groupesOnglets[groupe.id] = sousOnglets
+        end
+        f.barre = UI.BandeauOnglets(f.contenu, principaux, function(id)
+            local choisi = f.ongletParGroupe and f.ongletParGroupe[id]
+            f:Afficher(choisi or f.groupesOnglets[id][1].id)
+        end)
+        f.barre:SetPoint("TOPLEFT", f.contenu, "TOPLEFT", 0, -haut)
+        f.barre:SetWidth(largeurContenu)
+        haut = haut + f.barre:Disposer(largeurContenu, f.mesures.onglet, { uneRangee = true }) + 6
+        for _, groupe in ipairs(vue.groupes) do
+            local sous = UI.BandeauOnglets(f.contenu, f.groupesOnglets[groupe.id],
+                function(id) f:Afficher(id) end)
+            sous:SetPoint("TOPLEFT", f.contenu, "TOPLEFT", 0, -haut)
+            sous:SetWidth(largeurContenu)
+            sous:Disposer(largeurContenu, f.mesures.onglet, { uneRangee = true })
+            f.barresSousOnglets[groupe.id] = sous
+            sous:Hide()
+        end
+        haut = haut + f.mesures.onglet + 6
     elseif #vue.onglets > 1 then
         -- Un retrait propre a la fiche (voir RETRAIT_ONGLETS_FICHE).
         local retraitOnglets = vue.id == "fiche" and RETRAIT_ONGLETS_FICHE or 0
@@ -414,7 +446,20 @@ local function Construire(vue, rang)
         self.onglet = ongletId
         self:AjusterLargeur()
         self:DisposerArtwork()
-        if self.barre then self.barre:Selectionner(ongletId) end
+        if vue.groupes then
+            for _, onglet in ipairs(vue.onglets) do
+                if onglet.id == ongletId then
+                    self.ongletParGroupe = self.ongletParGroupe or {}
+                    self.ongletParGroupe[onglet.groupe] = ongletId
+                    self.barre:Selectionner(onglet.groupe)
+                    for groupeId, sous in pairs(self.barresSousOnglets) do
+                        sous:SetShown(groupeId == onglet.groupe)
+                        if groupeId == onglet.groupe then sous:Selectionner(ongletId) end
+                    end
+                    break
+                end
+            end
+        elseif self.barre then self.barre:Selectionner(ongletId) end
         for id, page in pairs(self.pages) do page:SetShown(id == ongletId) end
         local page = self.pages[ongletId]
         if page then

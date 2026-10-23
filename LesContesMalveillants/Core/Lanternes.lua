@@ -8,8 +8,11 @@
 --
 -- Ce qui est garde tel quel, parce que c'est la regle :
 --   * chaque cristal garde SA charge quand on en change : remettre un cristal
---     a moitie use le rend a moitie, un cristal jamais pose arrive plein ;
---   * recharger remplit le cristal pose et eteint la lanterne (hors pause) ;
+--     a moitie use le rend a moitie, un cristal jamais pose arrive plein.
+--     Survive la retenait par TYPE de reactif ; elle vit ici sur le cristal
+--     lui-meme, son exemplaire (23 octobre 2026) — voir « Les cristaux » ;
+--   * changer de cristal (le « Recharger » de Survive) eteint la lanterne,
+--     hors pause ;
 --   * le MJ arrete l'ecoulement par une phrase dite en alerte, raid ou groupe
 --     (« pause »), et le relance par une autre (« reprise »). Pendant la pause
 --     le joueur peut encore allumer et eteindre — c'est l'aura qui suit, pas
@@ -17,9 +20,6 @@
 --   * les auras du serveur : une regle dit QUAND (allumer, eteindre, vide,
 --     pause, reprise) et QUOI (un numero de sort -> `.aura` / `.unaura`, ou
 --     une commande entiere) ;
---   * la verification d'inventaire porte sur un objet du JEU (son ID), pas
---     sur un sac de l'addon, et un cristal « consommable » se retire par
---     `.additem ID -1` a la recharge.
 --
 -- Ce qui change, et pourquoi :
 --   * le catalogue (lanternes, cristaux) est du contenu du compendium, pas
@@ -28,7 +28,13 @@
 --     sont pas reprises : une regle ecrite EST une regle active, et une liste
 --     vide n'agit pas. Deux cases pour dire la meme chose divergeaient ;
 --   * l'activation rapide a cote du lanceur n'existe pas ici : la lanterne
---     s'ouvre par le menu radial (Objets > Outils) ;
+--     s'ouvre par le menu radial (Objets > Outils), depuis la ceinture ;
+--   * rien n'existe sans etre possede (23 octobre 2026) : la lanterne
+--     s'EQUIPE sur la ceinture, les cristaux viennent des sacs LCM, et un
+--     cristal se detruit tout seul a 0 % (« Consommable ? » est retire). La
+--     « Vérification inventaire » de Survive (un objet du JEU, par son ID)
+--     n'a donc plus lieu d'etre et a ete retiree (le MJ, 23 octobre 2026) :
+--     une entree qui en porte encore les champs les voit ignores ;
 --   * le temps ne s'ecoule pas deconnecte, comme dans Survive : l'horloge de
 --     reference est `GetTime()`, qui repart a chaque session. Elle ne va donc
 --     PAS en sauvegarde.
@@ -39,7 +45,6 @@ local function Texte(valeur)
     return (tostring(valeur or ""):gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
-local function Vrai(v) return v == true or v == 1 or v == "1" or v == "true" or v == "oui" end
 
 -- Core se charge avant Data : l'equilibrage se lit au premier appel.
 local function Eq() return LCM.Equilibrage.lanterne end
@@ -173,24 +178,9 @@ end
 
 -- ===== Les registres =======================================================
 
--- Ce que la lanterne et le cristal partagent : la verification d'inventaire,
--- les auras et les phrases du MJ.
+-- Ce que la lanterne et le cristal partagent : les auras et les phrases du MJ.
 local function Commun(definition, element, Erreur)
     local id = element.id
-    element.verifInventaire = Vrai(definition.verifInventaire) or nil
-    element.itemId = nil
-    if definition.itemId ~= nil and Texte(definition.itemId) ~= "" then
-        local n = tonumber(definition.itemId)
-        if not n or n ~= math.floor(n) or n < 1 then
-            Erreur(string.format("%s : ID d'objet illisible (%s)", id, tostring(definition.itemId)))
-        end
-        element.itemId = n
-    end
-    -- Survive acceptait la case cochee sans ID et refusait ensuite d'allumer,
-    -- a chaque clic. Le refus est ici, une fois, chez le MJ.
-    if element.verifInventaire and not element.itemId then
-        Erreur(id .. " : la vérification d'inventaire demande l'ID de l'objet du jeu")
-    end
     for _, cle in ipairs({ "aurasPosees", "aurasRetirees", "phrasesPause", "phrasesReprise", "canaux" }) do
         local s = Texte(definition[cle])
         element[cle] = s ~= "" and tostring(definition[cle]) or nil
@@ -223,8 +213,9 @@ LCM.Cristaux = LCM.Registre({
     nom = "cristal", prefixe = "Cristaux",
     construire = function(definition, element, Erreur)
         element.duree = Positif(element.id, "durée", definition.duree, Erreur)
-        element.consommable = Vrai(definition.consommable) or nil
-        Commun(definition, element, Erreur)
+        -- Pas de regles d'aura ni de phrases du MJ sur un cristal (le MJ, 23
+        -- octobre 2026) : c'est la lanterne qu'on allume et qu'on eteint, pas
+        -- son combustible. Celles qu'un cristal porterait encore sont ignorees.
     end,
 })
 
@@ -255,7 +246,6 @@ L.CANAUX_EMOTE = {
 
 local VIDE = {}
 local derniere            -- GetTime() du dernier ecoulement compte
-local consommationEnCours = false
 
 -- Lecture : ne cree rien.
 local function Etat()
@@ -278,8 +268,243 @@ local function Notifier(texte, alerte)
     if L.onChange then pcall(L.onChange) end
 end
 
-function L.LanterneChoisie() return LCM.Lanternes.Get(Etat().lanterne) end
-function L.CristalChoisi() return LCM.Cristaux.Get(Etat().cristal) end
+-- ----- Ce que le joueur porte -----------------------------------------------
+-- Une lanterne ou un cristal n'existe pour le joueur que s'il le possede (le
+-- MJ, 23 octobre 2026). Le compendium dit ce qui PEUT exister, le personnage
+-- ce qu'il A. Il n'y a plus de contenu livre par defaut.
+--
+-- La LANTERNE s'equipe sur la ceinture porte-outils, ou elle prend une des
+-- places des outils (Equilibrage.conteneurs.outil). C'est la lanterne
+-- equipee qui eclaire : le menu Lanterne ne s'ouvre pas sans elle, et c'est
+-- elle qu'il montre. Les CRISTAUX restent dans les sacs.
+--
+-- La lanterne equipee vit sur le personnage LCM (`entity.lanterneEquipee`),
+-- comme ce qu'il porte : changer de personnage change de lanterne.
+
+local function Moi() return LCM.Entities and LCM.Entities.Self() end
+-- Defini avec les cristaux, plus bas : la lanterne qu'on retire rend le sien.
+local Remiser
+
+local function Possede(famille, id)
+    local moi = Moi()
+    if not (moi and id and LCM.Inventaire) then return false end
+    return LCM.Inventaire.Chercher(moi, famille .. "/" .. id) ~= nil
+end
+
+-- L'identifiant equipe, tel qu'il est ecrit (meme si l'entree a disparu du
+-- compendium : elle reste portee, et se retire comme le reste).
+function L.IdEquipe(entity)
+    entity = entity or Moi()
+    return type(entity) == "table" and entity.lanterneEquipee or nil
+end
+
+function L.LanterneEquipee(entity)
+    return LCM.Lanternes.Get(L.IdEquipe(entity))
+end
+
+-- Les places de la ceinture : les outils (Core/Objets) plus la lanterne.
+function L.PlacesCeinture(entity)
+    local capacite = LCM.Objets.Capacite("outil")
+    local prises = #LCM.Objets.Ids(entity, "outil") + (L.IdEquipe(entity) and 1 or 0)
+    return capacite, prises
+end
+
+-- Equiper une lanterne des sacs. Une lanterne deja portee retourne au sac a
+-- sa place (l'echange ne demande donc pas de place libre sur la ceinture).
+function L.EquiperLanterne(id)
+    local moi = Moi()
+    if not moi then return false, "aucun personnage." end
+    local lanterne = LCM.Lanternes.Get(id)
+    if not lanterne then return false, "lanterne inconnue : " .. tostring(id) end
+    local ancien = L.IdEquipe(moi)
+    if ancien == lanterne.id then return true end
+    if not Possede("lanternes", lanterne.id) then
+        return false, lanterne.label .. " n'est dans aucun de tes sacs."
+    end
+    local capacite, prises = L.PlacesCeinture(moi)
+    if not ancien and prises >= capacite then
+        return false, "la ceinture est pleine : retire un outil d'abord."
+    end
+    if ancien and L.Allumee() then L.Eteindre() end
+    LCM.Inventaire.Prendre(moi, "lanternes/" .. lanterne.id)
+    if ancien then
+        local ok, raison = LCM.Inventaire.Deposer(moi, "lanternes/" .. ancien, 1)
+        if not ok then
+            -- L'ancienne ne trouve pas de place : on annule tout.
+            LCM.Inventaire.Deposer(moi, "lanternes/" .. lanterne.id, 1)
+            return false, "pas de place dans les sacs pour l'ancienne lanterne : " .. tostring(raison)
+        end
+    end
+    moi.lanterneEquipee = lanterne.id
+    EtatPourEcriture().lanterne = lanterne.id
+    if L.onChange then pcall(L.onChange) end
+    return true
+end
+
+-- Remettre la lanterne au sac. Sans place libre, elle reste portee : on ne la
+-- fait pas disparaitre faute de sac (comme Objets.Desequiper).
+function L.RetirerLanterne()
+    local moi = Moi()
+    local id = L.IdEquipe(moi)
+    if not id then return false, "aucune lanterne n'est équipée." end
+    if L.Allumee() then L.Eteindre() end
+    -- Son cristal retourne aux sacs avec elle, et garde sa charge.
+    local rendu, pourquoi = Remiser(moi)
+    if not rendu then return false, "la lanterne reste équipée : " .. tostring(pourquoi) end
+    if LCM.Lanternes.Get(id) then
+        local ok, raison = LCM.Inventaire.Deposer(moi, "lanternes/" .. id, 1)
+        if not ok then
+            return false, "la lanterne reste équipée : " .. (raison == "aucune place libre."
+                and "aucune place libre dans les sacs." or tostring(raison))
+        end
+    end
+    moi.lanterneEquipee = nil
+    if L.onChange then pcall(L.onChange) end
+    return true
+end
+
+local function Portees(registre, famille)
+    local out = {}
+    for _, e in ipairs(registre.list) do
+        if Possede(famille, e.id) then out[#out + 1] = e end
+    end
+    return out
+end
+
+function L.LanternesPortees() return Portees(LCM.Lanternes, "lanternes") end
+
+-- La lanterne telle qu'elle est ecrite, portee ou non : sert a retirer les
+-- auras d'une lanterne qu'on vient de perdre (la derniere equipee).
+local function ChoixEcrit() return LCM.Lanternes.Get(Etat().lanterne) end
+
+-- La lanterne qui eclaire : celle de la ceinture, et aucune autre.
+function L.LanterneChoisie() return L.LanterneEquipee() end
+
+-- ----- Les cristaux -----------------------------------------------------------
+-- Un cristal a SA charge, et elle le suit (le MJ, 23 octobre 2026). Elle vit
+-- sur son exemplaire (Core/Exemplaires.lua), en secondes d'eclairage :
+--
+--   * POSE, il quitte les sacs et vit dans la lanterne, sur le personnage
+--     (`entity.cristalPose`, son exemplaire). C'est la que la charge baisse ;
+--   * RETIRE, il retourne dans les sacs. Plein, il redevient un cristal
+--     ordinaire, sans pourcentage, et s'empile avec les autres. Entame, il va
+--     dans « Cristaux en cours d'usage » (Core/Inventaire.lua, la poche),
+--     empile avec ceux de son modele mais avec SA charge. Vide, il disparait ;
+--   * il s'echange, se donne, se pose dans un coffre comme un objet : sa
+--     charge voyage avec son exemplaire.
+
+local function Plein(cristal) return cristal.duree * SECONDES_PAR_MINUTE end
+
+local function ModeleDe(exemplaire)
+    local id = type(exemplaire) == "table" and tostring(exemplaire.ref or ""):match("^cristaux/(.+)$")
+    return id and LCM.Cristaux.Get(id) or nil
+end
+
+-- L'exemplaire pose dans la lanterne, ou nil. Lecture : ne cree rien.
+function L.CristalPose(entity)
+    entity = entity or Moi()
+    local pose = type(entity) == "table" and entity.cristalPose
+    return type(pose) == "table" and pose or nil
+end
+
+function L.CristalChoisi() return ModeleDe(L.CristalPose()) end
+
+-- Le pourcentage d'un cristal, ou nil s'il est plein. Un cristal qui garde un
+-- souffle de charge ne s'affiche pas a 0 % : on le croirait vide.
+function L.Pourcent(exemplaire)
+    local cristal = ModeleDe(exemplaire)
+    local charge = type(exemplaire) == "table" and tonumber(exemplaire.charge)
+    if not (cristal and charge) or charge >= Plein(cristal) then return nil end
+    if charge <= 0 then return 0 end
+    return math.max(1, math.min(99, math.floor(charge / Plein(cristal) * 100)))
+end
+
+-- « Cristal raffiné (62 %) » pour un entame, son nom seul pour un plein.
+function L.LibelleCristal(exemplaire)
+    local cristal = ModeleDe(exemplaire)
+    if not cristal then return "Cristal inconnu" end
+    local pourcent = L.Pourcent(exemplaire)
+    return pourcent and string.format("%s (%d %%)", cristal.label, pourcent) or cristal.label
+end
+
+-- Ce qu'on peut poser, dans l'ordre du compendium : pour chaque modele, les
+-- pleins (une seule option, ils sont interchangeables), puis chaque entame,
+-- le plus charge d'abord. { id, label, cristal, exemplaire }.
+function L.CristauxPortes()
+    local moi, out = Moi(), {}
+    if not moi then return out end
+    local Inv = LCM.Inventaire
+    for _, cristal in ipairs(LCM.Cristaux.list) do
+        local ref = "cristaux/" .. cristal.id
+        local pleins, entames = 0, {}
+        for _, p in ipairs(Inv.Piles(moi, ref)) do
+            if Inv.Entame(p.pile) then
+                for _, x in ipairs(p.pile.exemplaires) do
+                    if type(x) == "table" and x.charge ~= nil then entames[#entames + 1] = x end
+                end
+            else
+                pleins = pleins + (tonumber(p.pile.quantite) or 1)
+            end
+        end
+        if pleins > 0 then out[#out + 1] = { id = "plein:" .. cristal.id, label = cristal.label, cristal = cristal } end
+        table.sort(entames, function(a, b) return (tonumber(a.charge) or 0) > (tonumber(b.charge) or 0) end)
+        for _, x in ipairs(entames) do
+            out[#out + 1] = { id = "entame:" .. x.id, label = L.LibelleCristal(x), cristal = cristal, exemplaire = x }
+        end
+    end
+    return out
+end
+
+-- Un choix de la liste, ou le nom d'un modele (« plein » sous-entendu).
+local function Option(choix)
+    choix = tostring(choix or "")
+    if not choix:find(":", 1, true) then choix = "plein:" .. choix end
+    for _, o in ipairs(L.CristauxPortes()) do
+        if o.id == choix then return o end
+    end
+end
+
+-- Sort des sacs le cristal de cette option et rend son exemplaire (une copie
+-- detachee du sac). Un plein : le premier d'une pile pleine.
+local function Sortir(moi, option)
+    local Inv, ref = LCM.Inventaire, "cristaux/" .. option.cristal.id
+    local exemplaire = option.exemplaire
+    if not exemplaire then
+        for _, p in ipairs(Inv.Piles(moi, ref)) do
+            if not Inv.Entame(p.pile) then
+                exemplaire = LCM.Exemplaires.Assurer(p.pile)[1]
+                break
+            end
+        end
+    end
+    if not exemplaire then return nil, "ce cristal n'est dans aucun de tes sacs." end
+    local copie = LCM.Copie(exemplaire)
+    local ok, raison = Inv.RetirerExemplaire(moi, ref, copie.id)
+    if not ok then return nil, raison end
+    return copie
+end
+
+-- Remet dans les sacs le cristal pose. Plein, il perd sa charge ecrite (il
+-- redevient un cristal ordinaire, qui s'empile) ; entame, il la garde et va
+-- dans la poche ; vide, il disparait (le MJ, 23 octobre 2026). Sans place, il
+-- reste pose : on ne le fait pas disparaitre faute de sac.
+Remiser = function(moi)
+    local pose = L.CristalPose(moi)
+    if not pose then return true end
+    local cristal = ModeleDe(pose)
+    if not cristal then
+        return false, "ce cristal n'existe plus dans le compendium : il reste dans la lanterne."
+    end
+    local x = LCM.Copie(pose)
+    local charge = tonumber(x.charge) or Plein(cristal)
+    if charge > 0 then
+        x.charge = charge < Plein(cristal) and charge or nil
+        local ok, raison = LCM.Inventaire.Deposer(moi, x.ref, 1, { x })
+        if not ok then return false, "le cristal retiré ne trouve pas de place : " .. tostring(raison) end
+    end
+    moi.cristalPose = nil
+    return true
+end
 
 function L.Variateur()
     local v = tonumber(Etat().variateur)
@@ -306,11 +531,13 @@ end
 
 function L.ChargeMax()
     local cristal = L.CristalChoisi()
-    return cristal and cristal.duree * SECONDES_PAR_MINUTE or 0
+    return cristal and Plein(cristal) or 0
 end
 
 function L.Charge()
-    return math.max(0, math.min(tonumber(Etat().charge) or 0, L.ChargeMax()))
+    local pose = L.CristalPose()
+    if not (pose and L.CristalChoisi()) then return 0 end
+    return math.max(0, math.min(tonumber(pose.charge) or L.ChargeMax(), L.ChargeMax()))
 end
 
 -- Le temps d'eclairage qui reste, en secondes reelles.
@@ -348,10 +575,11 @@ local function Choisies()
 end
 
 -- Joue les regles d'une condition ; rend combien de commandes sont parties.
-local function Auras(cote, condition, message)
+-- `elements` : par defaut, ce qui est choisi ET porte.
+local function Auras(cote, condition, message, elements)
     local n = 0
     local normalise = Normaliser(message)
-    for _, element in ipairs(Choisies()) do
+    for _, element in ipairs(elements or Choisies()) do
         for _, regle in ipairs(Regles(element)[cote]) do
             if regle.condition == condition
                 and (not regle.phrase or Normaliser(regle.phrase) == normalise) then
@@ -431,49 +659,53 @@ function L.DireEmote(cle)
     return true
 end
 
--- ----- Inventaire du jeu ----------------------------------------------------
+-- ----- L'ecoulement ---------------------------------------------------------
 
-local function Compte(itemId)
-    if C_Item and C_Item.GetItemCount then
-        local ok, n = pcall(C_Item.GetItemCount, itemId, true, false, true)
-        if ok and type(n) == "number" then return n end
-    end
-    if GetItemCount then
-        local ok, n = pcall(GetItemCount, itemId, true)
-        if ok and type(n) == "number" then return n end
-    end
-    return 0
-end
-L.Compte = Compte
-
-local function Present(element, quoi)
-    if not (element and element.verifInventaire) then return true end
-    if Compte(element.itemId) <= 0 then
-        return false, string.format("%s ne fonctionne pas sans l'objet requis (ID %d) dans l'inventaire.",
-            quoi, element.itemId)
-    end
+-- Une lanterne allumee qui n'a plus sa lanterne ou son cristal (un autre
+-- personnage choisi, une entree retiree du compendium) s'eteint, et ses auras
+-- partent avec. On retire celles de la lanterne ECRITE : celle qu'on porte ne
+-- suffirait pas, elle n'y est plus.
+local function Perdue()
+    if L.LanterneChoisie() and L.CristalChoisi() then return false end
+    local lanterne = ChoixEcrit()
+    local w = EtatPourEcriture()
+    if w.pauseMJ then w.actifEnPause, w.reprise = false, "off" else w.mode = "off" end
+    Auras("retirer", "eteindre", nil, lanterne and { lanterne } or {})
+    PoserAuraActive(false)
+    Notifier("ta lanterne s'éteint : il lui manque sa lanterne ou son cristal.", true)
     return true
 end
-
--- ----- L'ecoulement ---------------------------------------------------------
 
 -- Compte le temps passe depuis le dernier appel. C'est la seule porte par ou
 -- la charge baisse : tout ce qui lit ou change la lanterne passe d'abord ici.
 function L.Synchroniser(maintenant)
     maintenant = maintenant or Maintenant()
     local e = Etat()
-    if e ~= VIDE and e.mode == "on" and not e.pauseMJ and derniere then
+    if e ~= VIDE and L.Allumee() and Perdue() then
+        derniere = maintenant
+        return
+    end
+    local pose = L.CristalPose()
+    if e ~= VIDE and e.mode == "on" and not e.pauseMJ and derniere and pose then
         local ecoule = math.max(0, maintenant - derniere)
-        local charge = tonumber(e.charge) or 0
+        local charge = L.Charge()
         if ecoule > 0 and charge > 0 then
             charge = math.max(0, charge - ecoule * Facteur())
-            e.charge = charge
+            pose.charge = charge
             if charge <= 0 then
-                e.charge, e.mode = 0, "off"
+                pose.charge, e.mode = 0, "off"
                 Auras("retirer", "vide")
                 PoserAuraActive(false)
                 L.DireEmote("empty")
-                Notifier("la lanterne est déchargée.", true)
+                -- Un cristal epuise se DETRUIT, sur le coup (le MJ, 23 octobre
+                -- 2026) : il n'a plus rien a donner. La lanterne retient son
+                -- modele, pour que « Changer de cristal » en pose un neuf du
+                -- meme sans repasser par la liste.
+                local modele = ModeleDe(pose)
+                e.dernierCristal = modele and modele.id or nil
+                local moi = Moi()
+                if moi then moi.cristalPose = nil end
+                Notifier("ton cristal est épuisé : la lanterne s'éteint.", true)
             end
         end
     end
@@ -485,11 +717,7 @@ local function Controler()
     if not (lanterne and cristal) then
         return false, "choisis une lanterne et un cristal avant de l'allumer."
     end
-    local ok, raison = Present(lanterne, "cette lanterne")
-    if not ok then return false, raison end
-    ok, raison = Present(cristal, "ce cristal")
-    if not ok then return false, raison end
-    if L.Charge() <= 0 then return false, "la lanterne est déchargée : recharge-la avant de l'allumer." end
+    if L.Charge() <= 0 then return false, "la lanterne est déchargée : change de cristal avant de l'allumer." end
     return true
 end
 
@@ -536,38 +764,36 @@ local function Eteinte(e)
     e.mode, e.pauseMJ, e.reprise, e.actifEnPause = "off", nil, nil, nil
 end
 
-function L.ChoisirLanterne(id)
+-- Pose un cristal des sacs (`choix` : un id de L.CristauxPortes, ou le nom
+-- d'un modele pour un plein), ou retire celui qui est pose (`choix` nil). Le
+-- cristal retire retourne aux sacs avec sa charge (Remiser) ; celui qu'on pose
+-- reprend la sienne, ou arrive plein s'il n'a jamais servi.
+function L.ChoisirCristal(choix)
     L.Synchroniser()
-    if id ~= nil and not LCM.Lanternes.Get(id) then return false, "lanterne inconnue : " .. tostring(id) end
-    local e = EtatPourEcriture()
-    e.lanterne = id
-    if not id then Eteinte(e) end
-    return true
-end
-
--- Le cristal qu'on retire garde sa charge ; celui qu'on pose reprend la
--- sienne, ou arrive plein s'il n'a jamais servi.
-function L.ChoisirCristal(id)
-    L.Synchroniser()
-    local cristal = id ~= nil and LCM.Cristaux.Get(id)
-    if id ~= nil and not cristal then return false, "cristal inconnu : " .. tostring(id) end
-    local e = EtatPourEcriture()
-    local ancien = e.cristal
-    if ancien == id then return true end
-    if ancien then
-        e.charges = type(e.charges) == "table" and e.charges or {}
-        e.charges[ancien] = tonumber(e.charge) or 0
-    end
-    e.cristal = id
-    if not cristal then
-        Eteinte(e)
-        e.charge = nil
+    local moi = Moi()
+    if not moi then return false, "aucun personnage." end
+    if choix == nil or choix == false then
+        if not L.CristalPose(moi) then return true end
+        if L.Allumee() then L.Eteindre() end
+        local ok, raison = Remiser(moi)
+        if not ok then return false, raison end
+        Eteinte(EtatPourEcriture())
+        if L.onChange then pcall(L.onChange) end
         return true
     end
-    local garde = type(e.charges) == "table" and e.charges[id] or nil
-    local plein = cristal.duree * SECONDES_PAR_MINUTE
-    e.charge = garde ~= nil and math.max(0, math.min(garde, plein)) or plein
-    if ancien then L.DireEmote("swap") end
+    local option = Option(choix)
+    if not option then return false, "ce cristal n'est dans aucun de tes sacs." end
+    local avait = L.CristalPose(moi) ~= nil
+    local ok, raison = Remiser(moi)
+    if not ok then return false, raison end
+    -- Retrouve apres le rangement : remiser a pu deplacer des piles.
+    option = Option(option.id) or option
+    local x, pourquoi = Sortir(moi, option)
+    if not x then return false, pourquoi end
+    x.charge = tonumber(x.charge) or Plein(option.cristal)
+    moi.cristalPose = x
+    if avait then L.DireEmote("swap") end
+    if L.onChange then pcall(L.onChange) end
     return true
 end
 
@@ -582,57 +808,40 @@ function L.DefinirVariateur(valeur)
     return true
 end
 
--- Recharger remplit le cristal pose. Consommable : l'objet du jeu doit
--- disparaitre du sac AVANT que la charge revienne — sinon recharger ne
--- couterait rien si la commande echoue.
-function L.Recharger()
+-- Le « Recharger » de Survive, REMPLACE par « Changer de cristal » (le MJ, 23 octobre 2026) : recharger
+-- remplissait le cristal pose sur place, et ce qu'il lui restait de charge
+-- disparaissait — le cristal etait comme jete. Changer de cristal en POSE UN
+-- NEUF du meme modele, pris dans les sacs, et EJECTE l'ancien comme tout
+-- cristal retire (Remiser) : entame, il va dans « Cristaux en cours
+-- d'usage » et revient dans la liste avec son pourcentage ; vide, il
+-- disparait.
+function L.ChangerCristal()
     L.Synchroniser()
-    local lanterne, cristal = L.LanterneChoisie(), L.CristalChoisi()
-    if not (lanterne and cristal) then return false, "choisis une lanterne et un cristal avant de recharger." end
-    if cristal.verifInventaire and Compte(cristal.itemId) <= 0 then
-        return false, string.format("l'objet requis pour recharger (ID %d) est introuvable dans l'inventaire.",
-            cristal.itemId)
+    -- Le cristal pose, ou celui qui vient de s'epuiser (detruit a 0 %).
+    local lanterne = L.LanterneChoisie()
+    local cristal = L.CristalChoisi() or LCM.Cristaux.Get(Etat().dernierCristal)
+    if not (lanterne and cristal) then
+        return false, "choisis une lanterne et un cristal avant d'en changer."
     end
-    local function Appliquer()
-        local e = EtatPourEcriture()
-        e.charge = cristal.duree * SECONDES_PAR_MINUTE
-        if type(e.charges) == "table" then
-            e.charges[cristal.id] = nil
-            if next(e.charges) == nil then e.charges = nil end
-        end
-        if not e.pauseMJ then e.mode = "off" end
-        L.DireEmote("recharge")
-        if L.onChange then pcall(L.onChange) end
+    local option = Option("plein:" .. cristal.id)
+    if not option then
+        return false, string.format("aucun %s plein dans tes sacs : choisis-en un autre dans la liste.", cristal.label)
     end
-    if not (cristal.verifInventaire and cristal.consommable) then
-        Appliquer()
-        return true
-    end
-    if consommationEnCours then return false, "une consommation est déjà en attente." end
-    local avant = Compte(cristal.itemId)
-    if not SendChatMessage or not pcall(SendChatMessage, ".additem " .. cristal.itemId .. " -1", "SAY") then
-        return false, "impossible de lancer la consommation de l'objet."
-    end
-    consommationEnCours = { itemId = cristal.itemId, avant = avant, suite = Appliquer }
-    if C_Timer and C_Timer.After then
-        local attente = consommationEnCours
-        C_Timer.After(Eq().attenteConsommation, function()
-            if consommationEnCours ~= attente then return end
-            consommationEnCours = false
-            Notifier("le cristal n'a pas été consommé : la recharge est annulée.", true)
-        end)
-    end
-    return true, "en attente"
+    local moi = Moi()
+    local e = EtatPourEcriture()
+    -- Comme Survive a la recharge : on change de cristal lanterne eteinte.
+    if L.Allumee() and not e.pauseMJ then L.Eteindre() end
+    local ok, raison = Remiser(moi)
+    if not ok then return false, raison end
+    option = Option(option.id) or option
+    local x, pourquoi = Sortir(moi, option)
+    if not x then return false, pourquoi end
+    x.charge = tonumber(x.charge) or Plein(cristal)
+    moi.cristalPose = x
+    L.DireEmote("recharge")
+    if L.onChange then pcall(L.onChange) end
+    return true
 end
-
-LCM.On("BAG_UPDATE_DELAYED", function()
-    local c = consommationEnCours
-    if not c then return end
-    if Compte(c.itemId) < c.avant then
-        consommationEnCours = false
-        c.suite()
-    end
-end)
 
 -- Le bouton « Débug » de Survive : tout remettre a zero, sans toucher aux
 -- emotes ni au canal, qui sont des reglages du joueur.
@@ -732,14 +941,9 @@ end
 
 LCM.WhenReady(function()
     derniere = Maintenant()
-    local e = Etat()
-    -- Une entree disparue du compendium ne laisse pas une lanterne fantome.
-    if e.lanterne and not LCM.Lanternes.Get(e.lanterne) then L.ChoisirLanterne(nil) end
-    if e.cristal and not LCM.Cristaux.Get(e.cristal) then
-        local w = EtatPourEcriture()
-        w.cristal, w.charge = nil, nil
-        Eteinte(w)
-    end
+    -- `cristal`, `charge` et `charges` de LCM_CharDB (la charge par modele de
+    -- la 0.2.6) ne sont plus lus : la charge vit sur le cristal. Ils restent
+    -- ecrits, sans effet ; on n'efface pas sur l'heuristique.
     local battement = CreateFrame("Frame")
     local cumul = 0
     battement:SetScript("OnUpdate", function(_, dt)
@@ -755,4 +959,7 @@ end)
 
 L.Normaliser = Normaliser
 L.LireAuras = LireAuras
+L.LirePhrases = LirePhrases
+L.LireCanaux = LireCanaux
+L.CANAUX = CANAUX
 L.Regles = Regles

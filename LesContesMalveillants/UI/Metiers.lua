@@ -56,6 +56,7 @@ local function Construire()
         b.palier:SetPoint("RIGHT", b, "RIGHT", -6, 0)
         b.metierId = metier.id
         b:SetScript("OnClick", function(bouton) f:Choisir(bouton.metierId) end)
+        UI.Bulle(b, metier.label, metier.description, 0.2)
         f.lignes[index] = b
     end
     f.liste:Regler(#Metiers.list * LIGNE)

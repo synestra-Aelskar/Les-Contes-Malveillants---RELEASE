@@ -2,8 +2,8 @@
 ## Title: Les Contes Malveillants
 ## Notes: Systeme de jeu des Contes Malveillants
 ## Author: Syn'estra
-## Version: 0.2.6
-## SavedVariables: LCM_DB
+## Version: 0.2.7
+## SavedVariables: LCM_DB, LCM_Journal
 ## SavedVariablesPerCharacter: LCM_CharDB
 
 Core\Init.lua
@@ -63,6 +63,7 @@ Core\Direct.lua
 Core\Echange.lua
 Core\Campement.lua
 Core\Lanternes.lua
+Core\PuitsTonnerre.lua
 Core\Lieux.lua
 Core\Recolte.lua
 Core\Marchands.lua
@@ -88,6 +89,7 @@ Data\Grimoires.lua
 Data\Compendium.lua
 Data\Sacs.lua
 Data\Lanternes.lua
+Data\OutilsCeinture.lua
 Data\Inventaire.lua
 # Contenu genere par loutil dexport (voir Data\Genere)
 Data\Genere\Races.lua
@@ -126,6 +128,8 @@ UI\Echange.lua
 UI\Campement.lua
 UI\NuitCampement.lua
 UI\Lanterne.lua
+UI\Scanner.lua
+UI\Ceinture.lua
 UI\Banniere.lua
 UI\Recolte.lua
 UI\Marchand.lua

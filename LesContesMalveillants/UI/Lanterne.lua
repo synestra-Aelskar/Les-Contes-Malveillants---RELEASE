@@ -3,7 +3,7 @@
 -- Reproduction PROVISOIRE du panneau Lanterne d'OmegaSurvive (Survive/
 -- Modules/Lantern/Lantern.lua) : la moitie gauche attend son visuel, la moitie
 -- droite porte les controles dans le meme ordre — lanterne, cristal,
--- variateur, etat, charge, Allumer, Recharger. Les quatre onglets de ses
+-- variateur, etat, charge, Allumer, Changer de cristal. Les quatre onglets de ses
 -- parametres (Lanterne, Reactifs, Options, Debug) tiennent ici dans un volet
 -- unique : les deux premiers ne faisaient que lister le catalogue, que les
 -- listes deroulantes montrent deja. Une interface plus profonde viendra la
@@ -49,16 +49,18 @@ local function Refus(ok, raison)
     return ok
 end
 
--- Le choix courant d'abord « aucun », puis le catalogue : comme Survive, qui
--- proposait « Aucune lanterne » et « Insérez un réactif » en tete de liste.
-local function OptionsDe(registre, aucun)
+-- Le choix courant d'abord « aucun », puis ce que le joueur PORTE : comme
+-- Survive, qui proposait « Aucune lanterne » et « Insérez un réactif » en
+-- tete de liste. Le catalogue du compendium ne se montre pas : ce qui n'est
+-- pas dans les sacs n'existe pas pour le joueur (23 octobre 2026).
+local function OptionsDe(portees, aucun)
     local out = { { id = false, label = aucun } }
-    for _, e in ipairs(registre.list) do out[#out + 1] = { id = e.id, label = e.label } end
+    for _, e in ipairs(portees) do out[#out + 1] = { id = e.id, label = e.label } end
     return out
 end
 
 local function Construire()
-    local f = UI.Fenetre("outils_portes", "Outils", MOITIE * 2 + 20, HAUTEUR, { x = 180, y = -40 })
+    local f = UI.Fenetre("lanterne_outil", "Lanterne", MOITIE * 2 + 20, HAUTEUR, { x = 215, y = -40 })
     Ecran.frame = f
     f:SousTitre("Lanterne")
     local c = f.contenu
@@ -88,17 +90,14 @@ local function Construire()
         y = y - hauteur
     end
 
-    f.lblLanterne = Libelle(d, "Lanterne")
-    Poser(f.lblLanterne, 16)
-    f.lanterne = UI.Deroulant(d, LARGEUR_CTRL, 22,
-        function() return OptionsDe(LCM.Lanternes, "Aucune lanterne") end,
-        function(id) Refus(L.ChoisirLanterne(id or nil)) f:Afficher() end)
-    Poser(f.lanterne, 32)
+    -- Plus de liste « Lanterne » (le MJ, 23 octobre 2026) : la lanterne est
+    -- celle de la ceinture, elle se choisit en l'equipant. Une liste qui ne
+    -- proposait qu'elle, grisee, ne servait a rien.
 
     f.lblCristal = Libelle(d, "Cristal")
     Poser(f.lblCristal, 16)
     f.cristal = UI.Deroulant(d, LARGEUR_CTRL, 22,
-        function() return OptionsDe(LCM.Cristaux, "Insère un cristal") end,
+        function() return OptionsDe(L.CristauxPortes(), "Aucun cristal") end,
         function(id) Refus(L.ChoisirCristal(id or nil)) f:Afficher() end)
     Poser(f.cristal, 32)
 
@@ -120,25 +119,40 @@ local function Construire()
     f.restant = UI.Texte(d, "", UI.C.discret, "GameFontNormalSmall")
     Poser(f.restant, 22)
 
+    -- Les deux gestes EN BAS de la fenetre (le MJ, 23 octobre 2026), sous ce
+    -- qu'on lit : on regarde l'etat, puis on agit.
+    -- « Recharger » devient « Changer de cristal » (meme jour) : un neuf entre,
+    -- l'ancien est ejecte avec sa charge (Core/Lanternes.lua).
+    f.recharger = UI.Bouton(d, "Changer de cristal", LARGEUR_CTRL, 22, function()
+        Refus(L.ChangerCristal())
+        f:Afficher()
+    end)
+    f.recharger:SetPoint("BOTTOMLEFT", d, "BOTTOMLEFT", MARGE, 8)
     f.allumer = UI.Bouton(d, "Allumer", LARGEUR_CTRL, 22, function()
         Refus(L.Basculer())
         f:Afficher()
     end)
-    Poser(f.allumer, 28)
-    f.recharger = UI.Bouton(d, "Recharger", LARGEUR_CTRL, 22, function()
-        local ok, raison = L.Recharger()
-        if not ok then LCM.Alerte(raison) elseif raison then LCM.Info("recharge : en attente du serveur.") end
-        f:Afficher()
-    end)
-    Poser(f.recharger, 28)
+    f.allumer:SetPoint("BOTTOMLEFT", f.recharger, "TOPLEFT", 0, 6)
 
-    -- Le rouage de Survive : le volet des parametres, par-dessus la moitie
-    -- gauche, puisqu'elle n'a encore rien a montrer.
-    f.reglages = UI.Bouton(d, "Paramètres", LARGEUR_CTRL, 20, function()
+    -- Le rouage de Survive, dans l'ENCOCHE du coin haut gauche (le MJ, 23
+    -- octobre 2026), en miroir de la croix : il ne prend rien au contenu. Il
+    -- ouvre le volet des parametres, par-dessus la moitie gauche.
+    f.reglages = UI.Bouton(f, "", 20, 20, function()
         f.volet:SetShown(not f.volet:IsShown())
         f:Afficher()
     end)
-    Poser(f.reglages, 24)
+    f.reglages:SetSize(f.fermer:GetWidth(), f.fermer:GetHeight())
+    f.reglages.label:Hide()
+    f.reglages.rouage = f.reglages:CreateTexture(nil, "ARTWORK")
+    f.reglages.rouage:SetTexture("Interface\\Buttons\\UI-OptionsButton")
+    f.reglages.rouage:SetPoint("TOPLEFT", f.reglages, "TOPLEFT", 2, -2)
+    f.reglages.rouage:SetPoint("BOTTOMRIGHT", f.reglages, "BOTTOMRIGHT", -2, 2)
+    UI.Bulle(f.reglages, function() return "Paramètres" end,
+        function() return "Émotes, canal des émotes, réinitialiser la lanterne." end, 0.2)
+    f.coinGauche = f.reglages
+    f:PlacerCoinsHaut()
+    -- Au-dessus de l'habillage, comme la croix.
+    f.reglages:SetFrameLevel(f:GetFrameLevel() + 6)
 
     -- ----- Le volet des parametres ------------------------------------------
     local v = CreateFrame("Frame", nil, c)
@@ -204,8 +218,16 @@ local function Construire()
         L.Synchroniser()
         local e = L.Etat()
         local lanterne, cristal = L.LanterneChoisie(), L.CristalChoisi()
-        self.lanterne:Definir(lanterne and lanterne.id or false, lanterne and lanterne.label or "Aucune lanterne")
-        self.cristal:Definir(cristal and cristal.id or false, cristal and cristal.label or "Insère un cristal")
+        -- Sans cristal dans les sacs, la liste n'a rien a offrir : elle le dit,
+        -- et elle est grisee (le MJ, 23 octobre 2026).
+        -- Le cristal pose se montre avec SA charge (« Cristal raffiné (62 %) »).
+        -- Un cristal pose peut toujours se retirer : la liste reste ouverte.
+        local pose = L.CristalPose()
+        local aucunCristal = #L.CristauxPortes() == 0 and not pose
+        self.cristal:Definir(pose and ("pose:" .. tostring(pose.id)) or false, pose and L.LibelleCristal(pose)
+            or (aucunCristal and "Aucun cristal dans votre inventaire" or "Aucun cristal"))
+        self.cristal:SetEnabled(not aucunCristal)
+        self.cristal:SetAlpha(aucunCristal and 0.45 or 1)
         self.variateur:Definir(L.Variateur(), Variateur(L.Variateur()))
 
         local allumee = L.Allumee()
@@ -230,8 +252,9 @@ local function Construire()
             self.allumer.label:SetText("Éteindre")
             self.allumer:SetAlpha(1)
             self.allumer:Enable()
-        elseif max > 0 and charge <= 0 then
-            self.allumer.label:SetText("Recharger d'abord")
+        -- Sans cristal (epuise, il s'est detruit) ou a vide : on le dit.
+        elseif not cristal or (max > 0 and charge <= 0) then
+            self.allumer.label:SetText("Change de cristal d'abord")
             self.allumer:SetAlpha(0.4)
             self.allumer:Disable()
         else
@@ -241,7 +264,8 @@ local function Construire()
         end
 
         self.aVenir:SetShown(not self.volet:IsShown())
-        self.reglages.label:SetText(self.volet:IsShown() and "Fermer les paramètres" or "Paramètres")
+        -- Le rouage s'allume tant que le volet est ouvert.
+        self.reglages:Selectionner(self.volet:IsShown())
         if self.volet:IsShown() then
             for _, ligne in ipairs(self.emotes) do
                 local texte = L.Emote(ligne.cle)
@@ -266,6 +290,18 @@ local function Construire()
 
     L.onChange = function() if f:IsShown() then f:Afficher() end end
     L.onTick = L.onChange
+
+    local verification = 0
+    f:HookScript("OnUpdate", function(self, dt)
+        verification = verification + (tonumber(dt) or 0)
+        if verification < 0.5 then return end
+        verification = 0
+        local entity = LCM.Entities.Self()
+        if not L.LanterneEquipee(entity) then
+            self:Hide()
+            if L.Allumee() then L.Eteindre() end
+        end
+    end)
     return f
 end
 
@@ -275,11 +311,11 @@ function Ecran.Fenetre()
 end
 
 function Ecran.Basculer()
+    local entity = LCM.Entities.Self()
+    if not L.LanterneEquipee(entity) then
+        return false, "équipe une lanterne sur ta ceinture porte-outils pour ouvrir ce menu."
+    end
     local f = Ecran.Fenetre()
     f:SetShown(not f:IsShown())
-    return f
+    return true, f
 end
-
-LCM.WhenReady(function()
-    UI.Menu.Lier("outils_portes", Ecran.Basculer)
-end)

@@ -312,7 +312,7 @@ E.conteneurs = {
     arme = 2,             -- Equipements › Armes
     equipement = 5,       -- Equipements › Armures et vetements
     accessoire = 5,       -- Equipements › Accessoires
-    outil = 1,            -- Equipements › Outils
+    outil = 4,            -- Ceinture porte-outils : plusieurs outils portes
     etat = 30,            -- Sante › Etats divers
     maladie = 10,         -- Sante › Etats de maladies
     intangible = 10,      -- Sante › Etats intangibles
@@ -374,6 +374,9 @@ E.inventaire = {
     -- template : demande de l'equipe le 13 octobre 2026.
     ceintures = 1,
     placesCeinture = 3,
+    -- La poche des cristaux entames (23 octobre 2026) : un seul emplacement,
+    -- sans limite de cases. Ce n'est pas un reglage, c'est sa forme.
+    cristaux_usage = 1,
     -- `devises` retire avec son onglet : voir Data/Inventaire.lua.
 }
 
@@ -891,14 +894,12 @@ E.campement = {
 -- Repris du module Lanterne d'OmegaSurvive (Core/Lanternes.lua, 22 octobre
 -- 2026). La charge s'ecoule a `multiplicateur de la lanterne x variateur`.
 --   * `variateurs` : les rythmes que le joueur choisit (« Variateur de
---     temps » de Survive, RATE_OPTIONS), 1 etant le rythme de la lanterne ;
---   * `attenteConsommation` : combien de secondes on attend que le serveur
---     retire un cristal consommable avant d'annuler la recharge (0,6 dans
---     Survive).
+--     temps » de Survive, RATE_OPTIONS), 1 etant le rythme de la lanterne.
+-- (`attenteConsommation` est parti le 23 octobre 2026 : un cristal
+-- consommable se retire des sacs LCM, sur le coup, sans attendre le serveur.)
 E.lanterne = {
     variateurs = { 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5 },
     variateurDefaut = 1,
-    attenteConsommation = 0.6,
 }
 
 -- ===== Lecture d'un bareme =================================================

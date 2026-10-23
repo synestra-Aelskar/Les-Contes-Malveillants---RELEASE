@@ -172,6 +172,7 @@ function Vues.Add(definition)
         -- Tous les onglets cote a cote, la police reduite s'il le faut, au
         -- lieu de passer a la ligne.
         ongletsUneRangee = definition.ongletsUneRangee == true,
+        groupes = definition.groupes,
     }
     if definition.onglets then
         for _, onglet in ipairs(definition.onglets) do
@@ -186,7 +187,7 @@ function Vues.Add(definition)
             -- et le recopier ferait deux noms a tenir d'accord.
             local label = onglet.label or (sections[1] and sections[1].label ~= "" and sections[1].label) or ongletId
             vue.onglets[#vue.onglets + 1] = { id = ongletId, label = tostring(label), sections = sections,
-                couleur = onglet.couleur }
+                couleur = onglet.couleur, groupe = onglet.groupe }
         end
     else
         local sections = Sections(id, definition.blocs)

@@ -49,7 +49,7 @@ Menu.STRUCTURE = {
             end },
           { id = "fiche",         label = "Fiche",                     icone = RADIAL .. "fenetres-fiche.tga" },
           { id = "sante",         label = "Santé",                     icone = RADIAL .. "fenetres-sante.tga" },
-          { id = "expertise",     label = "Expertises",                icone = RADIAL .. "fenetres-expertise.tga" },
+          { id = "expertise",     label = "Capacité",                  icone = RADIAL .. "fenetres-expertise.tga" },
           { id = "penetrations_resistances", label = "Pénétration & Résistances", icone = RADIAL .. "fenetres-penetrations_resistances.tga" },
           { id = "statistiques",  label = "Statistiques",              icone = RADIAL .. "fenetres-statistiques.tga" },
           { id = "apprentissage", label = "Apprentissage",             icone = RADIAL .. "fenetres-apprentissage.tga" },

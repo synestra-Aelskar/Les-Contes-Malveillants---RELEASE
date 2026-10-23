@@ -849,6 +849,20 @@ function Fenetre.NouvelleLigne(f, index)
     r.id:SetWordWrap(false)
     r.nom = UI.Texte(r, "", UI.C.titre, "GameFontNormalSmall")
     r.nom:SetWordWrap(false)
+    local function titreEntree()
+        return r.element and (r.element.label or r.element.id) or "Entrée"
+    end
+    local function texteEntree()
+        local e = r.element
+        if not e then return "" end
+        local categorie = f:Categorie()
+        local description = tostring(e.description or "")
+        if description ~= "" then return description end
+        return categorie and ("Entrée du compendium : " .. categorie.label .. ".")
+            or "Entrée du compendium."
+    end
+    UI.Bulle(r, titreEntree, texteEntree, 0.2)
+    r.bulleTitre, r.bulleTexte = titreEntree, texteEntree
     r.diviseurG = UI.Filet(r, false, true)
     r.diviseurD = UI.Filet(r, false, true)
     r.vue = CreateFrame("Frame", nil, r)
@@ -920,6 +934,7 @@ local function Cellule(r, n)
     c.icone:SetPoint("LEFT", c, "LEFT", 2, 0)
     c.survol = UI.Aplat(c, { 0.85, 0.75, 0.40, 0.08 }, "HIGHLIGHT")
     c.survol:SetAllPoints(c)
+    UI.Bulle(c, r.bulleTitre, r.bulleTexte, 0.2)
     -- Une cellule est un bouton : elle prend la souris a la ligne. Sans ce
     -- relais, on ne glissait une entree qu'en la saisissant par son nom.
     c:RegisterForDrag("LeftButton")
@@ -1058,6 +1073,7 @@ function Fenetre.Comportement(f)
     end
 
     function f:Forger()
+        if self:Categorie().constructeur then return self:Nouvelle() end
         if not (LCM.IsMaster() and UI.Forge) then return end
         local ok, raison = UI.Forge.Ouvrir(self:Categorie().id)
         if not ok then self:Message("Forge : " .. tostring(raison), UI.C.plein) end
@@ -1517,7 +1533,10 @@ function Fenetre.Comportement(f)
         local utile = math.max(200, (d:GetWidth() or 400) - 20)
         -- « Forger », cale a droite de la premiere rangee : les autres lui
         -- laissent sa place.
-        local forgeable = editable and LCM.IsMaster() and UI.Forge ~= nil and categorie.statistiques == "bonus"
+        -- Une categorie a constructeur (lanternes, cristaux) a le sien a la
+        -- place de la forge : meme bouton, meme place (23 octobre 2026).
+        local forgeable = editable and LCM.IsMaster()
+            and ((UI.Forge ~= nil and categorie.statistiques == "bonus") or categorie.constructeur == true)
         self.forger:SetShown(forgeable)
         if forgeable then
             self.forger:ClearAllPoints()

@@ -38,6 +38,7 @@ Schema.AddTab({
                 -- Fatigue (template) : 15 + 2 x niveau + esprit + 2 x constitution
                 --   + Endurance totale / 1 + 3 x (pts secondaires) + bonus portes.
                 { id = "fatigue",  kind = "gauge", label = "Fatigue",
+                  note = "Réserve d'énergie du personnage. À mesure qu'elle baisse, la fatigue impose des malus croissants. À zéro, le personnage est totalement épuisé et subit de lourds malus.",
                   maxFormula = function(entity)
                       local e = LCM.Equilibrage.fatigue
                       local v = function(id) return tonumber(LCM.Entities.Get_Value(entity, id)) or 0 end
@@ -72,15 +73,19 @@ Schema.AddTab({
         {
             label = "Identité",
             fields = {
-                { id = "race",         kind = "text", label = "Race" },
+                { id = "race",         kind = "text", label = "Race",
+                  note = "Origine du personnage. Elle détermine notamment sa morphologie et peut apporter des caractéristiques." },
                 { id = "portrait",     kind = "text", label = "Portrait",
                   note = "Identifiant de l'artwork livré avec l'addon ; vide = celui du personnage." },
                 { id = "morphologie",  kind = "text", label = "Morphologie imposée", mjSeulement = true,
                   note = "Pour un PNJ sans race : prime sur celle de la race." },
                 { id = "niveau", kind = "stat", label = "Niveau",
-                  default = LCM.Equilibrage.creation.niveauDepart },
-                { id = "age",   kind = "stat", label = "Âge" },
-                { id = "sexe",  kind = "text", label = "Sexe" },
+                  default = LCM.Equilibrage.creation.niveauDepart,
+                  note = "Progression du personnage. Le niveau intervient dans plusieurs maximums et calculs de la fiche." },
+                { id = "age",   kind = "stat", label = "Âge",
+                  note = "Âge du personnage, en années." },
+                { id = "sexe",  kind = "text", label = "Sexe",
+                  note = "Sexe indiqué dans l'identité du personnage." },
                 { id = "poids", kind = "stat", label = "Poids", note = "En kilogrammes." },
             },
         },
@@ -139,18 +144,24 @@ Schema.AddTab({
             label = "Habilités",
             fields = {
                 { id = "adresse",      kind = "roll", label = "Adresse",      default = 0,
-                  dice = { min = 0, max = 15 } },
+                  dice = { min = 0, max = 15 },
+                  note = "Mesure la coordination physique nécessaire à certaines actions, notamment pour toucher un adversaire avec une attaque.\n\n0 - 15 [+ Mod.]" },
                 { id = "esprit",       kind = "roll", label = "Esprit",       default = 0,
-                  dice = { min = 0, max = 15 } },
+                  dice = { min = 0, max = 15 },
+                  note = "Mesure la capacité à supporter des images intenses et à manipuler des sortilèges. En attaque, aide à mieux contrôler ses sorts pour toucher leur cible.\n\n0 - 15 [+ Mod.]" },
             },
         },
         {
             label = "Statistiques",
             fields = {
-                { id = "force",        kind = "stat", label = "Force",        default = 0 },
-                { id = "mystique",     kind = "stat", label = "Mystique",     default = 0 },
-                { id = "perception",   kind = "stat", label = "Perception",   default = 0 },
-                { id = "constitution", kind = "stat", label = "Constitution", default = 0 },
+                { id = "force",        kind = "stat", label = "Force",        default = 0,
+                  note = "Mesure votre puissance physique. Elle influe notamment sur le poids que vous pouvez soulever, vos capacités athlétiques, vos distances de saut et la portée de vos lancers d'objets." },
+                { id = "mystique",     kind = "stat", label = "Mystique",     default = 0,
+                  note = "Mesure votre affinité avec les magies élémentaire et cosmique. Elle détermine la puissance de vos sortilèges, quelle que soit leur école, et affine vos observations dans ces deux domaines." },
+                { id = "perception",   kind = "stat", label = "Perception",   default = 0,
+                  note = "Permet d'analyser son environnement et de repérer les failles dans l'armure d'autrui. Aide aussi à détecter l'hostilité adverse et à y réagir plus vite, ce qui améliore l'initiative." },
+                { id = "constitution", kind = "stat", label = "Constitution", default = 0,
+                  note = "Mesure la capacité naturelle à survivre. Elle détermine la résistance aux coups, aux poisons et aux autres états qui affectent le corps, ainsi que les points de vie généraux." },
             },
         },
         {
@@ -162,13 +173,16 @@ Schema.AddTab({
             id = "facultes", label = "Facultés",
             fields = {
                 { id = "poids_soulevable", kind = "calc", label = "Poids soulevable (en kg)",
+                  note = "Charge que le personnage peut soulever, calculée à partir de sa Force totale.",
                   formula = function(entity)
                       local e = LCM.Equilibrage.quotidien
                       return e.poidsBase + e.poidsParForce * LCM.Formules.Primaire(entity, "force")
                   end },
                 { id = "saut_horizontal", kind = "calc", label = "Distance de saut horizontal",
+                  note = "Distance de saut vers l'avant, calculée à partir de la Force et de l'Adresse totales.",
                   formula = function(entity) return LCM.Saut(entity, "horizontal") end },
                 { id = "saut_vertical", kind = "calc", label = "Distance de saut vertical",
+                  note = "Hauteur de saut, calculée à partir de la Force et de l'Adresse totales.",
                   formula = function(entity) return LCM.Saut(entity, "vertical") end },
             },
         },
@@ -179,6 +193,7 @@ Schema.AddTab({
                 --   + esprit / 2 + perception / 2. Les bonus portes s'ajoutent
                 --   au jet (Core/Roll.lua), pas ici.
                 { id = "initiative", kind = "roll", label = "Initiative", dice = { min = 0, max = 10 },
+                  note = "Ordre d'action calculé avec le niveau, l'Esprit, la Perception et les points secondaires ; jet de 0 à 10.",
                   valueFormula = function(entity)
                       local e = LCM.Equilibrage.initiative
                       local v = function(id) return tonumber(LCM.Entities.Get_Value(entity, id)) or 0 end
@@ -189,6 +204,7 @@ Schema.AddTab({
                 -- Points d'action : 4 + 1 tous les 5 niveaux + pts secondaires
                 --   + bonus portes.
                 { id = "pa",         kind = "gauge", label = "PA",
+                  note = "Les points d'action servent surtout lors des combats au tour par tour. Ils déterminent les actions que vous pouvez accomplir pendant votre tour.",
                   maxFormula = function(entity)
                       local e = LCM.Equilibrage.pa
                       local v = tonumber(LCM.Entities.Get_Value(entity, "sec_pa")) or 0
@@ -200,12 +216,15 @@ Schema.AddTab({
                 --   + pts secondaires x 1 + bonus portes (compris dans la formule :
                 --   un objet peut viser ces champs, d'ou `recoitBonus`).
                 { id = "depl_terrestre", kind = "calc", label = "Terrestre", recoitBonus = true,
+                  note = "Distance de déplacement à pied. Elle tient compte de la Course, des points secondaires et des bonus portés.",
                   formula = function(entity) return LCM.Deplacement(entity, "terrestre") end },
                 { id = "depl_nage",      kind = "calc", label = "Nage",      recoitBonus = true,
+                  note = "Distance de déplacement dans l'eau. Elle tient compte de la Nage, des points secondaires et des bonus portés.",
                   formula = function(entity) return LCM.Deplacement(entity, "nage") end },
                 -- Le vol : base zero dans le template, il ne vient donc que des
                 -- points secondaires et de ce qu'on porte.
                 { id = "depl_vol",       kind = "calc", label = "Vol",       recoitBonus = true,
+                  note = "Distance de déplacement en vol. Elle vient des points secondaires et des bonus portés.",
                   formula = function(entity) return LCM.Deplacement(entity, "vol") end },
             },
         },
@@ -222,8 +241,10 @@ Schema.AddTab({
                 -- La liste des traits portes : un champ a part entiere, pour
                 -- que la fiche la dessine comme le reste, mais sa donnee vit
                 -- dans `entity.traits` (voir Core/Traits.lua).
-                { id = "traits_portes", kind = "traits", label = "Traits portés" },
-                { id = "traits_notes", kind = "text", label = "Notes" },
+                { id = "traits_portes", kind = "traits", label = "Traits portés",
+                  note = "Traits du personnage. Leurs effets et leur coût figurent sur leurs cartes." },
+                { id = "traits_notes", kind = "text", label = "Notes",
+                  note = "Espace de notes lié aux traits du personnage." },
             },
         },
     },

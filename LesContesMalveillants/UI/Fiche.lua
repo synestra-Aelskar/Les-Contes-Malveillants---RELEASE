@@ -102,14 +102,17 @@ local LIBELLE_SOURCE = {
 -- n'est pas une source d'effets mais compte dans le total.
 -- Rend une liste de lignes { gauche, droite, couleur } que Fiche.Bulle sait
 -- poser, et la note du champ a part.
-function Fiche.Decomposition(e, field, base, apport)
-    local lignes = { note = field.note ~= "" and field.note or nil }
+function Fiche.Decomposition(e, field, base, apport, options)
+    options = options or {}
+    local lignes = { note = field.note and field.note ~= "" and field.note or nil }
     local total = (base or 0) + (apport or 0)
-    if (base or 0) ~= 0 then
-        lignes[#lignes + 1] = { "Points investis", Nombre(base) }
+    if not options.sansBase then
+        local nom = field.kind == "calc" and "Valeur calculée" or "Points investis"
+        if field.note and field.note:find("pas des points investis", 1, true) then nom = "Valeur initiale" end
+        lignes[#lignes + 1] = { nom, Nombre(base or 0) }
     end
-    if (apport or 0) ~= 0 then
-        lignes[#lignes + 1] = { "Apport des statistiques", Montant(apport) }
+    if field.kind == "roll" or (apport or 0) ~= 0 then
+        lignes[#lignes + 1] = { "Apport des statistiques", Montant(apport or 0) }
     end
     for _, part in ipairs(LCM.Effets.Detail(e, field.id)) do
         total = total + part.total
@@ -120,7 +123,130 @@ function Fiche.Decomposition(e, field, base, apport)
                                     element.montant < 0 and UI.C.plein or UI.C.accent }
         end
     end
+    if options.sansBase and #lignes == 0 then lignes[#lignes + 1] = { "Bonus portés", "0" } end
+    local mecaniqueId = field.id and field.id:match("^meca_(.+)$")
+    if mecaniqueId and LCM.Reglages and LCM.Reglages.PuissanceMecanique then
+        local p = LCM.Reglages.PuissanceMecanique(mecaniqueId)
+        local equipement = LCM.Effets.Bonus(e, field.id)
+        lignes.note = string.format("Puissance : %s %% + (%s × %s %%) + (%s × %s %%) = %s %%",
+            Nombre(p.base), Nombre(base or 0), Nombre(p.parPoint), Nombre(equipement),
+            Nombre(p.equipParPoint), Nombre(p.base + (base or 0) * p.parPoint
+                + equipement * p.equipParPoint))
+    end
     lignes.total = Nombre(total)
+    return lignes
+end
+
+-- Une jauge affiche un courant et un maximum : le survol explicite aussi la
+-- soustraction, y compris lorsque la jauge est pleine ou vide.
+function Fiche.DecompositionJauge(jauge, note, e, id)
+    if not jauge then return note end
+    local lignes = { note = note }
+    local q = LCM.Equilibrage and LCM.Equilibrage[id]
+    local v = function(champ) return tonumber(LCM.Entities.Get_Value(e, champ)) or 0 end
+    if e and id == "fatigue" and q then
+        local morceaux = {
+            { "Base", q.base },
+            { "Niveau × " .. Nombre(q.parNiveau), v("niveau") * q.parNiveau },
+            { "Esprit × " .. Nombre(q.parEsprit), v("esprit") * q.parEsprit },
+            { "Constitution × " .. Nombre(q.parConstitution), v("constitution") * q.parConstitution },
+            { "Endurance / " .. Nombre(q.diviseurEndurance),
+                LCM.Formules.Expertise(e, "endurance") / q.diviseurEndurance },
+            { "Points secondaires × " .. Nombre(q.parSecondaire), v("sec_fatigue") * q.parSecondaire },
+            { "Bonus portés", LCM.Effets.Bonus(e, "fatigue") },
+        }
+        local somme = 0
+        for _, part in ipairs(morceaux) do somme = somme + part[2] end
+        if math.floor(somme) == jauge.max then
+            for _, part in ipairs(morceaux) do lignes[#lignes + 1] = { part[1], Nombre(part[2]) } end
+        end
+    elseif e and id == "pa" and q then
+        local palier = math.floor(v("niveau") / q.niveauxParPA)
+        local morceaux = {
+            { "Base", q.base }, { "Niveau : paliers de " .. Nombre(q.niveauxParPA), palier },
+            { "Points secondaires", v("sec_pa") }, { "Bonus portés", LCM.Effets.Bonus(e, "pa") },
+        }
+        local somme = 0
+        for _, part in ipairs(morceaux) do somme = somme + part[2] end
+        if math.floor(somme) == jauge.max then
+            for _, part in ipairs(morceaux) do lignes[#lignes + 1] = { part[1], Nombre(part[2]) } end
+        end
+    end
+    lignes[#lignes + 1] = { "Maximum", Nombre(jauge.max) }
+    lignes[#lignes + 1] = { "Écart au maximum", Montant(jauge.current - jauge.max) }
+    lignes.total = Nombre(jauge.current)
+    return lignes
+end
+
+-- Les champs dont la valeur provient d'une formule montrent ses termes, et
+-- pas simplement « valeur calculée = total ».
+function Fiche.DecompositionFormule(e, field)
+    if not e or not field then return nil end
+    local id, eq = field.id, LCM.Equilibrage
+    local v = function(champ) return tonumber(LCM.Entities.Get_Value(e, champ)) or 0 end
+    local p = function(champ) return LCM.Formules.Primaire(e, champ) end
+    local lignes = { note = field.note }
+    if id == "poids_soulevable" then
+        local q = eq.quotidien
+        lignes[1] = { "Base", Nombre(q.poidsBase) }
+        lignes[2] = { "Force totale × " .. Nombre(q.poidsParForce), Nombre(p("force") * q.poidsParForce) }
+    elseif id == "saut_horizontal" or id == "saut_vertical" then
+        local q = eq.sauts[id == "saut_horizontal" and "horizontal" or "vertical"]
+        lignes[1] = { "Force totale / " .. Nombre(q.diviseurForce), Nombre(p("force") / q.diviseurForce) }
+        lignes[2] = { "Adresse totale / " .. Nombre(q.diviseurAdresse), Nombre(p("adresse") / q.diviseurAdresse) }
+        lignes.note = (field.note or "") .. "\nArrondi à l'entier inférieur."
+    elseif id == "initiative" then
+        -- Une valeur saisie explicitement remplace la formule dans Entities.
+        if e.values and e.values.initiative ~= nil then return nil end
+        local q = eq.initiative
+        lignes[1] = { "Points secondaires", Nombre(v("sec_initiative")) }
+        lignes[2] = { "Niveau / " .. Nombre(q.diviseurNiveau), Nombre(v("niveau") / q.diviseurNiveau) }
+        lignes[3] = { "Esprit total / " .. Nombre(q.diviseurEsprit), Nombre(p("esprit") / q.diviseurEsprit) }
+        lignes[4] = { "Perception totale / " .. Nombre(q.diviseurPerception), Nombre(p("perception") / q.diviseurPerception) }
+        lignes[5] = { "Bonus portés", Montant(LCM.Effets.Bonus(e, id)) }
+        lignes.note = (field.note or "") .. "\nArrondi à l'entier inférieur."
+    elseif id == "depl_terrestre" or id == "depl_nage" or id == "depl_vol" then
+        local mode = id:sub(6)
+        local q = eq.deplacement
+        lignes[1] = { "Base", Nombre(q[mode] or 0) }
+        lignes[2] = { "Expertise", Nombre(LCM.Expertises.BonusDeplacement(e, mode) or 0) }
+        lignes[3] = { "Points secondaires × " .. Nombre(q.parSecondaire), Nombre(q.parSecondaire * v("sec_deplacement")) }
+        lignes[4] = { "Bonus portés", Montant(LCM.Effets.Bonus(e, id)) }
+        lignes.note = (field.note or "") .. "\nArrondi à l'entier inférieur."
+    else
+        return nil
+    end
+    lignes.total = Nombre(v(id) + (id == "initiative" and LCM.Effets.Bonus(e, id) or 0))
+    return lignes
+end
+
+function Fiche.DecompositionVie(e)
+    if not e then return nil end
+    local courant, maximum = LCM.Body.Totals(e)
+    local lignes = { note = "Chaque zone vaut 30 % du maximum." }
+    local q = LCM.Equilibrage and LCM.Equilibrage.pv
+    if q then
+        local v = function(champ) return tonumber(LCM.Entities.Get_Value(e, champ)) or 0 end
+        local constitution = LCM.Formules.Primaire(e, "constitution")
+        local morceaux = {
+            { "Base", q.base },
+            { "Niveau × " .. Nombre(q.parNiveau), v("niveau") * q.parNiveau },
+            { "Vitalité × " .. Nombre(q.parVitalite), v("sec_vitalite") * q.parVitalite },
+            { "Constitution × coefficient",
+                constitution * (q.constitution.base + v("constitution") * q.constitution.parConstitution) },
+        }
+        local somme = 0
+        for _, part in ipairs(morceaux) do somme = somme + part[2] end
+        if math.floor(somme) == maximum then
+            for _, part in ipairs(morceaux) do lignes[#lignes + 1] = { part[1], Nombre(part[2]) } end
+            lignes.note = lignes.note .. "\nCoefficient de Constitution : "
+                .. Nombre(q.constitution.base) .. " + (" .. Nombre(v("constitution"))
+                .. " × " .. Nombre(q.constitution.parConstitution) .. ")."
+        end
+    end
+    lignes[#lignes + 1] = { "Maximum", Nombre(maximum) }
+    lignes[#lignes + 1] = { "Blessures", Montant(courant - maximum) }
+    lignes.total = Nombre(courant)
     return lignes
 end
 
@@ -265,23 +391,25 @@ function Fiche.Bulle(l, titre, texte)
     l:EnableMouse(true)
     l:SetScript("OnEnter", function(self)
         if not GameTooltip then return end
+        local contenu = type(texte) == "function" and texte(self) or texte
+        if not contenu or contenu == "" then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(titre)
-        if type(texte) == "table" then
+        if type(contenu) == "table" then
             local t, d = UI.C.texte, UI.C.titre
-            for _, ligne in ipairs(texte) do
+            for _, ligne in ipairs(contenu) do
                 local c = ligne[3] or d
                 GameTooltip:AddDoubleLine(ligne[1], ligne[2], t[1], t[2], t[3], c[1], c[2], c[3])
             end
-            if #texte > 0 then GameTooltip:AddFilet() end
-            GameTooltip:AddDoubleLine("Total", texte.total, d[1], d[2], d[3], d[1], d[2], d[3])
-            if texte.note then
+            if #contenu > 0 then GameTooltip:AddFilet() end
+            GameTooltip:AddDoubleLine("Total", contenu.total, d[1], d[2], d[3], d[1], d[2], d[3])
+            if contenu.note then
                 local n = UI.C.discret
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddLine(texte.note, n[1], n[2], n[3], true)
+                GameTooltip:AddLine(contenu.note, n[1], n[2], n[3], true)
             end
         else
-            GameTooltip:AddLine(texte, 0.88, 0.84, 0.76, true)
+            GameTooltip:AddLine(contenu, 0.88, 0.84, 0.76, true)
         end
         GameTooltip:Show()
     end)
@@ -325,16 +453,11 @@ function Lignes.stat(parent, field, c)
         -- colonne prevue pour une : ca debordait, et c'est le total qu'on lit
         -- en jouant. Le detail passe dans l'infobulle, ou il ne gene personne
         -- (5 octobre 2026).
-        if bonus ~= 0 then
-            local base = tonumber(valeur) or 0
-            self.valeur:SetText(Nombre(base + bonus))
-            self.bonus:SetText("")
-            Bulle(self, field.label, Fiche.Decomposition(e, field, base, 0))
-        else
-            self.valeur:SetText(Nombre(valeur))
-            self.bonus:SetText("")
-            Bulle(self, field.label, field.note)
-        end
+        local base = tonumber(valeur)
+        self.valeur:SetText(Nombre(base and (base + bonus) or valeur))
+        self.bonus:SetText("")
+        Bulle(self, field.label, Fiche.DecompositionFormule(e, field)
+            or (base and Fiche.Decomposition(e, field, base, 0) or field.note))
     end
     return l
 end
@@ -397,7 +520,11 @@ function Lignes.gauge(parent, field, c)
         Poser(0, n)
         return true
     end)
-    Bulle(l, field.label, field.note)
+    Bulle(l, field.label, function(self)
+        return self.entity and Fiche.DecompositionJauge(LCM.Entities.Gauge(self.entity, field.id), field.note,
+            self.entity, field.id)
+            or field.note
+    end)
     function l:Actualiser(e)
         self.entity = e
         local jauge = LCM.Entities.Gauge(e, field.id)
@@ -603,13 +730,9 @@ function Lignes.roll(parent, field, c)
         -- propre colonne : il dit d'ou vient la difference.
         self.valeur:SetText(Nombre(valeur + bonus))
         self.bonus:SetText(bonus ~= 0 and Montant(bonus) or "")
-        if bonus ~= 0 then
-            local investi = tonumber(LCM.Entities.Get_Value(e, field.id)) or 0
-            Bulle(self, field.label,
-                Fiche.Decomposition(e, field, investi, valeur - investi))
-        else
-            Bulle(self, field.label, field.note)
-        end
+        local investi = tonumber(LCM.Entities.Get_Value(e, field.id)) or 0
+        Bulle(self, field.label, Fiche.DecompositionFormule(e, field)
+            or Fiche.Decomposition(e, field, investi, valeur - investi))
         local source = LCM.Effets.Avantage(e, field.id)
         -- Les expertises proposent maintenant avantage/desavantage dans leur
         -- fenetre DD/PF si un trait positif existe. La petite case demeure
@@ -647,8 +770,9 @@ function Lignes.body(parent, field, c, options)
     -- « Point de vie » au singulier : c'est le libelle du template.
     Nom(l.total, c, "Point de vie", iconeTotal ~= nil)
     Jauge(l.total, c, UI.C.vie, nil)
-    Bulle(l.total, "Point de vie",
-        "Points de vie maximum moins les blessures de toutes les zones. Chaque zone vaut 30 % du maximum.")
+    Bulle(l.total, "Point de vie", function()
+        return Fiche.DecompositionVie(l.entity)
+    end)
 
     local function Zone(index)
         local z = Ligne(l, c)
@@ -702,7 +826,11 @@ function Lignes.body(parent, field, c, options)
             z.partieId = partie.id
             z.nom:SetText(partie.label)
             z.icone:SetTexture(partie.part.icone)
-            Bulle(z, partie.label, partie.part.description)
+            Bulle(z, partie.label, {
+                { "Maximum", Nombre(partie.max) },
+                { "Blessures", Montant(partie.current - partie.max) },
+                total = Nombre(partie.current), note = partie.part.description,
+            })
             z.barre:Regler(partie.current, partie.max)
             z:Controles(LCM.IsMaster() and not e.distante)
             z:CaleBarre()
@@ -819,6 +947,12 @@ function Fiche.Carte(parent, onRetirer, largeur)
     largeur = largeur or 480
     local c = CreateFrame("Frame", nil, parent)
     Surface(c)
+    c:EnableMouse(true)
+    UI.Bulle(c, function(self) return self.nom:GetText() end, function(self)
+        local description = self.description:GetText() or ""
+        local effets = self.effets:GetText() or ""
+        return description .. (effets ~= "" and ("\n" .. effets) or "")
+    end, 0.2)
 
     c.nom = UI.Texte(c, "", UI.C.titre, "GameFontNormal")
     c.nom:SetPoint("TOPLEFT", c, "TOPLEFT", 10, -8)
@@ -893,6 +1027,7 @@ function Lignes.traits(parent, field, c)
     l.largeur = c.largeurLigne
 
     l.entete = Ligne(l, c)
+    Bulle(l.entete, field.label, field.note)
     l.entete:SetPoint("TOPLEFT", l, "TOPLEFT", 0, 0)
     l.entete:SetPoint("TOPRIGHT", l, "TOPRIGHT", 0, 0)
     l.label = Nom(l.entete, c, field.label)
@@ -1028,6 +1163,17 @@ function Lignes.recap(parent, field, c, mode)
     local l = CreateFrame("Frame", nil, parent)
     l:SetHeight(math.max(20, 34 * c.echelle))
     Surface(l)
+    Bulle(l, field.label, function(self)
+        if not self.entity then return field.note end
+        if mode == "bonus" then
+            return Fiche.Decomposition(self.entity, field, 0, 0, { sansBase = true })
+        end
+        local formule = Fiche.DecompositionFormule(self.entity, field)
+        if formule then return formule end
+        local base = tonumber(LCM.Entities.Get_Value(self.entity, field.id)) or 0
+        local apport = field.kind == "roll" and LCM.Formules.Apport(self.entity, field.id) or 0
+        return Fiche.Decomposition(self.entity, field, base, apport)
+    end)
     Nom(l, c, field.label)
     UI.Police(l.nom, c.police * 0.85)
     l.valeur = UI.Texte(l, "", UI.C.titre)
@@ -1040,6 +1186,7 @@ function Lignes.recap(parent, field, c, mode)
     l.valeur:SetPoint("RIGHT", l, "LEFT", c.valeur + c.valeurLargeur, 0)
     l.valeur:SetJustifyH("RIGHT")
     function l:Actualiser(e)
+        self.entity = e
         local total = Fiche.Total(e, field, mode)
         self.valeur:SetText((mode == "bonus" and total > 0 and "+" or "") .. Nombre(total))
         -- Une valeur nulle s'efface : on lit d'un coup d'oeil ce qui compte.

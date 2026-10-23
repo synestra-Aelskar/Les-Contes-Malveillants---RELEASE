@@ -171,7 +171,12 @@ function Fiches.Demander(joueur)
     if joueur == "" then return false, "quel joueur ?" end
     if not LCM.IsMaster() then return false, "reserve au maitre du jeu." end
     if joueur == LCM.PlayerId() then return false, "c'est toi." end
-    return LCM.Reseau.Envoyer("fiche?", {}, "WHISPER", joueur)
+    -- Les traces de ce trajet vont au journal ecrit (Core/Log.lua) : une
+    -- fiche qui ne revient pas se diagnostique en lisant les deux journaux,
+    -- celui du MJ et celui du joueur.
+    local ok, morceaux = LCM.Reseau.Envoyer("fiche?", {}, "WHISPER", joueur)
+    LCM.Trace(string.format("fiche demandée à %s : %s", joueur, ok and "envoyé" or "échec de l'envoi"))
+    return ok, morceaux
 end
 
 function Fiches.Arreter(joueur)
@@ -212,20 +217,27 @@ end
 LCM.WhenReady(function()
     -- On me demande ma fiche.
     LCM.Reseau.Ecouter("fiche?", function(expediteur)
+        LCM.Trace(string.format("demande de fiche reçue de %s", tostring(expediteur)))
         if not DansLeGroupe(expediteur) then
             LCM.Debug(string.format("fiche refusee a %s : hors du groupe.", tostring(expediteur)))
             return
         end
         local moi = LCM.Entities.Self()
-        if not moi then return end
+        if not moi then
+            LCM.Trace(string.format("fiche refusée à %s : aucun personnage actif.", tostring(expediteur)))
+            return
+        end
         abonnements[tostring(expediteur)] = true
-        LCM.Reseau.Envoyer("fiche", Fiches.Paquet(moi), "WHISPER", expediteur, { etale = true })
+        local ok, morceaux = LCM.Reseau.Envoyer("fiche", Fiches.Paquet(moi), "WHISPER", expediteur, { etale = true })
+        LCM.Trace(string.format("fiche envoyée à %s : %s", tostring(expediteur),
+            ok and (tostring(morceaux) .. " morceau(x)") or "échec de l'envoi"))
         LCM.Info(string.format("%s a consulte ta fiche.", tostring(expediteur)))
     end)
 
     -- Une fiche arrive.
     LCM.Reseau.Ecouter("fiche", function(expediteur, donnees)
         local actualisation = EntreeRecue(expediteur) ~= nil
+        if not actualisation then LCM.Trace(string.format("fiche reçue de %s", tostring(expediteur))) end
         local entity = Fiches.Entite(donnees)
         recues[tostring(expediteur)] = { entity = entity, quand = Maintenant() }
         if Fiches.onRecue then Fiches.onRecue(expediteur, entity, actualisation) end
@@ -254,7 +266,11 @@ LCM.WhenReady(function()
                 end
             end
         end
-        if C_Timer and C_Timer.After then C_Timer.After(0.5, EnvoyerMisesAJour) else EnvoyerMisesAJour() end
+        -- Sous Proteger : appelee a chaque changement de la fiche, une erreur
+        -- ici se repetait sans fin. Elle se dit maintenant une fois, et va
+        -- au journal.
+        local function Pousser() LCM.Proteger("mise à jour de la fiche consultée", EnvoyerMisesAJour) end
+        if C_Timer and C_Timer.After then C_Timer.After(0.5, Pousser) else Pousser() end
     end
     LCM.Entities.Ecouter(function(entity)
         if entity == LCM.Entities.Self() then PousserFichesAbonnees() end

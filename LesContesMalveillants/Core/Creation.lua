@@ -238,6 +238,19 @@ function Creation.Note(categorie, champ)
         return nil
     end
     if categorie == "expertises" then return NoteExpertise(champ) end
+    if categorie == "penetration" or categorie == "resistance" then
+        local typeId = champ:match("^[^_]+_(.+)$")
+        local nom = typeId
+        for _, typeDegat in ipairs(Eq().types) do
+            if typeDegat.id == typeId then nom = typeDegat.label break end
+        end
+        if categorie == "penetration" then
+            return "Pénétration de type " .. tostring(nom or champ)
+                .. ", prise en compte par les actions qui utilisent ce type."
+        end
+        return "Résistance au type " .. tostring(nom or champ)
+            .. ", prise en compte lorsqu'une action de ce type vous affecte."
+    end
     -- Les autres categories portent deja leur note dans le schema, quand elles
     -- en ont une.
     local field = LCM.Schema and LCM.Schema.Field and LCM.Schema.Field(champ)

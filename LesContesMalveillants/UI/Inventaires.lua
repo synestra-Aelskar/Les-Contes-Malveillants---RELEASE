@@ -71,11 +71,62 @@ local function Entite() return LCM.Entities.Self() end
 -- Les six emplacements d'affilee : deux sacs puis quatre sacoches. L'onglet a
 -- disparu de l'ecran le 3 octobre 2026, mais la categorie reste le modele —
 -- c'est elle qui dit combien d'emplacements et ce qu'ils acceptent.
-local function Emplacements()
-    local out = {}
+-- L'ordre de la colonne, par sections (le MJ, 23 octobre 2026) : la ceinture
+-- EN HAUT — tout en bas, sous quatre sacoches, on ne la voyait pas en ouvrant
+-- l'inventaire —, puis les sacs, les sacoches, et la poche des cristaux
+-- entames. Une categorie absente de cette liste vient apres, dans son ordre.
+local ORDRE_SECTIONS = { "ceintures", "sacs", "saccoches", "cristaux_usage" }
+
+-- Le bandeau qui ouvre chaque section : un nom, une couleur legere, et a
+-- droite son remplissage (« 0/2 »). Ceinture en bleu, Sac en marron et le
+-- titre « Saccoches » sont du MJ ; la couleur des Saccoches et la poche ont
+-- recu les leurs pour se distinguer.
+local SECTIONS = {
+    ceintures      = { titre = "Ceinture", couleur = { 0.22, 0.42, 0.78 } },
+    sacs           = { titre = "Sac", couleur = { 0.50, 0.32, 0.16 } },
+    saccoches      = { titre = "Saccoches", couleur = { 0.22, 0.45, 0.28 } },
+    -- « Cristaux » suffit au bandeau (le MJ) : la carte dessous dit le reste.
+    cristaux_usage = { titre = "Cristaux", couleur = { 0.45, 0.30, 0.70 } },
+}
+local BANDEAU_H = 20
+
+local function CategoriesEnOrdre()
+    local out, vues = {}, {}
+    for _, id in ipairs(ORDRE_SECTIONS) do
+        local categorie = Inv.Get(id)
+        if categorie then out[#out + 1] = categorie vues[id] = true end
+    end
     for _, categorie in ipairs(Inv.categories) do
+        if not vues[categorie.id] then out[#out + 1] = categorie end
+    end
+    return out
+end
+
+-- Ce que montre chaque section (le MJ, 23 octobre 2026) :
+--   * la ceinture : toujours son emplacement ;
+--   * « Cristaux en cours d'usage » : seulement s'il tient un cristal ;
+--   * Sac, Saccoches : les emplacements OCCUPES, plus UN seul vide pour
+--     accueillir le suivant. Rien d'equipe : un seul emplacement, « 0/2 » ;
+--     un sac equipe : le deuxieme apparait, « 1/2 ». Plein : plus de vide.
+local function Emplacements()
+    local out, entity = {}, Entite()
+    for _, categorie in ipairs(CategoriesEnOrdre()) do
+        local videMontre = false
         for index = 1, Inv.Capacite(categorie.id) do
-            out[#out + 1] = { onglet = categorie.id, index = index, categorie = categorie }
+            local e = Inv.Emplacement(entity, categorie.id, index)
+            local montrer
+            if categorie.ceinture then
+                montrer = true
+            elseif categorie.cristaux then
+                montrer = e and type(e.cases) == "table" and next(e.cases) ~= nil
+            elseif e then
+                montrer = true
+            elseif not videMontre then
+                montrer, videMontre = true, true
+            end
+            if montrer then
+                out[#out + 1] = { onglet = categorie.id, index = index, categorie = categorie }
+            end
         end
     end
     return out
@@ -90,6 +141,24 @@ local function NomVide(categorie)
 end
 
 local function Refuser(raison) if raison then LCM.Alerte(raison) end end
+
+-- La charge de chaque cristal d'une pile de « Cristaux en cours d'usage »
+-- (« 62 %, 40 % »), ou nil pour une case ordinaire : un cristal plein ne
+-- montre pas de pourcentage (le MJ, 23 octobre 2026).
+local function Charges(c)
+    if not (c and Inv.Entame and Inv.Entame(c)) then return nil end
+    -- Une pile de la poche n'a qu'UN pourcentage (Core/Inventaire.lua) : on
+    -- le dit une fois. Une pile d'avant cette regle peut en avoir plusieurs.
+    local morceaux, vus = {}, {}
+    for _, x in ipairs(c.exemplaires) do
+        local pourcent = LCM.Lanterne.Pourcent(x)
+        if pourcent and not vus[pourcent] then
+            vus[pourcent] = true
+            morceaux[#morceaux + 1] = pourcent .. " %"
+        end
+    end
+    return #morceaux > 0 and table.concat(morceaux, ", ") or nil
+end
 
 -- La categorie du compendium d'une reference, pour « Voir ».
 local function Voir(ref, ancre)
@@ -367,6 +436,39 @@ end
 local function Empiler(objet, vers)
     local o = objet.origine
     local ok, raison = Inv.Empiler(Entite(), o.onglet, o.index, o.case, vers.onglet, vers.index, vers.case)
+    if not ok then Refuser(raison) end
+    Ecran.Actualiser()
+end
+
+-- Une entree du COMPENDIUM lachee sur une pile de la meme entree : une de
+-- plus dans la pile (le MJ, 23 octobre 2026). Elle disait « cette case est
+-- déjà occupée », alors que la case tenait justement cela. Elle n'a pas de
+-- case d'origine : c'est un don, pas un deplacement. Nil si ce n'est pas le
+-- cas : la case juge alors comme d'habitude.
+local function DuCompendium(objet, ici, vers)
+    if objet.origine or not objet.ref or objet.groupe or objet.scinder then return nil end
+    local deja = Inv.Case(ici, vers.case)
+    return deja and deja.ref == objet.ref or nil
+end
+local function AccepteAjout(ici, vers)
+    local deja = Inv.Case(ici, vers.case)
+    -- Un cristal plein ne rejoint pas une pile de cristaux entames.
+    if Inv.Entame and Inv.Entame(deja) then
+        return false, "un cristal entamé et un cristal plein ne s'empilent pas ensemble."
+    end
+    local element = LCM.Compendium.Resoudre(deja.ref)
+    local max = element and tonumber(element.pileMax)
+    if max and (tonumber(deja.quantite) or 1) >= max then
+        return false, string.format("la pile est déjà pleine (%d).", max)
+    end
+    return true
+end
+local function Ajouter(ici, vers)
+    local ok, raison = AccepteAjout(ici, vers)
+    if ok then
+        local deja = Inv.Case(ici, vers.case)
+        ok, raison = Inv.Quantite(Entite(), vers.onglet, vers.index, vers.case, (tonumber(deja.quantite) or 1) + 1)
+    end
     if not ok then Refuser(raison) end
     Ecran.Actualiser()
 end
@@ -932,8 +1034,9 @@ local function Construire()
         { enTeteSimple = true, redimensionnable = true })
     Ecran.frame = f
     -- L'emplacement qu'on regarde. Plus d'onglets : les six sont la, et c'est
-    -- celui qu'on choisit qui remplit la droite.
-    f.choisi = 1
+    -- celui qu'on choisit qui remplit la droite. Nil : le premier sac
+    -- (Rafraichir).
+    f.choisi = nil
     f.choix = UI.Choix("inventaire", "")
 
     f.filet = UI.Filet(f)
@@ -973,7 +1076,19 @@ local function Construire()
     function f:Colonne()
         local entity = Entite()
         local liste = Emplacements()
+        local y, section = 0, nil
+        for _, b in pairs(self.bandeaux) do b:Hide() end
         for rang, place in ipairs(liste) do
+            -- Une nouvelle section : son bandeau d'abord.
+            if place.onglet ~= section then
+                section = place.onglet
+                local b = self:Bandeau(place.categorie)
+                b:ClearAllPoints()
+                b:SetPoint("TOPLEFT", self.colonne.contenu, "TOPLEFT", 0, -y)
+                b.compte:SetText(self:Remplissage(entity, place.categorie))
+                b:Show()
+                y = y + BANDEAU_H + 4
+            end
             local c = self.cartes[rang]
             if not c then
                 c = Carte(self)
@@ -982,7 +1097,8 @@ local function Construire()
             c.rang, c.onglet, c.index = rang, place.onglet, place.index
             c:SetSize(COLONNE_SACS - 10, CARTE_H_LISTE)
             c:ClearAllPoints()
-            c:SetPoint("TOPLEFT", self.colonne.contenu, "TOPLEFT", 0, -(rang - 1) * (CARTE_H_LISTE + 4))
+            c:SetPoint("TOPLEFT", self.colonne.contenu, "TOPLEFT", 0, -y)
+            y = y + CARTE_H_LISTE + 4
             self:HabillerCarte(c, entity, place.categorie,
                 Inv.Emplacement(entity, place.onglet, place.index), "liste")
             -- Celui qu'on regarde se voit.
@@ -990,8 +1106,64 @@ local function Construire()
             c:Show()
         end
         for rang = #liste + 1, #self.cartes do self.cartes[rang]:Hide() end
-        self.colonne:Regler(#liste * (CARTE_H_LISTE + 4))
+        self.colonne:Regler(y)
         return liste
+    end
+
+    -- La carte d'un emplacement, ou nil s'il n'est pas montre. Son RANG
+    -- dans la colonne change avec ce qu'on equipe (un emplacement vide de
+    -- plus ou de moins) : on la retrouve par ce qu'elle represente.
+    function f:CarteDe(onglet, index)
+        index = index or 1
+        for _, c in ipairs(self.cartes) do
+            if c:IsShown() and c.onglet == onglet and c.index == index then return c end
+        end
+    end
+
+    -- Le bandeau d'une section, cree une fois par categorie.
+    f.bandeaux = {}
+    function f:Bandeau(categorie)
+        local b = self.bandeaux[categorie.id]
+        if b then return b end
+        local def = SECTIONS[categorie.id] or { titre = categorie.label, couleur = { 0.4, 0.4, 0.4 } }
+        b = CreateFrame("Frame", nil, self.colonne.contenu)
+        b:SetSize(COLONNE_SACS - 10, BANDEAU_H)
+        local r, v, bl = def.couleur[1], def.couleur[2], def.couleur[3]
+        b.fond = UI.Aplat(b, { r, v, bl, 0.35 })
+        b.fond:SetAllPoints(b)
+        b.trait = UI.Aplat(b, { r, v, bl, 0.9 }, "ARTWORK")
+        b.trait:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 0, 0)
+        b.trait:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, 0)
+        b.trait:SetHeight(1)
+        b.titre = UI.Texte(b, def.titre, UI.C.titre, "GameFontNormalSmall")
+        b.titre:SetPoint("LEFT", b, "LEFT", 8, 0)
+        b.compte = UI.Texte(b, "", UI.C.texte, "GameFontNormalSmall")
+        b.compte:SetPoint("RIGHT", b, "RIGHT", -8, 0)
+        self.bandeaux[categorie.id] = b
+        return b
+    end
+
+    -- Ce que dit le bandeau a droite : les emplacements occupes sur leur
+    -- nombre (« 1/2 »). La ceinture compte l'objet pose par-dessus ses cases
+    -- de base ; la poche, sans limite, dit combien de piles elle tient.
+    function f:Remplissage(entity, categorie)
+        local capacite = Inv.Capacite(categorie.id)
+        if categorie.cristaux then
+            local e = Inv.Emplacement(entity, categorie.id, 1)
+            local n = 0
+            for _ in pairs(e and type(e.cases) == "table" and e.cases or {}) do n = n + 1 end
+            return tostring(n)
+        end
+        local pris = 0
+        for index = 1, capacite do
+            local e = Inv.Emplacement(entity, categorie.id, index)
+            if categorie.ceinture then
+                if e and e.sac then pris = pris + 1 end
+            elseif e then
+                pris = pris + 1
+            end
+        end
+        return string.format("%d/%d", pris, capacite)
     end
 
     -- La droite : le contenu du sac choisi, ligne par ligne.
@@ -1063,6 +1235,7 @@ local function Construire()
                     if MemeCase(objet) then return true end
                     local vers = { onglet = l.place.onglet, index = l.place.index, case = l.case }
                     if Empilable(objet, ici, vers) then return AccepteEmpiler(objet, vers) end
+                    if DuCompendium(objet, ici, vers) then return AccepteAjout(ici, vers) end
                     if Inv.Case(ici, l.case) then return false, "cette case est déjà occupée." end
                     return Inv.Accepte(ici, l.case, objet.ref)
                 end, function(objet)
@@ -1078,6 +1251,7 @@ local function Construire()
                     if objet.groupe then DeposerGroupe(objet, vers) return end
                     local ici = Inv.Emplacement(Entite(), l.place.onglet, l.place.index)
                     if Empilable(objet, ici, vers) then Empiler(objet, vers) return end
+                    if DuCompendium(objet, ici, vers) then Ajouter(ici, vers) return end
                     if MemeCase(objet) then return end
                     local entite = Entite()
                     -- Un objet qui vient d'ailleurs demenage : il quitte sa
@@ -1151,8 +1325,10 @@ local function Construire()
                 local exemplaire = LCM.Objets.ExemplaireDePile(c)
                 local brise = UI.ObjetBrise(entity, element, exemplaire)
                 local marque = brise and (UI.MARQUE_BRISE .. " ") or ""
+                local charges = Charges(c)
                 l.nom:SetText(marque .. (quantite > 1
-                    and (element.label .. "  x" .. quantite) or element.label))
+                    and (element.label .. "  x" .. quantite) or element.label)
+                    .. (charges and ("  (" .. charges .. ")") or ""))
                 Peindre(l.nom, brise and UI.C.plein or UI.C.texte)
                 UI.TeinterBrise(l.icone, brise)
                 local etat, reste, plein = UI.EtatObjet(entity, element, exemplaire)
@@ -1189,8 +1365,18 @@ local function Construire()
         self.zone:SetPoint("TOPLEFT", self, "TOPLEFT", 12 + COLONNE_SACS + 16, -64)
         self.zone:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -28, 16)
 
+        -- Sans choix (ou un choix disparu, comme la poche videe), c'est le
+        -- premier SAC qu'on montre : la ceinture est en tete de la colonne
+        -- depuis le 23 octobre 2026, mais ouvrir l'inventaire doit toujours
+        -- montrer son sac.
+        local places = Emplacements()
+        if not self.choisi or self.choisi > #places then
+            self.choisi = 1
+            for rang, place in ipairs(places) do
+                if place.onglet == "sacs" then self.choisi = rang break end
+            end
+        end
         local liste = self:Colonne()
-        if self.choisi > #liste then self.choisi = 1 end
         self:Contenu(liste[self.choisi])
         Ecran.RafraichirSacs()
     end
@@ -1243,7 +1429,13 @@ local function Construire()
             for _ in pairs(e.cases or {}) do pleines = pleines + 1 end
             c.icone:SetTexture(sac and sac.icone or "Interface\\Icons\\INV_Misc_QuestionMark")
             -- Le nom et le remplissage, comme le template : « Gros sac (2/12) ».
-            c.nom:SetText(string.format("%s (%d/%d)", sac and sac.label or ("? " .. contenant.id), pleines, total))
+            -- La poche des cristaux entames n'a pas de limite : « (2/3) » y
+            -- ferait croire a un plafond. Elle dit seulement combien elle tient.
+            if contenant.poche then
+                c.nom:SetText(string.format("%s (%d)", sac.label, pleines))
+            else
+                c.nom:SetText(string.format("%s (%d/%d)", sac and sac.label or ("? " .. contenant.id), pleines, total))
+            end
             if not sac then Peindre(c.nom, UI.C.plein) end
             c.description:SetText(sac and sac.description or "N'existe pas dans cette version de l'addon.")
             c.aide = "Clic : ouvrir. Clic droit : options."
@@ -1396,6 +1588,7 @@ local function NouvelleCase(s, n)
         end
         local vers = { onglet = s.onglet, index = s.index, case = b.index }
         if Empilable(objet, e, vers) then return AccepteEmpiler(objet, vers) end
+        if DuCompendium(objet, e, vers) then return AccepteAjout(e, vers) end
         if Inv.Case(e, b.index) then return false, "cette case est déjà occupée." end
         return Inv.Accepte(e, b.index, objet.ref)
     end, function(objet)
@@ -1410,6 +1603,7 @@ local function NouvelleCase(s, n)
         end
         if objet.groupe then DeposerGroupe(objet, vers) return end
         if Empilable(objet, s:Emplacement(), vers) then Empiler(objet, vers) return end
+        if DuCompendium(objet, s:Emplacement(), vers) then Ajouter(s:Emplacement(), vers) return end
         local entite = Entite()
         if objet.origine and objet.origine.onglet == s.onglet
             and objet.origine.index == s.index and objet.origine.case == b.index then
@@ -1455,6 +1649,8 @@ local function NouvelleCase(s, n)
         local element = c and LCM.Compendium.Resoudre(c.ref)
         if c then
             GameTooltip:SetText(element and element.label or ("? " .. tostring(c.ref)), 1, 0.82, 0)
+            local charges = Charges(c)
+            if charges then GameTooltip:AddLine("Charge : " .. charges, 0.55, 0.8, 1, true) end
             if element and element.description ~= "" then
                 GameTooltip:AddLine(element.description, 0.8, 0.75, 0.62, true)
             end

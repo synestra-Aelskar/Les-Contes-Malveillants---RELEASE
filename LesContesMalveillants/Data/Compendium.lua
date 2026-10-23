@@ -388,8 +388,10 @@ categorieOutils.dossiers = dossiersOutils
 
 -- Ajout de l'addon (22 octobre 2026) : la lanterne et ses cristaux, repris
 -- du module Lanterne d'OmegaSurvive (Core/Lanternes.lua). Absents du
--- template. Les regles d'aura et les phrases du MJ se saisissent en texte, une
--- par ligne, en attendant l'interface plus profonde annoncee :
+-- template. Les regles d'aura et les phrases du MJ s'enregistrent en texte, une
+-- par ligne. Depuis le 23 octobre 2026, le MJ ne les ecrit plus a la main :
+-- « Nouvelle entree » et « Forger » ouvrent le constructeur repris de Survive
+-- (LesContesMalveillants_MJ/LumieresUI.lua), qui produit ce texte :
 --   auras      « condition : commande » ou « condition : commande : phrase »,
 --              condition parmi allumer, eteindre, vide, pause, reprise ; un
 --              numero seul devient `.aura N` (posee) ou `.unaura N` (retiree) ;
@@ -397,8 +399,6 @@ categorieOutils.dossiers = dossiersOutils
 --   canaux     alerte, raid, groupe (ou le MJ parle).
 local function ChampsLumiere()
     return {
-        { cle = "verifInventaire", label = "Vérifier l'inventaire du jeu", type = "case", emplacement = "meta", carte = false },
-        { cle = "itemId", label = "ID de l'objet requis", type = "nombre", emplacement = "meta", min = 1, carte = false },
         { cle = "aurasPosees", label = "Auras posées (condition : commande)", type = "texte_long", emplacement = "body", carte = false },
         { cle = "aurasRetirees", label = "Auras retirées (condition : commande)", type = "texte_long", emplacement = "body", carte = false },
         { cle = "canaux", label = "Canaux du MJ (alerte, raid, groupe)", type = "texte", emplacement = "meta", carte = false },
@@ -409,10 +409,15 @@ end
 
 local function Lumiere(def, propres)
     def.type = "generic"
+    def.editeur, def.constructeur = "LumieresUI", true
     def.dossiers = { "Général" }
     def.champs = { Icone(), Description(true) }
     for _, champ in ipairs(propres) do def.champs[#def.champs + 1] = champ end
-    for _, champ in ipairs(ChampsLumiere()) do def.champs[#def.champs + 1] = champ end
+    -- Les regles d'aura et les phrases : la lanterne seule (le cristal est un
+    -- combustible, on ne l'allume pas).
+    if def.famille == "lanternes" then
+        for _, champ in ipairs(ChampsLumiere()) do def.champs[#def.champs + 1] = champ end
+    end
     def.colonnesTableau = def.colonnesTableau or { "description" }
     return C.Categorie(def)
 end
@@ -425,7 +430,11 @@ Lumiere({
     -- consomme au rythme de son cristal.
     defaut = { multiplicateur = 1 },
 }, {
-    { cle = "multiplicateur", label = "Multiplicateur de consommation", type = "nombre", emplacement = "meta", min = 0 },
+    -- Hors de la carte (le MJ, 23 octobre 2026) : consulter une lanterne ou un
+    -- cristal ne montre que son nom, son icone et sa description. Ses chiffres
+    -- seraient des spoils.
+    { cle = "multiplicateur", label = "Multiplicateur de consommation", type = "nombre", emplacement = "meta",
+      min = 0, carte = false },
 })
 
 Lumiere({
@@ -433,8 +442,9 @@ Lumiere({
     icone = "Interface\\ICONS\\inv_enchanting_80_veiledcrystal",
     registre = "Cristaux", famille = "cristaux",
 }, {
-    { cle = "duree", label = "Durée (minutes)", type = "nombre", emplacement = "meta", min = 0 },
-    { cle = "consommable", label = "Consommé à la recharge", type = "case", emplacement = "meta" },
+    { cle = "duree", label = "Durée (minutes)", type = "nombre", emplacement = "meta", min = 0, carte = false },
+    -- Le seul chiffre montre : combien en tient une poignee, utile pour ranger.
+    { cle = "pileMax", label = "Stack max", type = "nombre", emplacement = "meta", min = 1 },
 })
 
 -- Ajout de l'addon (10 octobre 2026) : le campement (Core/Campement.lua).

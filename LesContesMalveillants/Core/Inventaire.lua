@@ -67,6 +67,50 @@ local function EstCeinture(categorieId)
 end
 Inventaire.EstCeinture = EstCeinture
 
+-- « Cristaux en cours d'usage » (le MJ, 23 octobre 2026) : la POCHE ou vont
+-- tous les cristaux entames, et eux seuls. Un cristal entame porte sa charge
+-- sur son exemplaire (Core/Lanternes.lua) : sans cette poche, chaque cristal
+-- retire de la lanterne aurait pris sa case dans les sacs, un a 99 %, un a
+-- 98 %, un a 97 %... Ici ils s'empilent par modele, sans limite, et chacun
+-- garde SA charge. Comme la ceinture, elle n'est jamais vide et ne se porte
+-- pas : elle est la.
+local POCHE_NUE = { cristaux = true }
+local POCHE = { id = "cristaux_usage", label = "Cristaux en cours d'usage",
+    icone = "Interface\\Icons\\inv_enchanting_80_veiledcrystal",
+    description = "Les cristaux entamés, chacun avec sa charge." }
+
+local function EstPoche(categorieId)
+    local categorie = Inventaire.parId[tostring(categorieId or "")]
+    return categorie and categorie.cristaux == true or false
+end
+Inventaire.EstPoche = EstPoche
+
+-- Un cristal ENTAME : un exemplaire qui porte sa charge. `x` : une case (sa
+-- liste d'exemplaires) ou une liste d'exemplaires.
+local function Entame(x)
+    local liste = x
+    if type(x) == "table" and x.ref ~= nil then liste = x.exemplaires end
+    if type(liste) ~= "table" then return false end
+    for _, e in ipairs(liste) do
+        if type(e) == "table" and e.charge ~= nil then return true end
+    end
+    return false
+end
+Inventaire.Entame = Entame
+
+-- Le pourcentage affiche d'un cristal entame (Core/Lanternes.lua, lu a
+-- l'appel : Lanternes se charge apres). Dans la poche, seuls s'empilent les
+-- cristaux du meme modele AU MEME POURCENTAGE (le MJ, 23 octobre 2026) : les
+-- autres vont a la suite, une ligne chacun. Chacun garde sa charge exacte.
+local function Pourcent(x)
+    local liste = x
+    if type(x) == "table" and x.ref ~= nil then liste = x.exemplaires end
+    local premier = type(liste) == "table" and liste[1]
+    return premier and LCM.Lanterne and LCM.Lanterne.Pourcent(premier) or nil
+end
+local POCHE_SEULEMENT = "seuls les cristaux entamés vont dans « Cristaux en cours d'usage »."
+local DANS_LA_POCHE = "un cristal entamé se range dans « Cristaux en cours d'usage »."
+
 -- Ce que tient un emplacement (une table) ou nil. Une ceinture n'est jamais
 -- vide : elle a toujours ses cases de base.
 function Inventaire.Emplacement(entity, categorieId, index)
@@ -76,6 +120,9 @@ function Inventaire.Emplacement(entity, categorieId, index)
     if EstCeinture(categorieId) and index and index >= 1 and index <= Inventaire.Capacite(categorieId) then
         return CEINTURE_NUE
     end
+    if EstPoche(categorieId) and index and index >= 1 and index <= Inventaire.Capacite(categorieId) then
+        return POCHE_NUE
+    end
     return nil
 end
 
@@ -83,10 +130,10 @@ end
 -- qui n'etait encore que nue.
 local function EmplacementPourEcrire(entity, categorieId, index)
     local e = Inventaire.Emplacement(entity, categorieId, index)
-    if e ~= CEINTURE_NUE then return e end
+    if e ~= CEINTURE_NUE and e ~= POCHE_NUE then return e end
     entity.inventaire = type(entity.inventaire) == "table" and entity.inventaire or {}
     entity.inventaire[categorieId] = type(entity.inventaire[categorieId]) == "table" and entity.inventaire[categorieId] or {}
-    local ecrite = { ceinture = true }
+    local ecrite = e == POCHE_NUE and { cristaux = true } or { ceinture = true }
     entity.inventaire[categorieId][tonumber(index)] = ecrite
     return ecrite
 end
@@ -112,6 +159,15 @@ local CEINTURE_SEULE = { id = "ceinture", label = "Ceinture", icone = "Interface
 
 function Inventaire.Contenant(emplacement)
     if type(emplacement) ~= "table" then return nil end
+    -- La poche : sans limite, elle a toujours UNE case libre apres la derniere
+    -- occupee.
+    if emplacement.cristaux then
+        local plusHaute = 0
+        for index in pairs(type(emplacement.cases) == "table" and emplacement.cases or VIDE) do
+            plusHaute = math.max(plusHaute, tonumber(index) or 0)
+        end
+        return { element = POCHE, id = POCHE.id, places = plusHaute + 1, placesDevise = 0, poche = true }
+    end
     -- La ceinture : ses cases de base, plus celles de l'objet pose dessus.
     if emplacement.ceinture then
         local sac = emplacement.sac and LCM.Sacs.Get(emplacement.sac)
@@ -214,6 +270,7 @@ end
 function Inventaire.Poser(entity, categorieId, index, id, forcer)
     local categorie, i = Verifier(entity, categorieId, index)
     if not categorie then return false, i end
+    if categorie.cristaux then return false, "cet emplacement ne porte rien : il range les cristaux entamés." end
     -- La ceinture : on pose un objet « ceinture » PAR-DESSUS ses cases de base,
     -- qui gardent ce qu'on y avait range.
     if categorie.ceinture then
@@ -267,6 +324,7 @@ function Inventaire.PeutRetirer(entity, categorieId, index)
     local categorie, i = Verifier(entity, categorieId, index)
     if not categorie then return false, i end
     local e = Inventaire.Emplacement(entity, categorieId, i)
+    if categorie.cristaux then return false, "« Cristaux en cours d'usage » ne se retire pas." end
     if categorie.ceinture then
         if not (e and e.sac) then return false, "aucune ceinture posée : ses cases de base restent." end
         -- Les cases de l'objet, au-dela de la base, doivent etre vides : on ne
@@ -289,6 +347,7 @@ end
 function Inventaire.Retirer(entity, categorieId, index)
     local _, i = Verifier(entity, categorieId, index)
     if not _ then return false, i end
+    if EstPoche(categorieId) then return false, "« Cristaux en cours d'usage » ne se retire pas." end
     local e = Inventaire.Emplacement(entity, categorieId, i)
     if EstCeinture(categorieId) then
         local ok, raison = Inventaire.PeutRetirer(entity, categorieId, i)
@@ -323,6 +382,9 @@ function Inventaire.Deplacer(entity, categorieId, index, versCategorieId, versIn
     if depart.ceinture or arrivee.ceinture then
         return false, "la ceinture ne change pas d'emplacement."
     end
+    if depart.cristaux or arrivee.cristaux then
+        return false, "« Cristaux en cours d'usage » ne change pas d'emplacement."
+    end
     local e = Inventaire.Emplacement(entity, categorieId, i)
     if not e then return false, "cet emplacement est vide." end
     if depart.id == arrivee.id and i == j then return false, "c'est déjà là." end
@@ -352,6 +414,7 @@ function Inventaire.Lacher(entity, categorieId, index)
     local categorie, i = Verifier(entity, categorieId, index)
     if not categorie then return nil, i end
     if categorie.ceinture then return nil, "la ceinture ne se lâche pas : ses cases de base restent." end
+    if categorie.cristaux then return nil, "« Cristaux en cours d'usage » ne se lâche pas." end
     local e = Inventaire.Emplacement(entity, categorieId, i)
     if not (e and (e.sac or e.tente)) then return nil, "rien à lâcher ici." end
     local objets, rang = {}, {}
@@ -394,7 +457,7 @@ end
 -- id } ou { tente = id }), selon sa nature (Inventaire.PeutPorter). nil sinon.
 function Inventaire.PlacePour(entity, contenu)
     for _, categorie in ipairs(Inventaire.categories) do
-        if categorie.contient == "sac" and not categorie.ceinture
+        if categorie.contient == "sac" and not categorie.ceinture and not categorie.cristaux
             and Inventaire.PeutPorter(categorie.id, contenu) then
             for index = 1, Inventaire.Capacite(categorie.id) do
                 if not Inventaire.Emplacement(entity, categorie.id, index) then
@@ -453,6 +516,11 @@ function Inventaire.Transvaser(entity, categorieId, index, ref, quantite, exempl
     if quantite < 1 then return false, "rien à transvaser." end
     local element = LCM.Compendium.Resoudre(ref)
     if not element then return false, "entrée inconnue du compendium." end
+    -- Les cristaux entames ont leur poche, et la poche n'a qu'eux.
+    local entame = Entame(exemplaires)
+    if e.cristaux and not entame then return false, POCHE_SEULEMENT end
+    if entame and not e.cristaux then return false, DANS_LA_POCHE end
+    if entame then return Inventaire.Deposer(entity, ref, quantite, exemplaires) end
     local pile = tonumber(element.pileMax) and math.max(1, math.floor(element.pileMax)) or math.huge
     local total, reste, plan, raison = Inventaire.Cases(e), quantite, {}, nil
     -- Les piles de la meme entree, d'abord.
@@ -518,11 +586,21 @@ end
 -- Une tente se porte comme un sac (10 octobre 2026), mais elle ne recoit QUE
 -- des accessoires de camping. Un accessoire, lui, se transporte aussi dans un
 -- sac ordinaire. La tente, elle, ne se range pas dans un sac : elle s'equipe.
-local RANGEABLES = { objets = true, livres = true, ressources = true, sacs = true, accessoires_camping = true }
+--
+-- Lanternes et cristaux (23 octobre 2026) : ils n'existent pour le joueur que
+-- s'il les porte (Core/Lanternes.lua). Il faut donc pouvoir les ranger.
+local RANGEABLES = { objets = true, livres = true, ressources = true, sacs = true, accessoires_camping = true,
+                     lanternes = true, cristaux = true }
 
 function Inventaire.Accepte(emplacement, index, ref)
     local famille, entree = tostring(ref or ""):match("^([%w_]+)/(.+)$")
     if not LCM.Compendium.Resoudre(ref) then return false, "entrée inconnue du compendium." end
+    -- La poche : des cristaux. Qu'ils soient ENTAMES se verifie la ou l'on
+    -- connait leurs exemplaires (Ranger, Deposer, Empiler).
+    if emplacement and emplacement.cristaux then
+        if famille ~= "cristaux" then return false, POCHE_SEULEMENT end
+        return true
+    end
     if emplacement and emplacement.tente then
         if famille ~= "accessoires_camping" then
             return false, "une tente n'accueille que des accessoires de camping."
@@ -539,7 +617,7 @@ function Inventaire.Accepte(emplacement, index, ref)
             return false, "cette monnaie ne se transporte pas : elle reste dans la bourse."
         end
     elseif not RANGEABLES[famille] then
-        return false, "un sac accepte des objets, des livres, des ressources, des accessoires de camping ou des sacoches."
+        return false, "un sac accepte des objets, des livres, des ressources, des accessoires de camping, des lanternes, des cristaux ou des sacoches."
     end
     -- Un contenant dans un contenant : seul un SAC en accepte, et il faut que
     -- le nouveau venu tienne — il occupe sa case plus toutes les siennes.
@@ -590,7 +668,9 @@ end
 -- Range une entree dans une case libre d'un sac.
 function Inventaire.Ranger(entity, categorieId, index, case, ref, quantite, exemplaires)
     local e = Inventaire.Emplacement(entity, categorieId, index)
-    if not e or not (e.sac or e.tente or e.ceinture) then return false, "aucun sac dans cet emplacement." end
+    if not e or not (e.sac or e.tente or e.ceinture or e.cristaux) then return false, "aucun sac dans cet emplacement." end
+    if e.cristaux and not Entame(exemplaires) then return false, POCHE_SEULEMENT end
+    if Entame(exemplaires) and not e.cristaux then return false, DANS_LA_POCHE end
     local total = Inventaire.Cases(e)
     case = tonumber(case)
     if not case or case < 1 or case > total then return false, "ce sac n'a pas de case " .. tostring(case) .. "." end
@@ -638,7 +718,9 @@ end
 function Inventaire.CaseLibrePour(entity, ref, categorieId, index)
     local function Dans(cat, i)
         local e = Inventaire.Emplacement(entity, cat, i)
-        if not Inventaire.Contenant(e) then return nil end
+        -- La poche n'est pas une case libre ordinaire : seul un cristal entame
+        -- y va, et Deposer l'y envoie lui-meme.
+        if not Inventaire.Contenant(e) or e.cristaux then return nil end
         for n = 1, Inventaire.Cases(e) do
             if not Inventaire.Case(e, n) and Inventaire.Accepte(e, n, ref) then return n end
         end
@@ -660,8 +742,19 @@ end
 -- Combien une case peut encore recevoir de `ref` : sa pile maximale moins ce
 -- qu'elle tient. Sans pileMax, rien ne borne (math.huge). Nil et la raison si
 -- la case tient autre chose.
-local function Place(element, c, ref)
+local function Place(element, c, ref, entrants)
     if c.ref ~= ref then return nil, "cette case est déjà occupée." end
+    if Entame(c) ~= Entame(entrants) then
+        return nil, "un cristal entamé et un cristal plein ne s'empilent pas ensemble."
+    end
+    -- Dans la poche, une pile par modele ET par pourcentage, sans maximum :
+    -- chacun y garde sa charge sur son exemplaire.
+    if Entame(c) then
+        if Pourcent(c) ~= Pourcent(entrants) then
+            return nil, "ces cristaux n'ont pas la même charge : ils ne s'empilent pas."
+        end
+        return math.huge
+    end
     local max = element and tonumber(element.pileMax)
     if not max then return math.huge end
     local reste = max - (tonumber(c.quantite) or 1)
@@ -679,7 +772,7 @@ function Inventaire.PeutEmpiler(entity, categorieId, index, case, versCategorieI
     if not source then return nil, "case vide." end
     if not cible then return nil, "rien sur quoi empiler." end
     if source == cible then return nil, "c'est la même pile." end
-    local place, raison = Place(LCM.Compendium.Resoudre(source.ref), cible, source.ref)
+    local place, raison = Place(LCM.Compendium.Resoudre(source.ref), cible, source.ref, source.exemplaires)
     if not place then return nil, raison end
     return math.min(place, tonumber(source.quantite) or 1)
 end
@@ -731,7 +824,7 @@ function Inventaire.Scinder(entity, categorieId, index, case, n, vers)
     local deja = Inventaire.Case(Inventaire.Emplacement(entity, cat, i), place)
     if deja then
         if deja == c then return false, "c'est la même pile." end
-        local libre, plein = Place(LCM.Compendium.Resoudre(c.ref), deja, c.ref)
+        local libre, plein = Place(LCM.Compendium.Resoudre(c.ref), deja, c.ref, c.exemplaires)
         if not libre then return false, plein end
         if n > libre then return false, string.format("cette pile n'a de place que pour %d.", libre) end
         LCM.Exemplaires.Ajouter(deja, LCM.Exemplaires.Tranche(LCM.Exemplaires.Assurer(c), 1, n))
@@ -750,9 +843,19 @@ function Inventaire.Vider(entity, categorieId, index, case)
     local e = Inventaire.Emplacement(entity, categorieId, index)
     if not Inventaire.Case(e, case) then return false, "case déjà vide." end
     e.cases[tonumber(case)] = nil
+    -- La poche se resserre : sans limite, elle n'a pas de place a garder, et
+    -- un trou au milieu de la liste ne dirait rien.
+    if e.cristaux then
+        local restes, indices = {}, {}
+        for i in pairs(e.cases) do indices[#indices + 1] = tonumber(i) end
+        table.sort(indices)
+        for rang, i in ipairs(indices) do restes[rang] = e.cases[i] end
+        e.cases = restes
+    end
     if next(e.cases) == nil then e.cases = nil end
-    -- Une ceinture nue redevenue vide n'a plus rien a retenir.
-    if e.ceinture and not e.sac and not e.cases then
+    -- Une ceinture nue, ou la poche des cristaux, redevenue vide n'a plus
+    -- rien a retenir.
+    if (e.ceinture and not e.sac or e.cristaux) and not e.cases then
         entity.inventaire[categorieId][tonumber(index)] = nil
         Nettoyer(entity, categorieId)
     end
@@ -948,11 +1051,36 @@ end
 -- n'ouvre une case que pour le reste. Chaque eau recoltee ouvrait sa propre
 -- case : « Eau », « Eau x9 », « Eau »… (13 octobre 2026). Sans pile maximale,
 -- une entree s'empile sans borne (Inventaire.Quantite).
-local function PrevoirCases(entity, ref, quantite)
+local function PrevoirCases(entity, ref, quantite, entrants)
     local element = LCM.Compendium.Resoudre(ref)
     local pileMax = element and element.pileMax
     local reste = quantite
     local plan = {}
+    -- Des cristaux entames : sur la pile de leur modele et de leur
+    -- pourcentage dans la poche, ou sur sa case libre (a la suite). La poche
+    -- est sans limite : tout y tient. Deposer les fait arriver UN PAR UN, pour
+    -- que chacun trouve la pile de son pourcentage.
+    if Entame(entrants) then
+        local pourcent = Pourcent(entrants)
+        for _, categorie in ipairs(Inventaire.categories) do
+            if categorie.cristaux then
+                local e = Inventaire.Emplacement(entity, categorie.id, 1)
+                local total = Inventaire.Cases(e)
+                for case = 1, total do
+                    local c = Inventaire.Case(e, case)
+                    if c and c.ref == ref and Pourcent(c) == pourcent then
+                        return { { pile = c, quantite = (tonumber(c.quantite) or 1) + quantite } }, 0
+                    end
+                end
+                for case = 1, total do
+                    if not Inventaire.Case(e, case) then
+                        return { { categorie = categorie.id, index = 1, case = case, quantite = quantite } }, 0
+                    end
+                end
+            end
+        end
+        return plan, quantite
+    end
     for _, categorie in ipairs(Inventaire.categories) do
         for index = 1, Inventaire.Capacite(categorie.id) do
             local emplacement = Inventaire.Emplacement(entity, categorie.id, index)
@@ -961,7 +1089,7 @@ local function PrevoirCases(entity, ref, quantite)
             local total = emplacement and Inventaire.Cases(emplacement) or 0
             for case = 1, total do
                 local c = Inventaire.Case(emplacement, case)
-                if reste > 0 and type(c) == "table" and c.ref == ref then
+                if reste > 0 and type(c) == "table" and c.ref == ref and not emplacement.cristaux then
                     local dedans = tonumber(c.quantite) or 1
                     local ajout = pileMax and math.min(reste, pileMax - dedans) or reste
                     if ajout > 0 then
@@ -980,7 +1108,7 @@ local function PrevoirCases(entity, ref, quantite)
                 -- Une case qui n'accepte pas l'entree (une dague dans une tente)
                 -- n'est pas une place libre pour elle : on passe au sac suivant.
                 for case = 1, math.min(total, places) do
-                    if reste > 0 and not Inventaire.Case(emplacement, case)
+                    if reste > 0 and not emplacement.cristaux and not Inventaire.Case(emplacement, case)
                         and Inventaire.Accepte(emplacement, case, ref) then
                         local pose = pileMax and math.min(reste, pileMax) or reste
                         plan[#plan + 1] = { categorie = categorie.id, index = index, case = case, quantite = pose }
@@ -1039,6 +1167,18 @@ function Inventaire.Deposer(entity, ref, quantite, exemplaires)
     if not LCM.Compendium.Resoudre(ref) then
         return false, "entrée inconnue du compendium."
     end
+    -- Plusieurs cristaux entames (une pile lachee, un echange) : un par un,
+    -- chacun vers la pile de son pourcentage. La poche n'a pas de limite :
+    -- aucun ne peut manquer de place, il n'y a rien a defaire.
+    if Entame(exemplaires) and type(exemplaires) == "table" and #exemplaires > 1 then
+        local copies, erreur = LCM.Exemplaires.Lire(ref, tonumber(quantite) or #exemplaires, exemplaires)
+        if erreur then return false, erreur end
+        for _, x in ipairs(copies) do
+            local ok, raison = Inventaire.Deposer(entity, ref, 1, { x })
+            if not ok then return false, raison end
+        end
+        return true
+    end
     -- Une tente ne se range pas dans un sac : elle s'equipe, sur le premier
     -- emplacement de sacoche libre. Sans quoi on ne pourrait ni l'acheter ni
     -- la recevoir.
@@ -1063,7 +1203,7 @@ function Inventaire.Deposer(entity, ref, quantite, exemplaires)
     if sac then portes, aRanger = PrevoirEmplacements(entity, sac, quantite) end
 
     local plan, reste = {}, 0
-    if aRanger > 0 then plan, reste = PrevoirCases(entity, ref, aRanger) end
+    if aRanger > 0 then plan, reste = PrevoirCases(entity, ref, aRanger, exemplaires) end
     if reste > 0 then
         if sac then
             local nature = LCM.Sacs.Nature(sac)

@@ -170,7 +170,8 @@ end
 
 -- Une grille de repartition : un compteur par ligne de la categorie, sur une
 -- ou deux colonnes, avec un intertitre quand le groupe change.
-local function Grille(page, f, titre, texte, categorie, colonnes)
+local Apercu
+local function Grille(page, f, titre, texte, categorie, colonnes, domaine)
     -- Titre et description dans le bloc, comme partout ailleurs. Les mettre
     -- ailleurs laissait un bloc sans titre, donc sans cadre (`b.aTitre`
     -- commande `AelCadre`), et la description s'ecrivait deux fois.
@@ -178,6 +179,13 @@ local function Grille(page, f, titre, texte, categorie, colonnes)
     Budget(page, f, bloc, categorie)
     colonnes = colonnes or 1
     local lignes = C.Lignes(categorie)
+    if domaine then
+        local filtre = {}
+        for _, ligne in ipairs(lignes) do
+            if ligne.groupe == domaine then filtre[#filtre + 1] = ligne end
+        end
+        lignes = filtre
+    end
     local marge = UI.Fiche.MARGE_BLOC + 6
     local largeurUtile = LARGEUR_PAGE - 2 * marge
     local haut = Haut(bloc)
@@ -261,8 +269,22 @@ local function Grille(page, f, titre, texte, categorie, colonnes)
         -- Dire ce que c'est. Un joueur qui repartit trente lignes ne sait pas
         -- de tete ce que « Insensible » ou « Projection » lui donnent, et il
         -- n'a aucune raison de le savoir : la ligne le lui dit.
-        local note = ligne.note or C.Note(categorie, ligne.id)
-        if note and note ~= "" then UI.Bulle(compteur, ligne.label, note) end
+        local field = LCM.Schema.Field(ligne.id)
+        local description = ligne.note or (field and field.note)
+        local regle = C.Note(categorie, ligne.id)
+        local note = description or regle
+        if description and regle and description ~= regle then
+            note = description .. "\n\n" .. regle
+        end
+        UI.Fiche.Bulle(compteur, ligne.label, function()
+            local apercu = Apercu(f.brouillon)
+            local investi = C.Valeur(f.brouillon, ligne.id)
+            local champ = field or { id = ligne.id, kind = "stat" }
+            local detail = UI.Fiche.Decomposition(apercu, champ, investi,
+                categorie == "expertises" and LCM.Formules.Apport(apercu, ligne.id) or 0)
+            if note and note ~= "" and not ligne.id:match("^meca_") then detail.note = note end
+            return detail
+        end)
         compteur:SetPoint("TOPLEFT", bloc, "TOPLEFT", x, -y)
         compteur:SetWidth(largeur - 12)
         compteur.champ, compteur.categorie = ligne.id, categorie
@@ -460,7 +482,7 @@ local BUDGETS_SECONDAIRES = {
 
 -- Une entite de passage, faite du brouillon : les formules de la fiche (PV,
 -- fatigue) s'y appliquent telles quelles, race et traits compris.
-local function Apercu(brouillon)
+Apercu = function(brouillon)
     local values = {}
     for cle, valeur in pairs(brouillon.valeurs) do values[cle] = valeur end
     values.race, values.niveau = brouillon.race, brouillon.niveau
@@ -835,6 +857,14 @@ function Pages.statistiques(page, f)
     local y = Haut(general)
     page.pv = Lecture(general, "Points de vie", y)
     page.fatigue = Lecture(general, "Fatigue", y + LIGNE + 4)
+    UI.Fiche.Bulle(page.pv, "Points de vie", function()
+        return UI.Fiche.DecompositionVie(Apercu(f.brouillon))
+    end)
+    UI.Fiche.Bulle(page.fatigue, "Fatigue", function()
+        local apercu = Apercu(f.brouillon)
+        return UI.Fiche.DecompositionJauge(LCM.Entities.Gauge(apercu, "fatigue"),
+            LCM.Schema.Field("fatigue").note, apercu, "fatigue")
+    end)
     general.hauteurContenu = 2 * (LIGNE + 4)
     Grille(page, f, "Statistiques générales", TEXTES.statistiquesGenerales, "primaires", 2)
     Grille(page, f, "Statistiques secondaires", nil, "secondaires", 2)
@@ -848,7 +878,12 @@ function Pages.statistiques(page, f)
 end
 
 function Pages.expertises(page, f)
-    Grille(page, f, "Expertises et compétences", TEXTES.expertises, "expertises", 3)
+    page.domaines = {}
+    for _, domaine in ipairs({ "Observations", "Athlétisme", "Filouterie" }) do
+        local bloc = Grille(page, f, domaine, TEXTES.expertises, "expertises", 3, domaine)
+        page.domaines[domaine] = bloc
+        bloc:SetShown(domaine == "Observations")
+    end
 end
 
 function Pages.metiers(page, f)
@@ -889,6 +924,7 @@ function Pages.metiers(page, f)
         compteur.label:SetPoint("LEFT", compteur.icone, "RIGHT", 6, 0)
         compteur.label:SetWidth(150)
         compteur.metierId = metierLigne.id
+        UI.Fiche.Bulle(compteur, metierLigne.label, metierLigne.description)
         page.metiers[#page.metiers + 1] = compteur
     end
     bloc.hauteurContenu = math.ceil(#LCM.Metiers.list / colonnes) * hauteurLigne
@@ -903,7 +939,12 @@ function Pages.metiers(page, f)
 end
 
 function Pages.mecaniques(page, f)
-    Grille(page, f, "Mécanique de compétence", TEXTES.mecaniques, "mecaniques", 3)
+    page.domaines = {}
+    for _, domaine in ipairs({ "Compétence", "Défense" }) do
+        local bloc = Grille(page, f, domaine, TEXTES.mecaniques, "mecaniques", 3, domaine)
+        page.domaines[domaine] = bloc
+        bloc:SetShown(domaine == "Compétence")
+    end
 end
 
 function Pages.penetrations(page, f)
@@ -1123,6 +1164,7 @@ local function Construire()
     f.recap.vitaux = {}
     for index, vital in ipairs({ { "pv", "Points de vie" }, { "pf", "Fatigue" },
                                  { "pa", "Points d'action" } }) do
+        local cle = vital[1]
         local l = CreateFrame("Frame", nil, f.recap)
         l:SetHeight(16)
         l:SetPoint("TOPLEFT", f.recap, "TOPLEFT", 10, -30 - (index - 1) * 16)
@@ -1133,7 +1175,14 @@ local function Construire()
         l.valeur = UI.Texte(l, "—", UI.C.accent)
         UI.Police(l.valeur, 12)
         l.valeur:SetPoint("RIGHT", l, "RIGHT", 0, 0)
-        l.cle = vital[1]
+        l.cle = cle
+        UI.Fiche.Bulle(l, vital[2], function()
+            local apercu = Apercu(f.brouillon)
+            if cle == "pv" then return UI.Fiche.DecompositionVie(apercu) end
+            local id = cle == "pf" and "fatigue" or "pa"
+            return UI.Fiche.DecompositionJauge(LCM.Entities.Gauge(apercu, id),
+                LCM.Schema.Field(id).note, apercu, id)
+        end)
         f.recap.vitaux[index] = l
     end
     f.recap.filet = UI.Filet(f.recap, true)
@@ -1146,14 +1195,45 @@ local function Construire()
     f.recap.entetes, f.recap.lignes = {}, {}
     f.deplie = { identite = true, primaires = true }
 
-    local onglets = {}
-    for _, etape in ipairs(C.ETAPES) do onglets[#onglets + 1] = { id = etape.id, label = etape.label } end
+    local onglets, capaciteAjoutee = {}, false
+    for _, etape in ipairs(C.ETAPES) do
+        if etape.id == "expertises" or etape.id == "mecaniques" then
+            if not capaciteAjoutee then
+                onglets[#onglets + 1] = { id = "capacites", label = "Capacité" }
+                capaciteAjoutee = true
+            end
+        else
+            onglets[#onglets + 1] = { id = etape.id, label = etape.label }
+        end
+    end
     f.barre = UI.BandeauOnglets(f.contenu, onglets, function(id) f:Afficher(id) end)
     f.barre:SetPoint("TOPLEFT", f.recap, "TOPRIGHT", 12, 0)
     f.barre:SetWidth(LARGEUR_PAGE)
     -- Les sept etapes sur une seule ligne : empilees sur trois rangees, elles
     -- mangeaient le tiers de la fenetre et noyaient l'etape ou l'on est.
     local hauteurBandeau = f.barre:Disposer(LARGEUR_PAGE, m.onglet, { uneRangee = true })
+    f.barreCapacites = UI.BandeauOnglets(f.contenu, {
+        { id = "expertises", label = "Expertise" },
+        { id = "mecaniques", label = "Mécanique" },
+    }, function(id) f:Afficher(id) end)
+    f.barreCapacites:SetPoint("TOPLEFT", f.barre, "BOTTOMLEFT", 0, -6)
+    f.barreCapacites:SetWidth(LARGEUR_PAGE)
+    f.barreCapacites:Disposer(LARGEUR_PAGE, m.onglet, { uneRangee = true })
+    f.barreCapacites:Hide()
+    f.barresDomaines = {}
+    for etapeId, domaines in pairs({
+        expertises = { "Observations", "Athlétisme", "Filouterie" },
+        mecaniques = { "Compétence", "Défense" },
+    }) do
+        local choix = {}
+        for _, domaine in ipairs(domaines) do choix[#choix + 1] = { id = domaine, label = domaine } end
+        local barre = UI.BandeauOnglets(f.contenu, choix, function(id) f:ChoisirDomaine(id) end)
+        barre:SetPoint("TOPLEFT", f.barreCapacites, "BOTTOMLEFT", 0, -6)
+        barre:SetWidth(LARGEUR_PAGE)
+        barre:Disposer(LARGEUR_PAGE, m.onglet, { uneRangee = true })
+        barre:Hide()
+        f.barresDomaines[etapeId] = barre
+    end
 
     -- En bas : ce qui bloque, et les trois gestes.
     f.valider = UI.Bouton(f.contenu, "Créer le personnage", 190, 26, function()
@@ -1487,8 +1567,18 @@ local function Construire()
         self.etapes = self:EtapesDisponibles()
         local visibles = {}
         for _, etape in ipairs(self.etapes) do visibles[etape.id] = true end
-        for _, bouton in ipairs(self.barre.boutons) do bouton:SetShown(visibles[bouton.ongletId] or false) end
+        for _, bouton in ipairs(self.barre.boutons) do
+            local id = bouton.ongletId
+            bouton:SetShown(id == "capacites" and (visibles.expertises or visibles.mecaniques)
+                or (id ~= "capacites" and visibles[id]) or false)
+        end
         self.barre:Disposer(LARGEUR_PAGE, m.onglet, { uneRangee = true })
+        for _, bouton in ipairs(self.barreCapacites.boutons) do
+            bouton:SetShown(visibles[bouton.ongletId] or false)
+        end
+        if self.barreCapacites:IsShown() then
+            self.barreCapacites:Disposer(LARGEUR_PAGE, m.onglet, { uneRangee = true })
+        end
     end
 
     function f:Pas(sens)
@@ -1500,10 +1590,54 @@ local function Construire()
         if cible then self:Afficher(cible.id) end
     end
 
+    function f:ChoisirDomaine(domaine)
+        local page = self.pages[self.etape]
+        if not (page and page.domaines and page.domaines[domaine]) then return end
+        self.domaineActif = self.domaineActif or {}
+        self.domaineActif[self.etape] = domaine
+        for id, bloc in pairs(page.domaines) do bloc:SetShown(id == domaine) end
+        self.barresDomaines[self.etape]:Selectionner(domaine)
+        self.zone.decalage = 0
+        self:Actualiser()
+    end
+
     function f:Afficher(etapeId)
+        if etapeId == "capacites" then
+            local actuel = self.etape
+            if actuel == "expertises" or actuel == "mecaniques" then etapeId = actuel
+            else
+                local disponibles = self:EtapesDisponibles()
+                local expertiseVisible = false
+                for _, etape in ipairs(disponibles) do
+                    if etape.id == "expertises" then expertiseVisible = true end
+                end
+                etapeId = expertiseVisible and "expertises" or "mecaniques"
+            end
+        end
         self.etape = etapeId
-        self.barre:Selectionner(etapeId)
+        local capacites = etapeId == "expertises" or etapeId == "mecaniques"
+        self.barre:Selectionner(capacites and "capacites" or etapeId)
+        self.barreCapacites:SetShown(capacites)
+        if capacites then
+            self.barreCapacites:Disposer(LARGEUR_PAGE, m.onglet, { uneRangee = true })
+            self.barreCapacites:Selectionner(etapeId)
+        end
+        for id, barre in pairs(self.barresDomaines) do barre:SetShown(capacites and id == etapeId) end
+        local supplement = capacites and (2 * (m.onglet + 6)) or 0
+        local hautZone = hauteurBandeau + 34 + supplement
+        self.zone:ClearAllPoints()
+        self.zone:SetPoint("TOPLEFT", self.recap, "TOPRIGHT", 12, -hautZone)
+        self.zone:SetPoint("TOPRIGHT", self.contenu, "TOPRIGHT", 0, -hautZone)
+        self.zone:SetPoint("BOTTOMRIGHT", self.contenu, "BOTTOMRIGHT", 0,
+            (self.bas and self.bas.dy or 0) + 60)
         for id, page in pairs(self.pages) do page:SetShown(id == etapeId) end
+        if capacites then
+            local page = self.pages[etapeId]
+            local defaut = etapeId == "expertises" and "Observations" or "Compétence"
+            local domaine = self.domaineActif and self.domaineActif[etapeId] or defaut
+            for id, bloc in pairs(page.domaines) do bloc:SetShown(id == domaine) end
+            self.barresDomaines[etapeId]:Selectionner(domaine)
+        end
         self.zone.decalage = 0
         self:Actualiser()
     end
