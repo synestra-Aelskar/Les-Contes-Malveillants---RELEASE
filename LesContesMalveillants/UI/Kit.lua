@@ -1790,6 +1790,140 @@ function UI.Confirmer(parent, texte, libelleOui)
     return d
 end
 
+-- Repartir des points entre plusieurs lignes (le MJ, 23 octobre 2026) :
+-- « Vous disposez de 5 PV a repartir », une ligne par zone avec − et +, ce
+-- qu'il reste en tete. On ne valide que tout place — sauf ce qu'aucune ligne
+-- ne peut plus recevoir. Une seule fenetre, ses lignes creees une fois.
+--
+--   UI.Repartition():Demander({
+--       titre = "Potion de soin", phrase = "Vous disposez de 5 PV à répartir.",
+--       total = 5, unite = "PV", sens = 1,      -- -1 : des points qu'on PERD
+--       lignes = { { id = "torse", label = "Torse", courant = 12, max = 20, place = 8 } },
+--       onValider = function(parts) return true end,   -- false, raison : on reste
+--       onAnnuler = function() end,
+--   })
+local REPARTITION_LIGNE = 26
+
+function UI.Repartition()
+    if UI.repartition then return UI.repartition end
+    local f = UI.Fenetre("repartition", "Répartir", 380, 260, { x = 0, y = 80 }, { enTeteSimple = true, sobre = true })
+    UI.repartition = f
+    f:SetFrameStrata("DIALOG")
+    local c = f.contenu
+
+    f.phrase = UI.Texte(c, "", UI.C.titre, "GameFontNormal")
+    f.phrase:SetPoint("TOPLEFT", c, "TOPLEFT", 4, -4)
+    f.phrase:SetPoint("RIGHT", c, "RIGHT", -4, 0)
+    f.phrase:SetJustifyH("LEFT")
+    f.phrase:SetWordWrap(true)
+    f.reste = UI.Texte(c, "", UI.C.texte, "GameFontNormalSmall")
+    f.reste:SetPoint("TOPLEFT", c, "TOPLEFT", 4, -26)
+    f.message = UI.Texte(c, "", UI.C.plein, "GameFontNormalSmall")
+    f.message:SetPoint("BOTTOMLEFT", c, "BOTTOMLEFT", 4, 34)
+    f.message:SetPoint("RIGHT", c, "RIGHT", -4, 0)
+    f.message:SetJustifyH("LEFT")
+    f.lignes = {}
+
+    local function Ligne(i)
+        if f.lignes[i] then return f.lignes[i] end
+        local l = CreateFrame("Frame", nil, c)
+        l:SetHeight(REPARTITION_LIGNE - 2)
+        l:SetPoint("TOPLEFT", c, "TOPLEFT", 4, -48 - (i - 1) * REPARTITION_LIGNE)
+        l:SetPoint("RIGHT", c, "RIGHT", -4, 0)
+        l.nom = UI.Texte(l, "", UI.C.texte, "GameFontNormalSmall")
+        l.nom:SetPoint("LEFT", l, "LEFT", 0, 0)
+        l.plus = UI.Bouton(l, "+", 26, 22, function() f:Changer(i, 1) end)
+        l.plus:SetPoint("RIGHT", l, "RIGHT", 0, 0)
+        l.valeur = UI.Texte(l, "0", UI.C.titre, "GameFontNormal")
+        l.valeur:SetPoint("RIGHT", l.plus, "LEFT", -10, 0)
+        l.valeur:SetWidth(36)
+        l.valeur:SetJustifyH("CENTER")
+        l.moins = UI.Bouton(l, "−", 26, 22, function() f:Changer(i, -1) end)
+        l.moins:SetPoint("RIGHT", l.valeur, "LEFT", -10, 0)
+        f.lignes[i] = l
+        return l
+    end
+
+    function f:Reste()
+        local pose = 0
+        for _, n in pairs(self.parts) do pose = pose + n end
+        return self.demande.total - pose
+    end
+
+    -- Tout est place, ou plus rien ne peut l'etre.
+    function f:PeutValider()
+        if self:Reste() <= 0 then return true end
+        for _, d in ipairs(self.demande.lignes) do
+            if (self.parts[d.id] or 0) < d.place then return false end
+        end
+        return true
+    end
+
+    function f:Changer(i, pas)
+        local d = self.demande.lignes[i]
+        if not d then return end
+        local v = (self.parts[d.id] or 0) + pas
+        if v < 0 or v > d.place or (pas > 0 and self:Reste() <= 0) then return end
+        self.parts[d.id] = v > 0 and v or nil
+        self.message:SetText("")
+        self:Afficher()
+    end
+
+    function f:Afficher()
+        local d = self.demande
+        local sens = d.sens == -1 and -1 or 1
+        self.reste:SetText(string.format("Reste à répartir : %d %s", self:Reste(), d.unite or ""))
+        for i, ligne in ipairs(d.lignes) do
+            local l = Ligne(i)
+            local n = self.parts[ligne.id] or 0
+            l.nom:SetText(string.format("%s  |cff9d9d9d%d / %d|r", ligne.label, ligne.courant + sens * n, ligne.max))
+            l.valeur:SetText(n > 0 and string.format("%s%d", sens > 0 and "+" or "−", n) or "0")
+            l.moins:SetEnabled(n > 0)
+            l.plus:SetEnabled(n < ligne.place and self:Reste() > 0)
+            l:Show()
+        end
+        for i = #d.lignes + 1, #self.lignes do self.lignes[i]:Hide() end
+        self.valider:SetEnabled(self:PeutValider())
+    end
+
+    f.valider = UI.Bouton(c, "Valider", 130, 24, function()
+        if not f:PeutValider() then return end
+        local ok, raison = f.demande.onValider(LCM.Copie(f.parts))
+        if ok == false then
+            f.message:SetText(tostring(raison or "refusé."))
+            return
+        end
+        f.fini = true
+        f:Hide()
+    end)
+    f.valider:SetPoint("BOTTOMLEFT", c, "BOTTOMLEFT", 4, 4)
+    f.annuler = UI.Bouton(c, "Annuler", 130, 24, function() f:Hide() end)
+    f.annuler:SetPoint("BOTTOMRIGHT", c, "BOTTOMRIGHT", -4, 4)
+
+    -- Fermee sans valider (Annuler, la croix, Echap) : on le dit a qui a demande.
+    f:HookScript("OnHide", function(self)
+        local d = self.demande
+        if d and not self.fini and d.onAnnuler then d.onAnnuler() end
+        self.demande = nil
+    end)
+
+    function f:Demander(d)
+        -- Une demande en remplace une autre : la precedente est abandonnee.
+        if self:IsShown() then self:Hide() end
+        self.demande, self.parts, self.fini = d, {}, nil
+        if self.titre then self.titre:SetText(d.titre or "Répartir") end
+        self.phrase:SetText(d.phrase or "")
+        self.message:SetText("")
+        self:SetHeight(48 + #d.lignes * REPARTITION_LIGNE + 110)
+        self:Afficher()
+        self:Show()
+        if UI.Devant then UI.Devant(self) end
+    end
+
+    f:Hide()
+    return f
+end
+
 -- Texte sur plusieurs lignes (une description). Une zone de saisie multiligne
 -- grandit avec son texte : on l'enferme dans un cadre qui rogne, pour qu'une
 -- longue description ne deborde pas sur le reste du formulaire. Entree passe a

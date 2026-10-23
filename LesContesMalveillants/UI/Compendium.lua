@@ -674,6 +674,17 @@ local function Construire()
         UI.Police(b.label, 12)
         b.categorieId = categorie.id
         b:SetScript("OnClick", function(self) f:ChoisirCategorie(self.categorieId) end)
+        -- Lacher une entree sur une categorie la TRANSFERE (le MJ, 23 octobre
+        -- 2026) : un type change de liste et ses entrees le suivent, une
+        -- entree change de categorie. C'est le compagnon qui juge
+        -- (MJ/Transfert.lua) ; chez un joueur, ces boutons ne sont pas des
+        -- cibles du tout.
+        if LCM.IsMaster() then
+            UI.Glisser.Cible(b, function(objet)
+                if not LCM.Transfert then return false, nil end
+                return LCM.Transfert.Accepte(objet, C.Get(b.categorieId))
+            end, function(objet) f:Transferer(objet, b.categorieId) end)
+        end
         f.boutonsCategories[index] = b
     end
 
@@ -804,6 +815,7 @@ local function Construire()
 
     -- Confirmation des suppressions (le seul geste sans retour).
     f.confirmation = UI.Confirmer(f, "", "Supprimer")
+    f.confirmationTransfert = UI.Confirmer(f, "", "Transférer")
     f.message = UI.Texte(d, "", UI.C.discret, "GameFontNormalSmall")
     f.message:SetPoint("BOTTOMLEFT", d, "BOTTOMLEFT", 10, 28)
     f.message:SetPoint("RIGHT", f.pagePrec, "LEFT", -10, 0)
@@ -1119,6 +1131,22 @@ function Fenetre.Comportement(f)
     end
 
     function f:SupprimerSelection() self:Supprimer(self:Selectionnees()) end
+
+    -- Une entree lachee sur le bouton d'une categorie : le plan se montre, et
+    -- rien ne bouge avant que le MJ l'accepte. Un refus dit pourquoi.
+    function f:Transferer(objet, categorieId)
+        if not LCM.Transfert then return end
+        local plan, raison = LCM.Transfert.Plan(objet, C.Get(categorieId))
+        if not plan then
+            self:Message("Transfert refusé : " .. tostring(raison), UI.C.plein)
+            return
+        end
+        self.confirmationTransfert:Demander(plan.question, function()
+            local ok, message = LCM.Transfert.Lancer(plan)
+            self:Message(tostring(message), ok and UI.C.accent or UI.C.plein)
+            self:Rafraichir()
+        end)
+    end
 
     function f:ModifGroupee()
         local ed = Editeur()

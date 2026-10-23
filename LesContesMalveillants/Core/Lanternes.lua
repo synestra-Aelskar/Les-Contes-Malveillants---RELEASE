@@ -31,7 +31,7 @@
 --     s'ouvre par le menu radial (Objets > Outils), depuis la ceinture ;
 --   * rien n'existe sans etre possede (23 octobre 2026) : la lanterne
 --     s'EQUIPE sur la ceinture, les cristaux viennent des sacs LCM, et un
---     cristal se detruit tout seul a 0 % (« Consommable ? » est retire). La
+--     cristal reste terne a 0 %, puis disparait au retrait. La
 --     « Vérification inventaire » de Survive (un objet du JEU, par son ID)
 --     n'a donc plus lieu d'etre et a ete retiree (le MJ, 23 octobre 2026) :
 --     une entree qui en porte encore les champs les voit ignores ;
@@ -697,14 +697,10 @@ function L.Synchroniser(maintenant)
                 Auras("retirer", "vide")
                 PoserAuraActive(false)
                 L.DireEmote("empty")
-                -- Un cristal epuise se DETRUIT, sur le coup (le MJ, 23 octobre
-                -- 2026) : il n'a plus rien a donner. La lanterne retient son
-                -- modele, pour que « Changer de cristal » en pose un neuf du
-                -- meme sans repasser par la liste.
+                -- La lanterne affiche le cristal vide et terne jusqu'a son
+                -- retrait. Remiser elimine ce cristal sans charge au retrait.
                 local modele = ModeleDe(pose)
                 e.dernierCristal = modele and modele.id or nil
-                local moi = Moi()
-                if moi then moi.cristalPose = nil end
                 Notifier("ton cristal est épuisé : la lanterne s'éteint.", true)
             end
         end
@@ -817,7 +813,7 @@ end
 -- disparait.
 function L.ChangerCristal()
     L.Synchroniser()
-    -- Le cristal pose, ou celui qui vient de s'epuiser (detruit a 0 %).
+    -- Le cristal pose, ou le dernier modele epuise.
     local lanterne = L.LanterneChoisie()
     local cristal = L.CristalChoisi() or LCM.Cristaux.Get(Etat().dernierCristal)
     if not (lanterne and cristal) then

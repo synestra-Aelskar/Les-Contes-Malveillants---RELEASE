@@ -87,6 +87,21 @@ function LCM.ChampsCommuns(definition, element, Erreur)
     -- l'enregistrement d'une entree, pas le chargement.
     local forge = Texte(definition.forge)
     element.forge = forge ~= "" and forge or nil
+    -- Les references qu'une entree a portees avant d'etre transferee d'une
+    -- famille a une autre (« ressources/bandage » devenu un consommable,
+    -- MJ/Transfert.lua). Un sac, un coffre ou une recette qui tient encore
+    -- l'ancienne la retrouve par elle : un transfert ne fait rien disparaitre.
+    if definition.transfertDe ~= nil then
+        if type(definition.transfertDe) ~= "table" then Erreur(id .. " : transfertDe doit etre une liste") end
+        local refs = {}
+        for _, ref in ipairs(definition.transfertDe) do
+            if not tostring(ref):match("^[%w_]+/.+$") then
+                Erreur(id .. " : ancienne reference illisible « " .. tostring(ref) .. " »")
+            end
+            refs[#refs + 1] = tostring(ref)
+        end
+        element.transfertDe = refs[1] and refs or nil
+    end
     -- La jauge « Etat » (durabilite d'un objet...). Un courant au-dessus du
     -- maximum est refuse, pas rabote : c'est au MJ de trancher.
     if definition.etat ~= nil then
@@ -245,6 +260,9 @@ LCM.LISTES = {
     { id = "outils",       label = "Liste outils" },
     { id = "origines",     label = "Liste origine" },
     { id = "ressources",   label = "Liste ressources" },
+    -- Ajout de l'addon (23 octobre 2026, le MJ) : les types de consommables
+    -- (bandage, baume, boisson) quittent la liste des ressources pour la leur.
+    { id = "consommables", label = "Liste consommable" },
 }
 local LISTE_CONNUE = {}
 for _, l in ipairs(LCM.LISTES) do LISTE_CONNUE[l.id] = l end
@@ -297,6 +315,58 @@ LCM.Ressources = LCM.Registre({
     end,
 })
 LCM.Effets.Source("ressource", function() return {} end, function() return LCM.Ressources.list end)
+
+-- « Consommables » (23 octobre 2026, le MJ, hors template) : ce qui se
+-- consomme — un bandage, un baume, une boisson. Ils vivaient parmi les
+-- ressources ; ils ont maintenant leur famille, leur liste de types et leur
+-- jeu de forge. Meme forme que les ressources : ce qu'un consommable fait en
+-- etant consomme n'existe pas encore, ses effets sont declares sans
+-- s'appliquer a personne.
+--
+-- Depuis le 23 octobre 2026, ils se forgent par CRITERES et font quelque
+-- chose quand on les consomme (Core/Consommation.lua). `etatApplique` : l'etat
+-- pose a la consommation, ou rien — { conteneur = "etat" | "maladie" |
+-- "intangible", nom, description, rounds (vide : jusqu'a ce qu'on le retire) }.
+LCM.Consommables = LCM.Registre({
+    nom = "consommable", prefixe = "Consommables",
+    construire = function(definition, element, Erreur)
+        element.bonus, element.avantage = LCM.Effets.Lire(element.id, definition, Erreur, true)
+        local etat = definition.etatApplique
+        if etat ~= nil then
+            if type(etat) ~= "table" then Erreur(element.id .. " : etat pose illisible") end
+            local conteneur = Texte(etat.conteneur)
+            if conteneur ~= "etat" and conteneur ~= "maladie" and conteneur ~= "intangible" then
+                Erreur(element.id .. " : type d'etat inconnu « " .. conteneur .. " »")
+            end
+            local rounds
+            if etat.rounds ~= nil and Texte(etat.rounds) ~= "" then
+                rounds = tonumber(etat.rounds)
+                if not rounds or rounds < 1 or rounds ~= math.floor(rounds) then
+                    Erreur(element.id .. " : duree de l'etat illisible (" .. tostring(etat.rounds)
+                        .. "), attendu un nombre entier de rounds")
+                end
+            end
+            local nom = Texte(etat.nom)
+            element.etatApplique = { conteneur = conteneur, nom = nom ~= "" and nom or nil,
+                description = Texte(etat.description) ~= "" and tostring(etat.description) or nil,
+                rounds = rounds }
+        end
+    end,
+})
+
+-- Verifie a l'ENREGISTREMENT, pas au chargement : un consommable deja publie
+-- ne disparait pas du jeu parce que la regle est venue apres lui.
+function LCM.Consommables.VerifierEnregistrement(element)
+    if element.etatApplique then return true end
+    for cle in pairs(element.bonus or {}) do
+        if not LCM.Consommation.Critere(cle) then
+            return false, "les bonus de statistiques d'un consommable passent par l'état qu'il pose : "
+                .. "coche « Pose un état », ou retire ces bonus"
+        end
+    end
+    return true
+end
+LCM.Effets.Source("consommable", function() return {} end, function() return LCM.Consommables.list end)
 
 -- « Connaissances » : une recette de metier. Composants et resultat
 -- designent des entrees du compendium par « famille/identifiant »

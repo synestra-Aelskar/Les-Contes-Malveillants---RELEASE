@@ -7,4 +7,5 @@
 local _, LCM = ...
 
 LCM.Publier(LCM.Objets, { id = "outil_scanner_valrazkah", label = "Scanner à haute fréquence",
-    categorie = "outil", description = "Détecte les puits de tonnerre du Val'Razkah." })
+    categorie = "outil", icone = "INV_Misc_Spyglass_01",
+    description = "Détecte les puits de tonnerre du Val'Razkah." })

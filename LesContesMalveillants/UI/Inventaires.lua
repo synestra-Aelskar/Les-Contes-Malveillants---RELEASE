@@ -146,6 +146,10 @@ local function Refuser(raison) if raison then LCM.Alerte(raison) end end
 -- (« 62 %, 40 % »), ou nil pour une case ordinaire : un cristal plein ne
 -- montre pas de pourcentage (le MJ, 23 octobre 2026).
 local function Charges(c)
+    -- Un outil contenant dit ce qu'il tient et ce qu'il en reste : « Eau,
+    -- 60 % » (Core/Contenants.lua, le MJ, 23 octobre 2026).
+    local modele, exemplaire = LCM.Contenants.DeLaCase(c)
+    if modele then return LCM.Contenants.Texte(modele, exemplaire) end
     if not (c and Inv.Entame and Inv.Entame(c)) then return nil end
     -- Une pile de la poche n'a qu'UN pourcentage (Core/Inventaire.lua) : on
     -- le dit une fois. Une pile d'avant cette regle peut en avoir plusieurs.
@@ -479,6 +483,54 @@ local function MenuObjet(ancre, onglet, index, place, extras)
     local options = { { label = "Voir", action = function() Voir(objet.ref, ancre) end } }
     if tostring(objet.ref or ""):match("^livres/") then
         options[#options + 1] = { label = "Lire", action = function() UI.Livres.Ouvrir(objet.ref) end }
+    end
+    -- Un consommable se consomme, ou s'administre a un allie qui doit
+    -- accepter (UI/Consommation.lua, 23 octobre 2026).
+    local _, categorieObjet = LCM.Compendium.Resoudre(objet.ref)
+    if categorieObjet and categorieObjet.famille == "consommables" and UI.Consommation then
+        options[#options + 1] = { label = "Consommer", action = function()
+            UI.Consommation.Consommer(Entite(), objet.ref)
+        end }
+        local allies = {}
+        for _, qui in ipairs(Destinataires()) do
+            allies[#allies + 1] = { label = qui, action = function()
+                UI.Consommation.Administrer(Entite(), qui, objet.ref)
+            end }
+        end
+        options[#options + 1] = #allies > 0 and { label = "Administrer >", sous = allies }
+            or { label = "Administrer", action = function()
+                Refuser("personne à qui l'administrer : cible un joueur ou forme un groupe.")
+            end }
+    end
+    -- Un outil contenant : on se sert de ce qu'il contient, on le remplit
+    -- avec ce que les sacs ont d'accepte, on le vide.
+    local ici = { onglet = onglet, index = index, case = place }
+    if LCM.Contenants.Modele(objet.ref) then
+        local contenu, categorieContenu = LCM.Contenants.ContenuDe(Entite(), ici)
+        if contenu and categorieContenu and categorieContenu.famille == "consommables" and UI.Consommation then
+            options[#options + 1] = { label = "Utiliser (" .. contenu.label .. ")", action = function()
+                UI.Consommation.UtiliserContenant(Entite(), ici)
+            end }
+        end
+        local versables = {}
+        for _, v in ipairs(LCM.Contenants.Versables(Entite(), ici)) do
+            versables[#versables + 1] = { label = v.label, action = function()
+                local ok, raison = LCM.Contenants.Remplir(Entite(), ici, v.ref)
+                if not ok then Refuser(raison) end
+                Ecran.Actualiser()
+            end }
+        end
+        options[#options + 1] = #versables > 0 and { label = "Remplir avec >", sous = versables }
+            or { label = "Remplir avec…", action = function()
+                Refuser("rien dans tes sacs que cet outil accepte.")
+            end }
+        if contenu then
+            options[#options + 1] = { label = "Vider", action = function()
+                local ok, raison = LCM.Contenants.Vider(Entite(), ici)
+                if not ok then Refuser(raison) end
+                Ecran.Actualiser()
+            end }
+        end
     end
     options[#options + 1] = OptionEchanger(objet)
     -- Regler une pile, c'est en fabriquer ou en detruire : geste de MJ. La
@@ -1236,6 +1288,11 @@ local function Construire()
                     local vers = { onglet = l.place.onglet, index = l.place.index, case = l.case }
                     if Empilable(objet, ici, vers) then return AccepteEmpiler(objet, vers) end
                     if DuCompendium(objet, ici, vers) then return AccepteAjout(ici, vers) end
+                    -- Lache sur un outil contenant : on le verse dedans.
+                    local hote = Inv.Case(ici, l.case)
+                    if hote and objet.origine and objet.origine.case and LCM.Contenants.Modele(hote.ref) then
+                        return LCM.Contenants.Accepte(LCM.Contenants.Modele(hote.ref), objet.ref)
+                    end
                     if Inv.Case(ici, l.case) then return false, "cette case est déjà occupée." end
                     return Inv.Accepte(ici, l.case, objet.ref)
                 end, function(objet)
@@ -1253,6 +1310,13 @@ local function Construire()
                     if Empilable(objet, ici, vers) then Empiler(objet, vers) return end
                     if DuCompendium(objet, ici, vers) then Ajouter(ici, vers) return end
                     if MemeCase(objet) then return end
+                    local hote = Inv.Case(ici, l.case)
+                    if hote and objet.origine and objet.origine.case and LCM.Contenants.Modele(hote.ref) then
+                        local ok, raison = LCM.Contenants.Remplir(Entite(), vers, objet.ref)
+                        if not ok then Refuser(raison) end
+                        f:Rafraichir()
+                        return
+                    end
                     local entite = Entite()
                     -- Un objet qui vient d'ailleurs demenage : il quitte sa
                     -- place, puis on le range ici. Si le rangement echoue, il
@@ -1589,6 +1653,11 @@ local function NouvelleCase(s, n)
         local vers = { onglet = s.onglet, index = s.index, case = b.index }
         if Empilable(objet, e, vers) then return AccepteEmpiler(objet, vers) end
         if DuCompendium(objet, e, vers) then return AccepteAjout(e, vers) end
+        -- Lache sur un outil contenant : on le verse dedans.
+        local hote = Inv.Case(e, b.index)
+        if hote and objet.origine and objet.origine.case and LCM.Contenants.Modele(hote.ref) then
+            return LCM.Contenants.Accepte(LCM.Contenants.Modele(hote.ref), objet.ref)
+        end
         if Inv.Case(e, b.index) then return false, "cette case est déjà occupée." end
         return Inv.Accepte(e, b.index, objet.ref)
     end, function(objet)
@@ -1607,6 +1676,13 @@ local function NouvelleCase(s, n)
         local entite = Entite()
         if objet.origine and objet.origine.onglet == s.onglet
             and objet.origine.index == s.index and objet.origine.case == b.index then
+            return
+        end
+        local hote = Inv.Case(s:Emplacement(), b.index)
+        if hote and objet.origine and objet.origine.case and LCM.Contenants.Modele(hote.ref) then
+            local ok, raison = LCM.Contenants.Remplir(entite, vers, objet.ref)
+            if not ok then Refuser(raison) end
+            Ecran.Actualiser()
             return
         end
         -- Un objet qui vient d'ailleurs demenage : il quitte sa place, puis on
@@ -1650,7 +1726,10 @@ local function NouvelleCase(s, n)
         if c then
             GameTooltip:SetText(element and element.label or ("? " .. tostring(c.ref)), 1, 0.82, 0)
             local charges = Charges(c)
-            if charges then GameTooltip:AddLine("Charge : " .. charges, 0.55, 0.8, 1, true) end
+            if charges then
+                GameTooltip:AddLine((LCM.Contenants.DeLaCase(c) and "Contenu : " or "Charge : ") .. charges,
+                    0.55, 0.8, 1, true)
+            end
             if element and element.description ~= "" then
                 GameTooltip:AddLine(element.description, 0.8, 0.75, 0.62, true)
             end

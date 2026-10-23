@@ -138,11 +138,15 @@ function Prix.Avoir(entity, ref)
         for index = 1, LCM.Inventaire.Capacite(categorie.id) do
             local emplacement = LCM.Inventaire.Emplacement(entity, categorie.id, index)
             for _, c in pairs(emplacement and type(emplacement.cases) == "table" and emplacement.cases or {}) do
-                if type(c) == "table" and c.ref == ref then total = total + (tonumber(c.quantite) or 1) end
+                if type(c) == "table" and LCM.Compendium.MemeEntree(c.ref, ref) then
+                    total = total + (tonumber(c.quantite) or 1)
+                end
             end
         end
     end
-    return total
+    -- Et ce que les outils contiennent : la bave de dragon dans sa fiole se
+    -- paie comme celle d'un sac (Core/Contenants.lua).
+    return total + LCM.Contenants.Unites(entity, ref)
 end
 
 -- true, ou false et ce qui manque.
@@ -161,7 +165,10 @@ function Prix.Payer(entity, facon)
         if Prix.EstDevise(m.ref) then
             LCM.Bourse.Debiter(entity, select(2, Decouper(m.ref)), m.quantite)
         else
-            for _ = 1, m.quantite do LCM.Inventaire.Prendre(entity, m.ref) end
+            -- Les sacs d'abord, puis ce que les outils contiennent.
+            for _ = 1, m.quantite do
+                if not LCM.Inventaire.Prendre(entity, m.ref) then LCM.Contenants.Prendre(entity, m.ref) end
+            end
         end
     end
     return true

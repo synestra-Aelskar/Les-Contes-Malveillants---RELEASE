@@ -180,6 +180,9 @@ Liste("liste_armes", "Liste Armes", "armes")
 Liste("liste_outils", "Liste outils", "outils")
 Liste("liste_origine", "Liste origine", "origines")
 Liste("liste_ressources", "Liste ressources", "ressources")
+-- Ajout de l'addon (23 octobre 2026, le MJ) : les types de la categorie
+-- Consommables.
+Liste("liste_consommables", "Liste consommable", "consommables")
 
 -- Les metiers sont figes dans Data/Metiers.lua (du code, pas du contenu de
 -- seance) : la categorie les montre, le MJ ne les cree pas en jeu. Leur
@@ -328,6 +331,40 @@ C.Categorie({
 
 Generique({ id = "ressources", label = "Ressources", liste = "ressources",
     registre = "Ressources", famille = "ressources", avantage = false })
+-- Ajout de l'addon (23 octobre 2026, le MJ) : bandages, baumes et boissons
+-- sortent des ressources. Leur Type se choisit dans la « Liste consommable »,
+-- et un jeu d'equilibrage qui vise cette categorie les dose a la forge.
+Generique({ id = "consommables", label = "Consommables", liste = "consommables",
+    registre = "Consommables", famille = "consommables", avantage = false,
+    -- L'etat pose a la consommation : resume sur la carte, regle dans la
+    -- forge (son panneau « État posé »).
+    extras = { { cle = "etatPose", label = "État posé", type = "texte", emplacement = "body", carte = true } },
+    lire = {
+        etatPose = function(element)
+            local e = element.etatApplique
+            if not e then return "Aucun" end
+            local types = { etat = "État", maladie = "Maladie", intangible = "Intangible" }
+            local duree = e.rounds and string.format("%d round(s)", e.rounds) or "jusqu'au retrait"
+            return string.format("%s « %s », %s", types[e.conteneur] or e.conteneur,
+                e.nom or element.label, duree)
+        end,
+    } })
+-- Les criteres (23 octobre 2026, le MJ) : chaque jauge du personnage se dose
+-- comme une statistique, avec son cout dans le jeu d'equilibrage
+-- (Core/Consommation.lua). Ils passent en tete : c'est ce qu'un consommable
+-- fait d'abord.
+do
+    local criteres = {}
+    for _, critere in ipairs(LCM.Consommation.CRITERES) do
+        criteres[#criteres + 1] = { cle = LCM.Consommation.Cle(critere.id), label = critere.label,
+            type = "statistique", emplacement = "statistiques", dossier = "Critères" }
+    end
+    local categorie = C.Get("consommables")
+    categorie.blocExtra = criteres
+    local dossiers = { "Critères" }
+    for _, nom in ipairs(DOSSIERS_GENERIQUES) do dossiers[#dossiers + 1] = nom end
+    categorie.dossiers = dossiers
+end
 
 -- Armes, armures, accessoires : un seul registre (les objets), une
 -- categorie fixe chacun. Le template donne a Armures et Accessoires la
@@ -381,8 +418,32 @@ for _, metier in ipairs(LCM.Metiers.list) do
 end
 local dossiersOutils = LCM.Copie(DOSSIERS_GENERIQUES)
 dossiersOutils[#dossiersOutils + 1] = "Métiers"
-Objet("outils", "Outils", "outil", "outils")
+Objet("outils", "Outils", "outil", "outils", {
+    -- Ajout de l'addon (23 octobre 2026, le MJ) : ce qu'un outil peut
+    -- contenir (Core/Contenants.lua). Resume ici, regle dans la forge.
+    { cle = "contenantResume", label = "Contenant", type = "texte", emplacement = "body" },
+})
 local categorieOutils = C.Get("outils")
+categorieOutils.lire = categorieOutils.lire or {}
+categorieOutils.lire.contenantResume = function(element)
+    local k = element.contenant
+    if not k then return "Non" end
+    -- « Boisson (Eau) » quand le type est restreint a quelques entrees.
+    local types = {}
+    for _, id in ipairs(k.types or {}) do
+        local entree = LCM.Listes.Get(id)
+        local seules = {}
+        for _, ref in ipairs(k.entrees or {}) do
+            local e = LCM.Compendium.Resoudre(ref)
+            if e and e.type == id then seules[#seules + 1] = e.label end
+        end
+        types[#types + 1] = (entree and entree.label or id)
+            .. (seules[1] and (" (" .. table.concat(seules, ", ") .. ")") or "")
+    end
+    local depart = k.depart and LCM.Compendium.Resoudre(k.depart)
+    return string.format("%s — taille %d, %d par usage%s", types[1] and table.concat(types, ", ") or "tout",
+        k.taille, k.retrait, depart and (", livré avec " .. depart.label) or "")
+end
 categorieOutils.blocExtra = bonusMetiers
 categorieOutils.dossiers = dossiersOutils
 

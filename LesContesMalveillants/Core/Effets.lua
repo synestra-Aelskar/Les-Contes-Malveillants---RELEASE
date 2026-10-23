@@ -140,8 +140,11 @@ LCM.WhenReady(function()
         for _, element in ipairs(source.liste and source.liste() or {}) do
             for fieldId in pairs(element.bonus) do
                 local metierId = tostring(fieldId):match("^metier:(.+)$")
+                -- Les criteres d'un consommable : une jauge rendue a la
+                -- consommation (Core/Consommation.lua), pas un champ porte.
                 if not LCM.Schema.Field(fieldId)
-                    and not (metierId and LCM.Metiers.Get(metierId)) then
+                    and not (metierId and LCM.Metiers.Get(metierId))
+                    and not (LCM.Consommation and LCM.Consommation.Critere(fieldId)) then
                     LCM.Erreur(string.format("%s « %s » : bonus vers un champ inconnu (%s)",
                         source.nom, element.label, fieldId))
                 end

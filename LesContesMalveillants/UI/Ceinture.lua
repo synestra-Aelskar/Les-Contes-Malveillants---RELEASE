@@ -1,180 +1,204 @@
--- Objets > Outils : les places de la ceinture portent les objets de
--- categorie « outil » ET la lanterne. Certains ouvrent un panneau specialise.
---
--- La lanterne n'est pas un objet « outil » : c'est une entree de la categorie
--- Lanternes du compendium (le MJ, 23 octobre 2026). Rien ne s'ouvre tant que
--- le joueur n'en a pas une dans ses sacs ; il l'equipe ici, elle prend une
--- des places, et le menu Lanterne s'ouvre alors sur elle (Core/Lanternes.lua,
--- `EquiperLanterne`).
+-- Objets > Outils : deux crochets pour les outils portes.
 local _, LCM = ...
 local UI = LCM.UI
-local L = LCM.Lanterne
 local Ceinture = {}
 UI.Ceinture = Ceinture
 
--- Les outils qui ouvrent un panneau, par identifiant d'objet.
-local OUVRIR = {
-    outil_scanner_valrazkah = function() return UI.Scanner.Basculer() end,
-}
+local function Moi() return LCM.Entities.Self() end
 
--- Ce qu'on peut equiper depuis les sacs. Les options portent une reference
--- (« lanternes/x », « objets/x ») : un outil et une lanterne pourraient avoir
--- le meme identifiant.
-local function Candidats(entity)
-    local out = {}
-    if not entity then return out end
-    for _, objet in ipairs(LCM.Objets.list) do
-        if objet.categorie == "outil" and LCM.Objets.Possede(entity, objet.id) then
-            out[#out + 1] = { id = "objets/" .. objet.id, label = objet.label }
+local function Portes(entity)
+    local places, utilisees = {}, {}
+    if not entity then return places end
+    for rang, id in ipairs(LCM.Objets.Ids(entity, "outil")) do
+        local place = entity.ceinturePlaces and tonumber(entity.ceinturePlaces[rang])
+        if not place or place < 1 or place > 2 or utilisees[place] then
+            place = not utilisees[1] and 1 or not utilisees[2] and 2 or nil
+        end
+        if place then
+            places[place] = { genre = "outil", id = id, rang = rang, objet = LCM.Objets.Get(id) }
+            utilisees[place] = true
         end
     end
-    for _, lanterne in ipairs(L.LanternesPortees()) do
-        out[#out + 1] = { id = "lanternes/" .. lanterne.id, label = lanterne.label }
+    local id = LCM.Lanterne and LCM.Lanterne.IdEquipe(entity)
+    if id then
+        local place = tonumber(entity.ceintureLanternePlace)
+        if not place or place < 1 or place > 2 or utilisees[place] then
+            place = not utilisees[1] and 1 or not utilisees[2] and 2 or nil
+        end
+        if place then places[place] = { genre = "lanterne", id = id, objet = LCM.Lanternes.Get(id) } end
     end
-    table.sort(out, function(a, b) return a.label < b.label end)
-    return out
-end
-
--- Ce qui est porte, dans l'ordre des lignes : la lanterne d'abord, puis les
--- outils dans leur ordre d'equipement (`rang` : leur place chez Core/Objets).
-local function Portes(entity)
-    local out = {}
-    if not entity then return out end
-    local idLanterne = L.IdEquipe(entity)
-    if idLanterne then
-        local lanterne = LCM.Lanternes.Get(idLanterne)
-        out[#out + 1] = { genre = "lanterne", id = idLanterne,
-            label = lanterne and lanterne.label or ("Lanterne inconnue : " .. idLanterne),
-            description = lanterne and lanterne.description }
-    end
-    for rang, id in ipairs(LCM.Objets.Ids(entity, "outil")) do
-        local objet = LCM.Objets.Get(id)
-        out[#out + 1] = { genre = "outil", id = id, rang = rang,
-            label = objet and objet.label or ("Objet inconnu : " .. id),
-            description = objet and objet.description }
-    end
-    return out
+    return places
 end
 Ceinture.Portes = Portes
 
-local function Ouvrir(porte)
-    if not porte then return nil end
-    if porte.genre == "lanterne" then return function() return UI.Lanterne.Basculer() end end
-    return OUVRIR[porte.id]
-end
-
-local function Fermer(porte)
-    if porte.genre == "lanterne" then
-        if UI.Lanterne.frame then UI.Lanterne.frame:Hide() end
-    elseif porte.id == "outil_scanner_valrazkah" and UI.Scanner.frame then
-        UI.Scanner.frame:Hide()
+local function Equiper(id, place)
+    local entity = Moi()
+    if not entity then return false, "aucun personnage." end
+    local avant = Portes(entity)
+    if avant[place] then return false, "cet emplacement est déjà occupé." end
+    local famille, identifiant = tostring(id):match("^([%w_]+)/(.+)$")
+    if famille == "lanternes" then
+        local ok, raison = LCM.Lanterne.EquiperLanterne(identifiant)
+        if not ok then return false, raison end
+        entity.ceintureLanternePlace = place
+        if UI.Inventaires then UI.Inventaires.Actualiser() end
+        return true
     end
+    id = famille == "objets" and identifiant or id
+    local objet = LCM.Objets.Get(id)
+    if not objet or objet.categorie ~= "outil" then return false, "cet emplacement n'accepte qu'un outil." end
+    local ok, raison = LCM.Objets.Equiper(entity, id)
+    if not ok then return false, raison end
+    entity.ceinturePlaces = entity.ceinturePlaces or {}
+    for position, porte in pairs(avant) do
+        if porte.genre == "outil" then entity.ceinturePlaces[porte.rang] = position end
+    end
+    entity.ceinturePlaces[#LCM.Objets.Ids(entity, "outil")] = place
+    if UI.Vues then UI.Vues.Rafraichir() end
+    if UI.Inventaires then UI.Inventaires.Actualiser() end
+    return true
+end
+Ceinture.Equiper = Equiper
+
+local function DessinerPlus(b)
+    b.vide = CreateFrame("Frame", nil, b)
+    b.vide:SetAllPoints(b)
+    b.vide:EnableMouse(false)
+    -- Un filet rond et un fond sombre, avec les couleurs des boutons de l'addon.
+    for _, disque in ipairs({
+        { rayon = 14, couleur = UI.C.bordure },
+        { rayon = 12, couleur = UI.C.fond },
+    }) do
+        for y = -disque.rayon, disque.rayon do
+            local largeur = 2 * math.sqrt(disque.rayon * disque.rayon - y * y)
+            local trait = b.vide:CreateTexture(nil, "ARTWORK")
+            local c = disque.couleur
+            trait:SetColorTexture(c[1], c[2], c[3], c[4] or 1)
+            trait:SetSize(math.max(1, largeur), 1)
+            trait:SetPoint("CENTER", b, "CENTER", 0, y)
+        end
+    end
+    b.plus = b:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    b.plus:SetPoint("CENTER", b, "CENTER", 0, 1)
+    b.plus:SetText("+")
+    b.plus:SetTextColor(UI.C.titre[1], UI.C.titre[2], UI.C.titre[3])
 end
 
 local function Construire()
-    local f = UI.Fenetre("outils_portes", "Ceinture porte-outils", 560, 580,
-        { x = 180, y = -40 })
+    local f = CreateFrame("Frame", "LCMCeinturePorteOutils", UIParent)
     Ceinture.frame = f
-    f:SousTitre("Objets portés")
-    local c = f.contenu
-    f.image = c:CreateTexture(nil, "ARTWORK")
-    f.image:SetTexture("Interface\\AddOns\\LesContesMalveillants\\ressources\\ceinture\\ceinture.blp")
-    f.image:SetSize(520, 240)
-    f.image:SetPoint("TOP", c, "TOP", 0, 0)
+    f:SetSize(520, 260)
+    f:SetPoint("CENTER", UIParent, "CENTER", 180, -40)
+    f:SetFrameStrata("DIALOG")
+    f:SetClampedToScreen(true)
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
 
-    -- La lanterne prend une des places des outils : pas de ligne en plus.
-    f.lignes = {}
-    for i = 1, LCM.Objets.Capacite("outil") do
-        local y = -232 - (i - 1) * 39
-        local nom = UI.Texte(c, "", UI.C.titre, "GameFontNormalSmall")
-        nom:SetPoint("TOPLEFT", c, "TOPLEFT", 18, y)
-        nom:SetWidth(270)
-        local ouvrir = UI.Bouton(c, "Ouvrir", 82, 24, function()
-            local action = Ouvrir(f.lignes[i].porte)
-            if not action then return end
-            local ok, raison = action()
-            if not ok then LCM.Alerte(raison) end
-        end)
-        ouvrir:SetPoint("TOPRIGHT", c, "TOPRIGHT", -118, y + 3)
-        UI.Bulle(ouvrir, function()
-            local porte = f.lignes[i].porte
-            return porte and porte.label or "Emplacement libre"
-        end, function()
-            local porte = f.lignes[i].porte
-            if not porte then return "Équipez un outil depuis vos sacs." end
-            return porte.description
-        end, 0.2)
-        local retirer = UI.Bouton(c, "Retirer", 100, 24, function()
-            local porte = f.lignes[i].porte
-            if not porte then return end
-            local ok, raison
-            if porte.genre == "lanterne" then
-                ok, raison = L.RetirerLanterne()
-            else
-                -- Le rang de l'outil chez Core/Objets, pas celui de la ligne :
-                -- la lanterne, quand elle est portee, occupe la premiere.
-                ok, raison = LCM.Objets.Desequiper(LCM.Entities.Self(), porte.id, porte.rang)
+    f.image = f:CreateTexture(nil, "ARTWORK")
+    f.image:SetTexture("Interface\\AddOns\\LesContesMalveillants\\ressources\\ceinture\\ceinture.blp")
+    f.image:SetAllPoints(f)
+
+    local choix = UI.Choix("ceinture_outils", "Outils dans les sacs")
+    f.emplacements = {}
+    for i, crochet in ipairs({ { x = 0.321, y = 0.563 }, { x = 0.774, y = 0.569 } }) do
+        local b = CreateFrame("Button", nil, f)
+        b:SetSize(36, 36)
+        b:SetPoint("CENTER", f, "TOPLEFT", crochet.x * 520, -crochet.y * 260)
+        b.place = i
+        DessinerPlus(b)
+        b.objetIcone = b:CreateTexture(nil, "OVERLAY")
+        b.objetIcone:SetSize(30, 30)
+        b.objetIcone:SetPoint("CENTER", b, "CENTER", 0, 0)
+        b.objetIcone:Hide()
+        b:SetScript("OnClick", function(self)
+            if self.porte then
+                local porte = self.porte
+                local options = {}
+                if porte.genre == "outil" and porte.id == "outil_scanner_valrazkah" then
+                    options[#options + 1] = { label = "Ouvrir", action = function() UI.Scanner.Basculer() end }
+                elseif porte.genre == "lanterne" then
+                    options[#options + 1] = { label = "Ouvrir", action = function() UI.Lanterne.Basculer() end }
+                end
+                options[#options + 1] = { label = "Retirer", action = function()
+                    local ok, raison
+                    if porte.genre == "lanterne" then
+                        ok, raison = LCM.Lanterne.RetirerLanterne()
+                    else
+                        ok, raison = LCM.Objets.Desequiper(Moi(), porte.id, porte.rang)
+                    end
+                    if not ok then LCM.Alerte(raison) end
+                    f:Afficher()
+                    if UI.Vues then UI.Vues.Rafraichir() end
+                    if UI.Inventaires then UI.Inventaires.Actualiser() end
+                end }
+                UI.MenuContexte():Ouvrir(self, options)
+                return
             end
-            if not ok then LCM.Alerte(raison) else Fermer(porte) end
+            local options = {}
+            for _, objet in ipairs(LCM.Objets.CandidatsPossedes(Moi(), "outil")) do
+                options[#options + 1] = { id = "objets/" .. objet.id, label = objet.label }
+            end
+            for _, lanterne in ipairs(LCM.Lanterne.LanternesPortees()) do
+                options[#options + 1] = { id = "lanternes/" .. lanterne.id, label = lanterne.label }
+            end
+            if #options == 0 then LCM.Alerte("aucun outil compatible dans les sacs.") return end
+            table.sort(options, function(a, b) return a.label < b.label end)
+            choix:Proposer(self, options, function(id)
+                local ok, raison = Equiper(id, self.place)
+                if not ok then LCM.Alerte(raison) end
+                f:Afficher()
+            end)
+        end)
+        UI.Glisser.Cible(b, function(objet)
+            if b.porte then return false, "cet emplacement est déjà occupé." end
+            local ref = tostring(objet.ref or "")
+            local id = ref:match("^objets/(.+)$")
+            local outil = id and LCM.Objets.Get(id)
+            if not (outil and outil.categorie == "outil")
+                and not (ref:match("^lanternes/(.+)$") and LCM.Lanternes.Get(ref:match("^lanternes/(.+)$"))) then
+                return false, "cet emplacement n'accepte qu'un outil ou une lanterne."
+            end
+            if not (objet.origine and objet.origine.case) then
+                return false, "glisse un outil depuis tes sacs."
+            end
+            return true
+        end, function(objet)
+            local ok, raison = Equiper(objet.ref, b.place)
+            if not ok then LCM.Alerte(raison) end
             f:Afficher()
         end)
-        retirer:SetPoint("LEFT", ouvrir, "RIGHT", 8, 0)
-        f.lignes[i] = { nom = nom, ouvrir = ouvrir, retirer = retirer }
+        UI.Bulle(b, function() return b.porte and b.porte.objet and b.porte.objet.label or "Équiper un outil" end,
+            function() return b.porte and b.porte.objet and b.porte.objet.description or "Choisir un outil dans les sacs ou le glisser ici." end)
+        f.emplacements[i] = b
     end
-
-    f.equiper = UI.Deroulant(c, 350, 24, function()
-        return Candidats(LCM.Entities.Self())
-    end, function(ref)
-        local entity = LCM.Entities.Self()
-        local famille, id = tostring(ref or ""):match("^([%w_]+)/(.+)$")
-        local ok, raison
-        if famille == "lanternes" then
-            ok, raison = L.EquiperLanterne(id)
-        else
-            -- Core/Objets ne compte que les outils : la place prise par la
-            -- lanterne se verifie ici.
-            local capacite, prises = L.PlacesCeinture(entity)
-            if prises >= capacite then
-                ok, raison = false, "la ceinture est pleine : retire un outil d'abord."
-            else
-                ok, raison = LCM.Objets.Equiper(entity, id)
-            end
-        end
-        if not ok then LCM.Alerte(raison) end
-        f:Afficher()
-    end)
-    f.equiper:SetPoint("TOPLEFT", c, "TOPLEFT", 18, -400)
-    local aide = UI.Texte(c, "Équiper un outil présent dans vos sacs", UI.C.discret,
-        "GameFontNormalSmall")
-    aide:SetPoint("BOTTOMLEFT", f.equiper, "TOPLEFT", 0, 5)
 
     function f:Afficher()
-        local entity = LCM.Entities.Self()
-        local portes = Portes(entity)
-        for i, ligne in ipairs(self.lignes) do
-            local porte = portes[i]
-            ligne.porte = porte
-            ligne.id = porte and porte.id
-            ligne.nom:SetText(string.format("%d · %s", i, porte and porte.label or "Emplacement libre"))
-            local ouvrable = Ouvrir(porte) ~= nil
-            ligne.ouvrir:SetEnabled(ouvrable)
-            ligne.ouvrir:SetAlpha(ouvrable and 1 or 0.45)
-            ligne.retirer:SetEnabled(porte ~= nil)
-            ligne.retirer:SetAlpha(porte and 1 or 0.45)
+        local portes = Portes(Moi())
+        for i, b in ipairs(self.emplacements) do
+            b.porte = portes[i]
+            b.vide:SetShown(not b.porte)
+            b.plus:SetShown(not b.porte)
+            local lanterne = b.porte and b.porte.genre == "lanterne"
+            b.objetIcone:SetShown(b.porte ~= nil and not lanterne)
+            if lanterne and not b.lanterne then b.lanterne = UI.LanterneCeinture.Creer(self, b) end
+            if b.lanterne then
+                b.lanterne:SetShown(lanterne == true)
+                if lanterne then b.lanterne:Actualiser() end
+            end
+            if b.porte then b.objetIcone:SetTexture(b.porte.objet and b.porte.objet.icone or LCM.Icone()) end
         end
-        local choix = Candidats(entity)
-        -- Une lanterne s'echange contre celle qu'on porte : elle n'a pas
-        -- besoin d'une place libre. Un outil, si.
-        local capacite, prises = L.PlacesCeinture(entity)
-        local libre = prises < capacite or L.IdEquipe(entity) ~= nil and #L.LanternesPortees() > 0
-        self.equiper:Definir(false, #choix == 0 and "Aucun outil dans les sacs" or "Équiper depuis les sacs…")
-        self.equiper:SetEnabled(libre and #choix > 0)
-        self.equiper:SetAlpha(libre and #choix > 0 and 1 or 0.45)
     end
     f:HookScript("OnShow", function(self) self:Afficher() end)
-    if LCM.Entities.EcouterSoi then
-        LCM.Entities.EcouterSoi(function() if f:IsShown() then f:Afficher() end end)
-    end
+    local ecoule = 0
+    f:SetScript("OnUpdate", function(self, dt)
+        ecoule = ecoule + dt
+        if ecoule >= 0.2 then ecoule = 0 self:Afficher() end
+    end)
+    LCM.Entities.EcouterSoi(function() if f:IsShown() then f:Afficher() end end)
+    if UISpecialFrames then UISpecialFrames[#UISpecialFrames + 1] = f:GetName() end
     f:Hide()
     return f
 end
@@ -190,6 +214,4 @@ function Ceinture.Basculer()
     return f
 end
 
-LCM.WhenReady(function()
-    UI.Menu.Lier("outils_portes", Ceinture.Basculer)
-end)
+LCM.WhenReady(function() UI.Menu.Lier("outils_portes", Ceinture.Basculer) end)

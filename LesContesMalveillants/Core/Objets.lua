@@ -81,6 +81,16 @@ function Objets.Construire(definition)
     end
     local element = ConstruireObjet(source)
     element.ic = LCM.IC.Lire(source.ic)
+    -- Un outil peut CONTENIR un consommable ou une ressource (le MJ,
+    -- 23 octobre 2026, Core/Contenants.lua). Les autres objets non.
+    if type(source) == "table" and source.contenant ~= nil then
+        if element.categorie ~= "outil" then
+            error("LCM/Objets : " .. element.id .. " : seul un outil peut être un contenant", 0)
+        end
+        element.contenant = LCM.Contenants.Lire(source, element.id, function(message)
+            error("LCM/Objets : " .. tostring(message), 0)
+        end)
+    end
     if type(source) == "table" and type(source.etat) == "table" and type(element.etat) == "table" then
         element.etat.version = source.etat.version
         element.etat.ancienMax = source ~= definition and ancien or source.etat.ancienMax
@@ -165,6 +175,11 @@ end
 local PlacerModele = Objets.Placer
 function Objets.Placer(entity, id, exemplaire)
     local objet = Objets.Get(id)
+    if objet and objet.categorie == "outil" and LCM.Lanterne
+        and LCM.Lanterne.IdEquipe(entity)
+        and Objets.Occupation(entity, "outil") + 1 >= Objets.Capacite("outil") then
+        return false, "la ceinture est pleine : retire un outil ou la lanterne d'abord."
+    end
     if exemplaire then
         local _, raison = LCM.Exemplaires.Lire(Ref(id), 1, {exemplaire})
         if raison then return false, raison end
@@ -184,6 +199,10 @@ function Objets.Enlever(entity, id, exemplaireId)
                 local exemplaire = liste[i]
                 if not exemplaireId or exemplaire.id == exemplaireId then
                 table.remove(rangee, i)
+                if categorie == "outil" and type(entity.ceinturePlaces) == "table" then
+                    table.remove(entity.ceinturePlaces, i)
+                    if #entity.ceinturePlaces == 0 then entity.ceinturePlaces = nil end
+                end
                 if #rangee == 0 then entity.equipement[categorie] = nil end
                 if not next(entity.equipement) then entity.equipement = nil end
                 table.remove(liste, i)

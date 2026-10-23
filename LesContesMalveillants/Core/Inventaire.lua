@@ -526,7 +526,7 @@ function Inventaire.Transvaser(entity, categorieId, index, ref, quantite, exempl
     -- Les piles de la meme entree, d'abord.
     for case = 1, total do
         local c = Inventaire.Case(e, case)
-        if reste > 0 and c and c.ref == ref then
+        if reste > 0 and c and LCM.Compendium.MemeEntree(c.ref, ref) then
             local place = pile - (tonumber(c.quantite) or 1)
             if place > 0 then
                 local n = math.min(place, reste)
@@ -590,7 +590,7 @@ end
 -- Lanternes et cristaux (23 octobre 2026) : ils n'existent pour le joueur que
 -- s'il les porte (Core/Lanternes.lua). Il faut donc pouvoir les ranger.
 local RANGEABLES = { objets = true, livres = true, ressources = true, sacs = true, accessoires_camping = true,
-                     lanternes = true, cristaux = true }
+                     lanternes = true, cristaux = true, consommables = true }
 
 function Inventaire.Accepte(emplacement, index, ref)
     local famille, entree = tostring(ref or ""):match("^([%w_]+)/(.+)$")
@@ -617,7 +617,7 @@ function Inventaire.Accepte(emplacement, index, ref)
             return false, "cette monnaie ne se transporte pas : elle reste dans la bourse."
         end
     elseif not RANGEABLES[famille] then
-        return false, "un sac accepte des objets, des livres, des ressources, des accessoires de camping, des lanternes, des cristaux ou des sacoches."
+        return false, "un sac accepte des objets, des livres, des ressources, des consommables, des accessoires de camping, des lanternes, des cristaux ou des sacoches."
     end
     -- Un contenant dans un contenant : seul un SAC en accepte, et il faut que
     -- le nouveau venu tienne — il occupe sa case plus toutes les siennes.
@@ -686,7 +686,9 @@ function Inventaire.Ranger(entity, categorieId, index, case, ref, quantite, exem
     copies = copies or LCM.Exemplaires.CreerListe(ref, quantite)
     e = EmplacementPourEcrire(entity, categorieId, index)
     e.cases = type(e.cases) == "table" and e.cases or {}
-    e.cases[case] = { ref = ref, quantite = quantite, exemplaires = copies }
+    -- Rangee sous son nom d'aujourd'hui : une entree d'avant un transfert
+    -- (un coffre garni avant) ne fait pas une pile a part.
+    e.cases[case] = { ref = LCM.Compendium.Canonique(ref), quantite = quantite, exemplaires = copies }
     return true
 end
 
@@ -896,7 +898,7 @@ function Inventaire.Chercher(entity, ref)
         for index = 1, Inventaire.Capacite(categorie.id) do
             local emplacement = Inventaire.Emplacement(entity, categorie.id, index)
             for case, c in pairs(emplacement and type(emplacement.cases) == "table" and emplacement.cases or VIDE) do
-                if type(c) == "table" and c.ref == ref then return categorie.id, index, case end
+                if type(c) == "table" and LCM.Compendium.MemeEntree(c.ref, ref) then return categorie.id, index, case end
             end
         end
     end
@@ -931,7 +933,7 @@ function Inventaire.Piles(entity, ref)
             local total = emplacement and Inventaire.Cases(emplacement) or 0
             for case = 1, total do
                 local c = Inventaire.Case(emplacement, case)
-                if type(c) == "table" and c.ref == ref then
+                if type(c) == "table" and LCM.Compendium.MemeEntree(c.ref, ref) then
                     out[#out + 1] = { categorie = categorie.id, index = index, case = case, pile = c }
                 end
             end
@@ -1089,7 +1091,8 @@ local function PrevoirCases(entity, ref, quantite, entrants)
             local total = emplacement and Inventaire.Cases(emplacement) or 0
             for case = 1, total do
                 local c = Inventaire.Case(emplacement, case)
-                if reste > 0 and type(c) == "table" and c.ref == ref and not emplacement.cristaux then
+                if reste > 0 and type(c) == "table" and LCM.Compendium.MemeEntree(c.ref, ref)
+                    and not emplacement.cristaux then
                     local dedans = tonumber(c.quantite) or 1
                     local ajout = pileMax and math.min(reste, pileMax - dedans) or reste
                     if ajout > 0 then
@@ -1167,6 +1170,7 @@ function Inventaire.Deposer(entity, ref, quantite, exemplaires)
     if not LCM.Compendium.Resoudre(ref) then
         return false, "entrée inconnue du compendium."
     end
+    ref = LCM.Compendium.Canonique(ref)
     -- Plusieurs cristaux entames (une pile lachee, un echange) : un par un,
     -- chacun vers la pile de son pourcentage. La poche n'a pas de limite :
     -- aucun ne peut manquer de place, il n'y a rien a defaire.

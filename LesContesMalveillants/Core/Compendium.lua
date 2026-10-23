@@ -265,9 +265,16 @@ function Compendium.Options(champ)
 end
 
 -- Le libelle d'un choix ; un choix disparu reste visible, marque d'un « ? ».
+-- Un type qui existe mais dans une AUTRE liste (une Boisson sur un outil
+-- transfere) se nomme, et dit qu'il n'est pas a sa place : l'identifiant nu
+-- ne disait rien au MJ (23 octobre 2026).
 local function LibelleOption(champ, id)
     for _, option in ipairs(Compendium.Options(champ)) do
         if option.id == id then return option.label end
+    end
+    if tostring(champ.source or ""):match("^listes:") then
+        local entree = LCM.Listes.Get(id)
+        if entree then return "? " .. tostring(entree.label) .. " (pas dans cette liste)" end
     end
     return "? " .. tostring(id)
 end
@@ -280,17 +287,41 @@ local FAMILLES = {
     connaissances = "Connaissances", resolutions = "Resolutions",
     calculateurs = "Calculateurs", pnj = "PNJ",
     tentes = "Tentes", accessoires_camping = "AccessoiresCamping",
-    lanternes = "Lanternes", cristaux = "Cristaux",
+    lanternes = "Lanternes", cristaux = "Cristaux", consommables = "Consommables",
     -- Les jeux d'equilibrage de la forge : du contenu, sans categorie a eux.
     jeux = "Forge",
 }
 Compendium.FAMILLES = FAMILLES
 
-function Compendium.Resoudre(ref)
+-- L'entree qui a quitte `famille` pour une autre en gardant son identifiant
+-- (MJ/Transfert.lua), et sa nouvelle famille. Cherchee seulement quand la
+-- reference ne repond plus : le cas ordinaire ne paie rien.
+local function Transferee(famille, id)
+    local ancienne = famille .. "/" .. id
+    for autre, nom in pairs(FAMILLES) do
+        local registre = autre ~= famille and LCM[nom]
+        local element = registre and registre.Get and registre.Get(id)
+        if element and type(element.transfertDe) == "table" then
+            for _, ref in ipairs(element.transfertDe) do
+                if ref == ancienne then return element, autre end
+            end
+        end
+    end
+    return nil
+end
+
+local function Trouver(ref)
     local famille, id = tostring(ref or ""):match("^([%w_]+)/(.+)$")
     local registre = famille and FAMILLES[famille] and LCM[FAMILLES[famille]]
     local element = registre and registre.Get(id)
+    if not element and famille then element, famille = Transferee(famille, id) end
+    return element, famille
+end
+
+function Compendium.Resoudre(ref)
+    local element, famille = Trouver(ref)
     if not element then return nil end
+    local id = element.id
     if famille == "traits" and not LCM.Traits.EstAccessible(id) then return nil end
     for _, categorie in ipairs(Compendium.categories) do
         if categorie.famille == famille and (not categorie.filtre or categorie.filtre(element)) then
@@ -298,6 +329,23 @@ function Compendium.Resoudre(ref)
         end
     end
     return element, nil
+end
+
+-- La reference d'aujourd'hui : « ressources/bandage » rend
+-- « consommables/bandage » si l'entree a ete transferee, et toute autre
+-- reference telle quelle. C'est elle qu'on range, et c'est par elle qu'on
+-- compare deux piles.
+function Compendium.Canonique(ref)
+    local element, famille = Trouver(ref)
+    if not element then return ref end
+    return famille .. "/" .. element.id
+end
+
+-- Deux references qui designent la meme entree, l'une d'avant un transfert.
+function Compendium.MemeEntree(a, b)
+    if a == b then return true end
+    if a == nil or b == nil then return false end
+    return Compendium.Canonique(a) == Compendium.Canonique(b)
 end
 
 function Compendium.Reference(categorie, element)
@@ -318,6 +366,18 @@ function Compendium.Texte(categorie, champ, brut, mode)
     if t == "jauge" then
         if type(brut) ~= "table" then return "" end
         return Nombre(brut.courant) .. " / " .. Nombre(brut.max)
+    elseif t == "liste" and tostring(champ.source or ""):match("^forge:") then
+        -- La rarete du jeu, comme le champ la propose ; sinon le jeu et sa
+        -- rarete par leur NOM. Les options ne connaissent que les jeux de la
+        -- categorie : une entree transferee
+        -- avec l'ancien jeu s'affichait « ? lcm_64a651_…/commun » (le MJ,
+        -- 23 octobre 2026). Un jeu qui n'existe plus ne s'affiche pas.
+        for _, option in ipairs(Compendium.Options(champ)) do
+            if option.id == brut then return option.label end
+        end
+        local jeu, rarete = LCM.Forge.Lire(brut)
+        if not jeu then return "" end
+        return rarete and (jeu.label .. " · " .. rarete.label) or jeu.label
     elseif t == "liste" then
         local ids = type(brut) == "table" and brut or { brut }
         local out = {}

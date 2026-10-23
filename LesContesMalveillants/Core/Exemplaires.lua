@@ -39,7 +39,8 @@ function X.Nouveau(ref)
     -- Un cristal n'a pas de proprietes IC : seulement son identite, et sa
     -- charge quand il est entame.
     if ref:match("^cristaux/") then return { version = 1, id = id, ref = ref, usages = {} } end
-    return LCM.IC.Charges.Nouveau(id, ref)
+    -- Un outil contenant nait avec son contenu de depart (Core/Contenants.lua).
+    return LCM.Contenants.Garnir(LCM.IC.Charges.Nouveau(id, ref), ref)
 end
 
 -- Valide avant toute ecriture. Une liste fournie n'est jamais completee :
@@ -69,6 +70,11 @@ function X.Lire(ref, quantite, liste)
         if e.charge ~= nil and (type(e.charge) ~= "number" or e.charge < 0) then
             return nil, "charge de cristal illisible."
         end
+        -- Ce que contient un outil : une reference et ce qu'il en reste.
+        if e.contenu ~= nil and (type(e.contenu) ~= "table" or type(e.contenu.ref) ~= "string"
+            or type(e.contenu.reste) ~= "number" or e.contenu.reste <= 0) then
+            return nil, "contenu d'outil illisible."
+        end
         vus[e.id] = true
         for propriete, historique in pairs(e.usages) do
             if type(propriete) ~= "string" or type(historique) ~= "table" then
@@ -96,7 +102,19 @@ function X.CreerListe(ref, quantite)
 end
 
 -- Migration seulement lors d'un geste d'ecriture, jamais dans un getter.
+--
+-- Une case qui tient une entree sous une reference d'avant un transfert
+-- (« ressources/gourde » devenue un outil, MJ/Transfert.lua) passe d'abord a
+-- sa reference d'aujourd'hui : sans quoi elle n'aurait jamais d'exemplaire, et
+-- la gourde « (vide) » refusait d'etre remplie (le MJ, 23 octobre 2026).
 function X.Assurer(case)
+    local actuelle = LCM.Compendium and LCM.Compendium.Canonique(case.ref)
+    if actuelle and actuelle ~= case.ref then
+        case.ref = actuelle
+        if type(case.exemplaires) == "table" and not X.Lire(actuelle, tonumber(case.quantite) or 1, case.exemplaires) then
+            case.exemplaires = nil
+        end
+    end
     if not X.Concerne(case.ref) then return nil end
     local liste, raison = X.Lire(case.ref, tonumber(case.quantite) or 1, case.exemplaires)
     assert(not raison, raison)
