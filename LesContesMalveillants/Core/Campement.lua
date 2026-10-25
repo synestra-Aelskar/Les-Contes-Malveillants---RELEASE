@@ -766,19 +766,38 @@ function Campement.Soigner(partieId, n)
     return true
 end
 
--- Les etats et maladies : on les retire avec des PS, a raison de `psParPoint`
--- par point de leur rarete (le pool de leur jeu d'equilibrage). Un etat sans
--- jeu n'a pas de prix : c'est au MJ de le retirer. Les etats intangibles ne se
--- soignent pas au camp.
+-- Les etats et maladies : on les retire avec des PS, a raison de
+-- `psParPointNegatif` par point NEGATIF qu'ils portent. Un etat sans jeu
+-- d'equilibrage n'a pas de prix : c'est au MJ de le retirer. Les etats
+-- intangibles ne se soignent pas au camp.
 local SOIGNABLES = { etat = true, maladie = true }
 
+-- Ce qu'un etat RETIRE, en points — ce que la forge affiche au bout de ses
+-- lignes passees sous leur base. Le bilan le tient deja sous le nom de
+-- `credit` : c'est ce que ces lignes rendent au pool, donc la somme exacte de
+-- ce qui s'y lit en negatif. Nil quand l'entree n'a pas de jeu.
+function Campement.PointsNegatifs(element)
+    if type(element) ~= "table" then return nil end
+    local jeu, rarete = LCM.Forge.Lire(element.forge)
+    if not (jeu and rarete) then return nil end
+    local bilan = LCM.Forge.Bilan(jeu, rarete.id, element.bonus, 1, nil, element.ic, element.pourcent)
+    return bilan.credit
+end
+
+-- Le prix d'un etat, en PS (le MJ, 24 octobre 2026 : « le nombre de pts
+-- negatifs egale le cout en PS »). Il se lisait avant sur le pool de sa
+-- RARETE : deux etats de meme rarete coutaient alors pareil, qu'ils retirent
+-- un point ou trente.
+--
+-- Zero est une reponse : un etat qui ne retire rien ne coute rien a lever. On
+-- arrondit au-dessus, pour qu'un demi-point de malus se paie un PS.
 function Campement.CoutEtat(element)
     if type(element) ~= "table" then return nil, "état inconnu." end
-    local _, rarete = LCM.Forge.Lire(element.forge)
-    if not rarete then
+    local points = Campement.PointsNegatifs(element)
+    if not points then
         return nil, string.format("« %s » n'a pas de jeu d'équilibrage : le MJ doit le retirer.", element.label)
     end
-    return rarete.points * Eq().vitalite.psParPoint
+    return math.ceil(points * (tonumber(Eq().vitalite.psParPointNegatif) or 1))
 end
 
 -- Ce que porte le personnage et qu'un campement peut retirer, avec son prix.

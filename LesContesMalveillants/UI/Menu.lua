@@ -58,14 +58,16 @@ Menu.STRUCTURE = {
       enfants = {
           { id = "equipement",  label = "Équipements", icone = RADIAL .. "fenetres-equipement.tga" },
           { id = "inventaires", label = "Inventaires", icone = RADIAL .. "fenetres-inventaires.tga" },
-          -- Ajout a la structure du template : chaque joueur voit sa bourse.
-          { id = "bourse",      label = "Bourse",      icone = RADIAL .. "fenetres-bourse.tga" },
+          -- Ce que l'on porte a la ceinture (Équipements > Outils), et ce qu'on
+          -- en fait : un bandeau s'ouvre a droite du bouton (UI/MesOutils.lua).
+          { id = "mes_outils",  label = "Mes Outils",  icone = RADIAL .. "fenetres-outils.tga" },
+          -- « Bourse » occupait le cran suivant. Elle a rejoint la colonne
+          -- d'Inventaires, au-dessus de la Ceinture (le MJ, 24 octobre 2026) :
+          -- un cran de libre, et on ne garde plus deux fenetres ouvertes pour
+          -- sortir des ecus d'un sac. /lcm bourse ouvre encore la fenetre.
           { id = "metiers",     label = "Métiers",     icone = RADIAL .. "fenetres-metiers.tga" },
-          -- Ajout de l'addon (22 octobre 2026) : ce qu'on tient en main. Pour
-          -- l'instant la lanterne et son cristal (UI/Lanterne.lua) ; le nom
-          -- est provisoire. L'id n'est pas « outils », deja pris par le
-          -- dossier du premier niveau.
-          { id = "outils_portes", label = "Outils",    icone = RADIAL .. "fenetres-outils.tga" },
+          -- « Outils » (la ceinture porte-outils dessinee, 22 octobre 2026)
+          -- a ete retire le 25 octobre 2026 : « Mes Outils » le remplace.
       } },
     { id = "grimoires", label = "Grimoires", icone = RADIAL .. "fenetres-grimoires.tga" },
     { id = "systeme", label = "Système", icone = RADIAL .. "fenetres-compendium.tga",

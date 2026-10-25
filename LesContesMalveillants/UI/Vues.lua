@@ -186,9 +186,12 @@ local function Construire(vue, rang)
     end
     f.nom = f.sousTitre
     -- Une hauteur deja retenue en sauvegarde est un choix du joueur : on ne la
-    -- recalcule pas sous ses yeux a la premiere ouverture.
+    -- recalcule pas sous ses yeux a la premiere ouverture. On garde le chiffre
+    -- lui-meme, et pas seulement le fait qu'il existe : c'est le plancher que
+    -- la hauteur automatique respecte (voir AjusterHauteur).
     local memoire = LCM.db and LCM.db.fenetres and LCM.db.fenetres["vue_" .. vue.id]
-    f.hauteurChoisie = type(memoire) == "table" and tonumber(memoire.hauteur) ~= nil or nil
+    f.hauteurVoulue = type(memoire) == "table" and tonumber(memoire.hauteur) or nil
+    f.hauteurChoisie = f.hauteurVoulue ~= nil or nil
     local largeurContenu = vue.largeur - 24
 
     -- Le canal des jets, en haut a droite comme dans le modele. Il ne regarde
@@ -318,7 +321,18 @@ local function Construire(vue, rang)
                 bloc.repereCouleur:SetPoint("BOTTOMLEFT", bloc, "BOTTOMLEFT", 4, 5)
             end
         end
-        page.onHauteur = function(h) if page:IsShown() then f.zone:Regler(h) end end
+        -- Une ligne qui grandit APRES coup — le corps et ses zones, les traits
+        -- portes, une liste d'etats qui s'allonge — agrandit la fenetre avec
+        -- elle. Seule la zone de defilement suivait : la fenetre gardait la
+        -- hauteur calculee avant que la ligne n'ait sa taille, et le bas de la
+        -- page ne se lisait plus qu'en faisant defiler (le MJ, 24 octobre
+        -- 2026). Pas de boucle : AjusterHauteur regle la zone, il ne repose
+        -- pas la page.
+        page.onHauteur = function(h)
+            if not page:IsShown() then return end
+            f.zone:Regler(h)
+            f:AjusterHauteur()
+        end
         f.pages[onglet.id] = page
     end
     -- La vue se TAILLE A SON CONTENU : la page la plus exigeante commande, et
@@ -480,9 +494,12 @@ local function Construire(vue, rang)
     -- defilement reprend son role, c'est pour ca qu'il reste.
     --
     -- Des que le joueur a tire la poignee, c'est SA hauteur qui vaut : on ne
-    -- vient pas corriger derriere lui a chaque changement d'onglet.
+    -- vient pas corriger derriere lui a chaque changement d'onglet. Elle fait
+    -- PLANCHER, et non plafond : quand la page n'y tient plus, la fenetre
+    -- s'agrandit tout de meme, parce qu'une fenetre qui cache son contenu
+    -- n'est le choix de personne (le MJ, 24 octobre 2026). Elle ne redescend
+    -- jamais sous ce qu'il a demande.
     function f:AjusterHauteur()
-        if self.hauteurChoisie then return end
         local page = self.onglet and self.pages[self.onglet]
         if not page then return end
         -- Ce que l'habillage prend, plus ce qui est pose au-dessus de la zone
@@ -497,6 +514,9 @@ local function Construire(vue, rang)
         -- trois cents pixels de vide sous le bloc. Le sommaire defile, lui, et
         -- un plancher l'empeche de se reduire a deux lignes (4 octobre 2026).
         local plancher = vue.sommaire and 300 or 160
+        if self.hauteurVoulue then
+            plancher = math.max(plancher, math.min(self.hauteurVoulue, plafond))
+        end
         self:SetHeight(math.max(plancher, math.min(voulue, plafond)))
         self.zone:Regler(page.hauteur)
     end
@@ -543,6 +563,7 @@ local function Construire(vue, rang)
     if not texteSeul then
         UI.Redimensionner(f, vue.largeur, 160, function()
             f.hauteurChoisie = true
+            f.hauteurVoulue = f:GetHeight()
             f:DisposerArtwork()
             local page = f.onglet and f.pages[f.onglet]
             if page then f.zone:Regler(page.hauteur) end

@@ -151,7 +151,7 @@ end
 function Scanner.Basculer()
     local entity = LCM.Entities.Self()
     if not (entity and LCM.Objets.Porte(entity, "outil_scanner_valrazkah")) then
-        return false, "équipe le scanner depuis la ceinture."
+        return false, "équipe le scanner (Équipements › Outils) pour le voir."
     end
     local f = Scanner.Fenetre()
     f:SetShown(not f:IsShown())

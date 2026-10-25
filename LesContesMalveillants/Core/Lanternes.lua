@@ -28,7 +28,9 @@
 --     sont pas reprises : une regle ecrite EST une regle active, et une liste
 --     vide n'agit pas. Deux cases pour dire la meme chose divergeaient ;
 --   * l'activation rapide a cote du lanceur n'existe pas ici : la lanterne
---     s'ouvre par le menu radial (Objets > Outils), depuis la ceinture ;
+--     s'equipe depuis l'onglet Outils de la fiche. La ceinture dessinee du
+--     menu radial et la fenetre de la lanterne ont ete retirees le 25
+--     octobre 2026, a refaire plus epure : ce module reste leur seul socle ;
 --   * rien n'existe sans etre possede (23 octobre 2026) : la lanterne
 --     s'EQUIPE sur la ceinture, les cristaux viennent des sacs LCM, et un
 --     cristal reste terne a 0 %, puis disparait au retrait. La

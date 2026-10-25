@@ -295,8 +295,15 @@ local function Remboursement(categorie)
     return tonumber(regle.remboursement) or 0.5
 end
 
-function Forge.Bilan(jeu, rareteId, valeurs, multiplicateurPool, etatObjet, ic)
+-- `pourcent` : les champs dont la valeur se lit en POURCENTAGE et non en
+-- points (Core/Effets.lua). Ils ne se paient pas au meme tarif : « 5 % pour
+-- 1 point » (le MJ, 24 octobre 2026), sans quoi une baisse de 40 % coutait
+-- quarante points alors qu'elle n'en retire que quelques-uns sur la fiche.
+-- La liste d'une definition comme l'ensemble d'un element construit.
+function Forge.Bilan(jeu, rareteId, valeurs, multiplicateurPool, etatObjet, ic, pourcent)
     valeurs = type(valeurs) == "table" and valeurs or {}
+    local enPourcent = LCM.Effets.Ensemble(pourcent)
+    local parPourcent = tonumber(Eq().pourcentParPoint) or 5
     local categorie = LCM.Compendium.Get(jeu.categorie)
     local rarete = rareteId and Forge.Rarete(jeu, rareteId) or nil
     local lignes, depenses, credit = {}, 0, 0
@@ -352,6 +359,10 @@ function Forge.Bilan(jeu, rareteId, valeurs, multiplicateurPool, etatObjet, ic)
             hors = string.format("%s au-dessus de son maximum (%s > %s)", champ.label, N(v), N(l.max))
         end
         local ecart = v - l.base
+        -- Les bornes, le verrou et la base se lisent toujours sur le chiffre
+        -- ecrit (« max 50 » veut dire 50 %) ; seul le PRIX passe par le
+        -- change : 5 % valent un point.
+        if enPourcent[champ.cle] and parPourcent > 0 then ecart = ecart / parPourcent end
         local depense
         if ecart < 0 then
             -- Ce qui revient, compte a part : c'est lui que le pool plafonne.
@@ -396,11 +407,11 @@ end
 -- est plafonne par le pool, le total depend de la rarete qu'on vise. Calcule
 -- une fois pour toutes, il proposait une rarete ou les valeurs ne rentraient
 -- pas.
-function Forge.RareteSuffisante(jeu, valeurs, multiplicateurPool, etatObjet, ic)
+function Forge.RareteSuffisante(jeu, valeurs, multiplicateurPool, etatObjet, ic, pourcent)
     if type(valeurs) ~= "table" then return nil end
     local meilleure
     for _, r in ipairs(jeu.raretes) do
-        local bilan = Forge.Bilan(jeu, r.id, valeurs, multiplicateurPool, etatObjet, ic)
+        local bilan = Forge.Bilan(jeu, r.id, valeurs, multiplicateurPool, etatObjet, ic, pourcent)
         local possible = not ic or (LCM.IC.Palier(r) and LCM.IC.Bilan(ic, LCM.IC.Palier(r)).restants >= 0)
         if possible and bilan.total <= bilan.pool and (not meilleure or r.points < meilleure.points) then
             meilleure = r
@@ -461,7 +472,8 @@ function Forge.Verifier(famille, element, reception)
     end
     local multiplicateurPool = categorie.id == "armes" and element.taille or 1
     local etatObjet = type(element.etat) == "table" and element.etat.max or nil
-    local bilan = Forge.Bilan(jeu, rarete.id, element.bonus, multiplicateurPool, etatObjet, element.ic)
+    local bilan = Forge.Bilan(jeu, rarete.id, element.bonus, multiplicateurPool, etatObjet,
+        element.ic, element.pourcent)
     if bilan.horsMasques then return false, bilan.horsMasques end
     for _, ligne in ipairs(bilan.lignes) do
         if ligne.hors then return false, ligne.hors end

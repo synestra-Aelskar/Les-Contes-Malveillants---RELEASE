@@ -98,7 +98,8 @@ local function EffetsEtat(etat)
     local effets = {}
     for champ, valeur in pairs(etat.bonus or {}) do
         local field = LCM.Schema.Field(champ)
-        effets[#effets + 1] = string.format("%s %+g", field and field.label or champ, valeur)
+        effets[#effets + 1] = string.format("%s %+g%s", field and field.label or champ, valeur,
+            LCM.Effets.Unite(etat, champ))
     end
     table.sort(effets)
     return table.concat(effets, ", ")

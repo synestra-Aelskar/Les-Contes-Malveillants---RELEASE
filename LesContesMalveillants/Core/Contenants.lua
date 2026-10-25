@@ -227,11 +227,16 @@ end
 
 -- Utilise l'outil de la case `ou` : l'effet entier de son consommable, puis
 -- `retrait` en moins. `repartition` : la repartition des PV, s'il y en a.
+local UtiliserExemplaire
+
 function Contenants.Utiliser(entity, ou, repartition)
     local c, modele, raison = Case(entity, ou)
     if not c then return nil, raison end
-    local x = Plein(c)
-    if not x then return nil, string.format("« %s » est vide.", modele.label) end
+    return UtiliserExemplaire(entity, modele, Plein(c), repartition)
+end
+
+UtiliserExemplaire = function(entity, modele, x, repartition)
+    if not (x and x.contenu) then return nil, string.format("« %s » est vide.", modele.label) end
     local element, categorie = LCM.Compendium.Resoudre(x.contenu.ref)
     if not element or not categorie or categorie.famille ~= "consommables" then
         return nil, "ce qu'il contient ne s'utilise pas : ça se transporte."
@@ -249,6 +254,44 @@ function Contenants.ContenuDe(entity, ou)
     local x = c and Plein(c)
     if not x then return nil end
     return LCM.Compendium.Resoudre(x.contenu.ref)
+end
+
+-- ===== Un outil EQUIPE =======================================================
+-- La gourde a la ceinture (Équipements > Outils, et « Mes Outils » du menu
+-- radial) garde son contenu sur l'exemplaire equipe, comme dans le sac : on
+-- s'en sert sans la reprendre. `rang` : son rang parmi les outils portes.
+
+local function IdPorte(entity, rang)
+    return LCM.Objets.Ids(entity, "outil")[tonumber(rang) or 0]
+end
+
+-- Lecture seule : le modele de contenant et l'exemplaire porte, ou nil.
+function Contenants.Porte(entity, rang)
+    local id = IdPorte(entity, rang)
+    local modele = id and Contenants.Modele("objets/" .. id)
+    if not modele then return nil end
+    return modele, LCM.Objets.ExemplairePorte(entity, "outil", tonumber(rang))
+end
+
+-- Ce que contient l'outil porte (pour la repartition des PV, avant d'utiliser).
+function Contenants.ContenuPorte(entity, rang)
+    local _, x = Contenants.Porte(entity, rang)
+    return x and x.contenu and LCM.Compendium.Resoudre(x.contenu.ref) or nil
+end
+
+function Contenants.UtiliserPorte(entity, rang, repartition)
+    local id = IdPorte(entity, rang)
+    local modele = id and Contenants.Modele("objets/" .. id)
+    if not modele then return nil, "cet outil ne contient rien." end
+    return UtiliserExemplaire(entity, modele,
+        LCM.Objets.PreparerExemplaireEquipe(entity, id, tonumber(rang)), repartition)
+end
+
+-- Combien d'usages il reste : reste / retrait, arrondi en dessous.
+function Contenants.Usages(modele, exemplaire)
+    local contenu = exemplaire and exemplaire.contenu
+    if not (modele and modele.contenant and contenu) then return 0 end
+    return math.floor(contenu.reste / modele.contenant.retrait)
 end
 
 function Contenants.Retirer(exemplaire, modele)

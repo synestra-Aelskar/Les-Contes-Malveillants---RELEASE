@@ -13,6 +13,8 @@ UI.Consommation = Ecran
 
 local function Actualiser()
     if UI.Inventaires and UI.Inventaires.Actualiser then UI.Inventaires.Actualiser() end
+    -- Une gorgee prise a la ceinture : le bandeau et sa fenetre « Voir ».
+    if UI.MesOutils then UI.MesOutils.Actualiser() end
 end
 
 -- Demande la repartition des PV s'il y en a, puis `suite(repartition)`, qui
@@ -73,11 +75,10 @@ end
 
 -- Se servir d'un outil contenant (Core/Contenants.lua) : l'effet entier de
 -- ce qu'il contient, ses PV repartis comme pour un consommable.
-function Ecran.UtiliserContenant(entity, ou)
-    local element = LCM.Contenants.ContenuDe(entity, ou)
+local function SeServir(entity, element, utiliser)
     if not element then LCM.Alerte("il est vide.") return false end
     return Repartir(entity, element, function(parts)
-        local bilan, refus = LCM.Contenants.Utiliser(entity, ou, parts)
+        local bilan, refus = utiliser(parts)
         if not bilan then
             LCM.Alerte(refus)
             return false, refus
@@ -86,6 +87,17 @@ function Ecran.UtiliserContenant(entity, ou)
         Actualiser()
         return true
     end)
+end
+
+function Ecran.UtiliserContenant(entity, ou)
+    return SeServir(entity, LCM.Contenants.ContenuDe(entity, ou),
+        function(parts) return LCM.Contenants.Utiliser(entity, ou, parts) end)
+end
+
+-- Le meme geste sur un outil equipe (« Mes Outils ») : il reste a la ceinture.
+function Ecran.UtiliserContenantPorte(entity, rang)
+    return SeServir(entity, LCM.Contenants.ContenuPorte(entity, rang),
+        function(parts) return LCM.Contenants.UtiliserPorte(entity, rang, parts) end)
 end
 
 -- ===== Chez l'allie ========================================================

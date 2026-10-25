@@ -669,6 +669,11 @@ Radial.COURONNES = {
         Categories = function() return Radial.Categories() end,
         Entrees = function(categorie) return Radial.Entrees(categorie.id) end,
     },
+    {
+        id = "mj", label = "Panel MJ", nom = "LCM_RadialMJ", mjSeulement = true,
+        Categories = function() return LCM.IsMaster() and (UI.Menu.MJ or {}) or {} end,
+        Entrees = function(categorie) return categorie.enfants or {} end,
+    },
 }
 
 -- ===== Le lanceur ==========================================================
@@ -702,60 +707,53 @@ end
 
 -- Poussiere entre deux niveaux : petits grains carres, trajectoires souples,
 -- emission continue. Un cadre reutilise par lien, sous les deux bandeaux.
-local function LienPourpre(c, proprietaire, x1, y1, x2, y2, nombre, angleCentre)
-    local lien = proprietaire.lienPourpre
-    if not lien then
-        lien = CreateFrame("Frame", nil, c.orbite)
-        lien:SetAllPoints(c.orbite)
-        lien:SetFrameLevel(c.fond:GetFrameLevel())
-        lien:EnableMouse(false)
-        lien.grains = {}
-        for i = 1, Radial.MAX_ENTREES * 12 do
-            local grain = lien:CreateTexture(nil, "ARTWORK")
-            grain:SetColorTexture(0.72 + (i % 3) * 0.08, 0.12, 1, 1)
-            grain:SetBlendMode("ADD")
-            local taille = 0.8 + (i % 4) * 0.45
-            grain:SetSize(taille, taille)
-            local halo = lien:CreateTexture(nil, "BACKGROUND")
-            halo:SetTexture(ART .. "glow.tga")
-            halo:SetBlendMode("ADD")
-            halo:SetVertexColor(0.55, 0.08, 0.95)
-            halo:SetSize(taille * 5, taille * 5)
-            halo:SetPoint("CENTER", grain, "CENTER")
-            lien.grains[i] = { texture = grain, halo = halo, phase = ((i - 1) * 0.61803398875) % 1,
-                duree = 1.1 + (i % 5) * 0.17, graine = i * 2.399963 }
-        end
-        lien:SetScript("OnHide", function(self) self:SetScript("OnUpdate", nil) end)
-        proprietaire.lienPourpre = lien
+-- Le jet de grains pourpres qui part d'un bouton vers ceux qu'il ouvre. Cree
+-- une fois sur `parent` (il le couvre), puis dirige par Diriger. Partage par
+-- l'eventail (LienPourpre) et le bandeau de Mes Outils (UI/MesOutils.lua).
+local function CreerJet(parent, niveau)
+    local lien = CreateFrame("Frame", nil, parent)
+    lien:SetAllPoints(parent)
+    if niveau then lien:SetFrameLevel(niveau) end
+    lien:EnableMouse(false)
+    lien.grains = {}
+    for i = 1, Radial.MAX_ENTREES * 12 do
+        local grain = lien:CreateTexture(nil, "ARTWORK")
+        grain:SetColorTexture(0.72 + (i % 3) * 0.08, 0.12, 1, 1)
+        grain:SetBlendMode("ADD")
+        local taille = 0.8 + (i % 4) * 0.45
+        grain:SetSize(taille, taille)
+        local halo = lien:CreateTexture(nil, "BACKGROUND")
+        halo:SetTexture(ART .. "glow.tga")
+        halo:SetBlendMode("ADD")
+        halo:SetVertexColor(0.55, 0.08, 0.95)
+        halo:SetSize(taille * 5, taille * 5)
+        halo:SetPoint("CENTER", grain, "CENTER")
+        lien.grains[i] = { texture = grain, halo = halo, phase = ((i - 1) * 0.61803398875) % 1,
+            duree = 1.1 + (i % 5) * 0.17, graine = i * 2.399963 }
     end
-    local dx, dy = x2 - x1, y2 - y1
-    local distance = math.sqrt(dx * dx + dy * dy)
-    if distance < 1 then lien:Hide(); return end
-    lien.departX, lien.departY, lien.arriveeX, lien.arriveeY = x1, y1, x2, y2
-    nombre = math.max(1, math.min(Radial.MAX_ENTREES, nombre or 1))
+    lien:SetScript("OnHide", function(self) self:SetScript("OnUpdate", nil) end)
+    return lien
+end
+
+-- Lance le jet de (x1, y1) vers chacune des `cibles` ({ x, y }), en
+-- coordonnees du centre du parent. Douze grains par cible.
+local function Diriger(lien, x1, y1, cibles)
+    local nombre = math.max(1, math.min(Radial.MAX_ENTREES, #cibles))
+    lien.departX, lien.departY = x1, y1
     lien.nombreCibles = nombre
     lien.nombreGrains = nombre * 12
-    lien.cibles = {}
-    local ox = x2 - math.cos(angleCentre) * Radial.RAYON_ACTION
-    local oy = y2 - math.sin(angleCentre) * Radial.RAYON_ACTION
-    -- Une destination par icone, avec le meme pas angulaire que l'eventail.
-    -- Les douze grains par branche gardent une densite stable de 1 a 9 icones.
-    for i = 1, nombre do
-        local angle = angleCentre + (i - (nombre + 1) / 2) * math.pi / 8.75
-        lien.cibles[i] = { x = ox + math.cos(angle) * Radial.RAYON_ACTION,
-            y = oy + math.sin(angle) * Radial.RAYON_ACTION }
-    end
+    lien.cibles = cibles
     for i, p in ipairs(lien.grains) do
-        local actif = i <= lien.nombreGrains
+        local actif = i <= lien.nombreGrains and cibles[1] ~= nil
         p.texture:SetShown(actif); p.halo:SetShown(actif)
         if actif then
-            local cible = lien.cibles[1 + (i - 1) % nombre]
+            local cible = cibles[1 + (i - 1) % nombre]
             p.dx, p.dy = cible.x - x1, cible.y - y1
             local longueur = math.max(1, math.sqrt(p.dx * p.dx + p.dy * p.dy))
             p.nx, p.ny = -p.dy / longueur, p.dx / longueur
         end
     end
-    -- Le depart est cache sous le cercle du parent ; l'arrivee sous le cuir.
+    -- Le depart est cache sous le cercle du parent ; l'arrivee sous la cible.
     -- Le jet s'evase et ondule sans tracer une ligne droite opaque.
     lien.temps = lien:IsShown() and (lien.temps or 0) or 0
     local function Actualiser(self, dt)
@@ -778,6 +776,30 @@ local function LienPourpre(c, proprietaire, x1, y1, x2, y2, nombre, angleCentre)
     lien:SetScript("OnUpdate", Actualiser)
     Actualiser(lien, 0)
     lien:Show()
+end
+
+local function LienPourpre(c, proprietaire, x1, y1, x2, y2, nombre, angleCentre)
+    local lien = proprietaire.lienPourpre
+    if not lien then
+        lien = CreerJet(c.orbite, c.fond:GetFrameLevel())
+        proprietaire.lienPourpre = lien
+    end
+    local dx, dy = x2 - x1, y2 - y1
+    local distance = math.sqrt(dx * dx + dy * dy)
+    if distance < 1 then lien:Hide(); return end
+    nombre = math.max(1, math.min(Radial.MAX_ENTREES, nombre or 1))
+    local cibles = {}
+    local ox = x2 - math.cos(angleCentre) * Radial.RAYON_ACTION
+    local oy = y2 - math.sin(angleCentre) * Radial.RAYON_ACTION
+    -- Une destination par icone, avec le meme pas angulaire que l'eventail.
+    -- Les douze grains par branche gardent une densite stable de 1 a 9 icones.
+    for i = 1, nombre do
+        local angle = angleCentre + (i - (nombre + 1) / 2) * math.pi / 8.75
+        cibles[i] = { x = ox + math.cos(angle) * Radial.RAYON_ACTION,
+            y = oy + math.sin(angle) * Radial.RAYON_ACTION }
+    end
+    lien.arriveeX, lien.arriveeY = x2, y2
+    Diriger(lien, x1, y1, cibles)
 end
 
 local Dessiner
@@ -1111,10 +1133,14 @@ Dessiner = function(f, c, animeCategories, animeEntrees, animeSousMenu)
         end
         Bulle(b, entree.label, inconscient and "Vous êtes KO !"
             or (sousMenu and (c.sousChoisi == entree.id and "Clic : replier le sous-menu." or "Clic : déployer le sous-menu."))
-            or (prete and "Clic : ouvrir." or "Pas encore disponible."))
-        b:RegisterForClicks("LeftButtonUp")
-        b:SetScript("OnClick", function(bouton)
+            or (prete and (entree.onRightClick and "Clic gauche : panneau complet. Clic droit : menu MJ." or "Clic : ouvrir.") or "Pas encore disponible."))
+        b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        b:SetScript("OnClick", function(bouton, clic)
             local cible = bouton.cible
+            if clic == "RightButton" then
+                if type(cible.onRightClick) == "function" then cible.onRightClick() end
+                return
+            end
             if cible.enfants then
                 if Verrouille(c) then return end
                 c.sousChoisi = c.sousChoisi ~= cible.id and cible.id or nil
@@ -1137,6 +1163,33 @@ Dessiner = function(f, c, animeCategories, animeEntrees, animeSousMenu)
         DessinerSousMenu(f, c, parentSousMenu, animeSousMenu)
     else
         c.sousChoisi = nil
+    end
+end
+
+-- Les pieces du radial, pour ce qui le prolonge (le bandeau de Mes Outils) :
+-- memes vignettes dorees, memes runes, meme halo au survol, meme jet pourpre.
+-- Un prolongement dessine a part perdait le theme du sceau (25 octobre 2026).
+Radial.Vignette = function(parent, taille, legendeAuSurvol, niveau)
+    return Vignette(parent, taille or Radial.ACTION, legendeAuSurvol, true, niveau)
+end
+Radial.Bulle = Bulle
+Radial.Eclairer = Eclairer
+Radial.AnimerMagie = ActualiserMagie
+Radial.CreerJet = CreerJet
+Radial.Diriger = Diriger
+
+-- Le bouton affiche d'une entree, pour y accrocher ce qu'elle ouvre (le
+-- bandeau de « Mes Outils », a sa droite). nil s'il n'est pas a l'ecran.
+-- Les boutons sont recycles d'un dessin a l'autre : on le cherche par sa
+-- cible au moment du clic, jamais une fois pour toutes.
+function Radial.BoutonEntree(id)
+    local f = Radial.frame
+    for _, c in ipairs(f and f.couronnes or {}) do
+        for _, liste in ipairs({ c.boutonsEntree or {}, c.sousMenu and c.sousMenu.boutonsEntree or {} }) do
+            for _, b in ipairs(liste) do
+                if b:IsShown() and b.cible and b.cible.id == id then return b end
+            end
+        end
     end
 end
 
@@ -1225,8 +1278,10 @@ local function Construire()
     -- identifiant.
     f.couronnes = {}
     for i, def in ipairs(Radial.COURONNES) do
-        local c = ConstruireCouronne(f, def)
-        f.couronnes[i], f.couronnes[def.id] = c, c
+        if def.id ~= "mj" and (not def.mjSeulement or LCM.IsMaster()) then
+            local c = ConstruireCouronne(f, def)
+            f.couronnes[#f.couronnes + 1], f.couronnes[def.id] = c, c
+        end
     end
     -- Le sceau passe devant les couronnes : il reste cliquable.
     local niveau = 0
@@ -1304,13 +1359,22 @@ local function Construire()
     end)
 
     -- Clic gauche : les fenetres. Clic droit : les actions. Maj + clic
-    -- gauche : la selection du personnage, d'ou l'on cree aussi.
+    -- gauche : la selection du personnage, d'ou l'on cree aussi. Alt + clic
+    -- gauche : les raccourcis du joueur, a droite du sceau (25 octobre 2026).
+    -- Raccourcis et couronnes occupent la meme place : l'un ferme l'autre.
     f.sceau:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     f.sceau:SetScript("OnClick", function(_, souris)
         if f.glisse then
             f.glisse = false
             return
         end
+        local panneau = UI.PanneauRaccourcis
+        if souris == "LeftButton" and IsAltKeyDown and IsAltKeyDown() and panneau then
+            FermerTout(f, true)
+            panneau.Basculer()
+            return
+        end
+        if panneau and panneau.frame then panneau.frame:Hide() end
         if souris == "RightButton" then
             Basculer(f, f.couronnes.actions)
             return
@@ -1337,7 +1401,7 @@ local function Construire()
             return "Clic : créer ton premier personnage\nClic droit : les actions\nGlisser : déplacer"
         end
         return "Clic : les fenêtres\nClic droit : les actions\n"
-            .. "Maj + clic : choisir ou créer un personnage\nGlisser : déplacer"
+            .. "Maj + clic : choisir ou créer un personnage\nAlt + clic : tes raccourcis\nGlisser : déplacer"
     end)
 
     Radial.frame = f
@@ -1362,6 +1426,42 @@ end
 
 -- Ouvre ou ferme une couronne : "fenetres" ou "actions" (par defaut).
 function Radial.Basculer(id)
+    if id == "mj" then
+        if not LCM.IsMaster() then return end
+        -- Le compagnon ne fait pas partie des modes du grimoire : son propre
+        -- support laisse intactes la couronne et la selection des fenetres.
+        local compagnon = Radial.compagnonMJ
+        if not compagnon then
+            compagnon = CreateFrame("Frame", "LCM_CompagnonMJ", UIParent)
+            compagnon:SetSize(Radial.FOND, Radial.FOND)
+            compagnon:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+            compagnon:SetFrameStrata("DIALOG")
+            compagnon:SetClampedToScreen(true)
+            compagnon.couronnes = {}
+            for _, def in ipairs(Radial.COURONNES) do
+                if def.id == "mj" then
+                    local c = ConstruireCouronne(compagnon, def)
+                    compagnon.couronnes[1], compagnon.couronnes.mj = c, c
+                end
+            end
+            Radial.compagnonMJ = compagnon
+            compagnon.fermer = UI.Bouton(compagnon, "×", 24, 24, function()
+                FermerTout(compagnon, false)
+                compagnon:Hide()
+            end)
+            compagnon.fermer:SetPoint("CENTER", compagnon, "CENTER", 0, 0)
+            compagnon.fermer:SetFrameLevel(compagnon.couronnes.mj.niveauBoutons + 2)
+            compagnon:SetScript("OnHide", function() FermerTout(compagnon, false) end)
+            UISpecialFrames[#UISpecialFrames + 1] = "LCM_CompagnonMJ"
+        end
+        if compagnon:IsShown() and compagnon.couronnes.mj.ouvert then
+            compagnon:Hide()
+        else
+            compagnon:Show()
+            Basculer(compagnon, compagnon.couronnes.mj)
+        end
+        return
+    end
     local f = Radial.Fenetre()
     local c = f.couronnes[id or "actions"]
     if not c then
@@ -1373,6 +1473,8 @@ end
 
 -- Ferme une couronne, ou toutes sans argument.
 function Radial.Fermer(id)
+    if (id == nil or id == "mj") and Radial.compagnonMJ then Radial.compagnonMJ:Hide() end
+    if id == "mj" then return end
     local f = Radial.Fenetre()
     if id == nil then FermerTout(f, true) return end
     local c = f.couronnes[id]

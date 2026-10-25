@@ -213,8 +213,11 @@ function Compendium.Brut(categorie, champ, element)
         return type(element.valeurs) == "table" and element.valeurs[champ.cle] or nil
     end
     if champ.type == "avantage" then
+        -- Son propre champ, et non `element.avantage` : depuis que le
+        -- desavantage existe (24 octobre 2026), deux champs partagent ce type,
+        -- et la carte montrait l'avantage dans les deux lignes.
         local out = {}
-        for id in pairs(type(element.avantage) == "table" and element.avantage or {}) do out[#out + 1] = id end
+        for id in pairs(LCM.Effets.Ensemble(element[champ.cle])) do out[#out + 1] = id end
         table.sort(out)
         return out
     end
@@ -256,6 +259,10 @@ function Compendium.Options(champ)
         Ajouter(LCM.Traits.Accessibles())
     elseif source == "accessoires_camping" then
         Ajouter(LCM.AccessoiresCamping.list)
+    elseif source == "conteneurs_etats" then
+        for _, c in ipairs(LCM.Etats.CATEGORIES) do
+            out[#out + 1] = { id = c.id, label = c.id == "etat" and "États" or c.label }
+        end
     elseif source == "etats" then
         for _, c in ipairs(LCM.Etats.CATEGORIES) do
             if c.id ~= "maladie" then out[#out + 1] = { id = c.id, label = c.label } end

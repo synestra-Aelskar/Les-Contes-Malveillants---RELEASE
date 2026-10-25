@@ -310,8 +310,9 @@ local function Construire()
     end
 
     f.rendre = UI.Bouton(z, "Rendre le reste", 180, 22, function() Alerter(K.RendrePS()) end)
-    f.regle = UI.Texte(z, string.format("1 PS = 1 PV. Un état coûte %d PS par point de sa rareté. "
-        .. "Ce que tu n'utilises pas repart chez ton soigneur.", LCM.Equilibrage.campement.vitalite.psParPoint),
+    f.regle = UI.Texte(z, string.format("1 PS = 1 PV. Un état coûte %s PS par point qu'il retire. "
+        .. "Ce que tu n'utilises pas repart chez ton soigneur.",
+        LCM.Compendium.Nombre(LCM.Equilibrage.campement.vitalite.psParPointNegatif)),
         UI.C.discret, "GameFontNormalSmall")
     f.regle:SetJustifyH("LEFT")
     f.regle:SetWordWrap(true)

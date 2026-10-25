@@ -332,6 +332,42 @@ E.armure = {
     parDefaut = 2,
 }
 
+-- ===== Viser plusieurs cibles ==============================================
+-- Ce qu'une attaque MULTICIBLE coute en plus, selon le nombre de cibles (le
+-- MJ, 21 octobre 2026). Le choix « Multicible » lui-meme ne coute rien : c'est
+-- le NOMBRE qui se paie.
+--
+-- Le bareme n'est pas lineaire, et c'est voulu : les premieres cibles coutent
+-- surtout de la fatigue, les points d'action n'arrivent qu'a la troisieme.
+-- Au-dela du dernier palier, chaque cible de plus ajoute sa part, au MEME
+-- rythme que la fin de la table : viser plus large ne doit jamais revenir
+-- moins cher, par cible, que viser moyen.
+--
+-- L'action demande ce bareme par `baremeCibles=multicible` dans ses reponses
+-- (Data/ActionsBoutons.lua) : celles qui n'en veulent pas gardent leur cout
+-- lineaire, ou la regle historique de Necronicon.
+
+E.cibles = {
+    multicible = {
+        -- Le palier d'un nombre de cibles, de 1 a 6.
+        paliers = {
+            { pa = 0, pf = 2 },
+            { pa = 0, pf = 5 },
+            { pa = 1, pf = 8 },
+            { pa = 1, pf = 12 },
+            { pa = 2, pf = 16 },
+            { pa = 2, pf = 20 },
+        },
+        -- Chaque cible au-dela du dernier palier, AU MEME RYTHME que la
+        -- table : un demi-PA (un PA toutes les deux cibles) et 4 PF, comme de
+        -- la troisieme a la sixieme. La premiere ecriture n'en ajoutait que 2,
+        -- et une attaque sur dix cibles revenait alors moins cher PAR CIBLE
+        -- qu'une attaque sur six — viser large devenait la bonne affaire
+        -- (corrige le 23 octobre 2026).
+        enPlus = { pa = 0.5, pf = 4 },
+    },
+}
+
 -- ===== Forge ================================================================
 -- Le cout d'un point dans une statistique qu'un jeu d'equilibrage ne regle
 -- pas (Core/Forge.lua). Repris de Necronicon (GetForgeStatCost : 1 quand rien
@@ -340,6 +376,11 @@ E.armure = {
 
 E.forge = {
     coutParDefaut = 1,
+    -- Combien de POURCENTS valent un point, sur une ligne cochee « % » dans la
+    -- forge (le MJ, 24 octobre 2026 : « on paye 1 pour 5 % »). Le cout par
+    -- point de la statistique s'applique ensuite comme d'habitude : baisser la
+    -- Force de 40 % coute 8 points de Force, et non 40.
+    pourcentParPoint = 5,
     -- Ce qu'une statistique passee SOUS sa base rend au pool, en part de son
     -- cout. La moitie : descendre une stat ne doit pas financer entierement la
     -- montee d'une autre, sinon le pool ne borne plus rien.
@@ -788,10 +829,14 @@ E.campement = {
     fatigue  = { base = 0.05, decimales = 6 },
     -- Les PS : base x (heures de soin x parSoin + heures de sommeil x
     -- parSommeil), dans la feuille VITA_BASE, VITA_BASE_HEAL, VITA_BASE_SLEEP.
-    -- `psParPoint` : retirer un etat ou une maladie coute ce nombre de PS par
-    -- point de sa rarete (« un etat rose a 6 points, il faut 12 PS », le MJ,
-    -- 10 octobre 2026).
-    vitalite = { base = 2, decimales = 2, parSoin = 15, parSommeil = 1, psParPoint = 2 },
+    -- `psParPointNegatif` : retirer un etat ou une maladie coute ce nombre de
+    -- PS par point NEGATIF qu'il porte — ce que la forge affiche en rouge au
+    -- bout de ses lignes (le MJ, 24 octobre 2026 : « le nombre de pts negatifs
+    -- egale le cout en PS »). Un etat qui ne retire rien ne coute rien a
+    -- lever. Le prix se lisait avant sur le pool de sa RARETE (`psParPoint`,
+    -- 10 octobre 2026) : deux etats de meme rarete coutaient donc pareil,
+    -- qu'ils retirent un point ou trente.
+    vitalite = { base = 2, decimales = 2, parSoin = 15, parSommeil = 1, psParPointNegatif = 1 },
     -- `metiers` : ceux qui savent remettre une armure en etat au camp (le MJ,
     -- 10 octobre 2026). La formule de l'armure restauree reste a donner.
     armure   = { base = 0.6, decimales = nil,

@@ -214,12 +214,22 @@ local function OrbeTotal(parent)
         return string.format("%d point%s de bouclier restant%s.",
             courant, courant == 1 and "" or "s", courant == 1 and "" or "s")
     end, 0.25)
-    p:RegisterForClicks("RightButtonUp")
+    -- Clic gauche : la fenetre Sante (le MJ, 24 octobre 2026). C'est l'orbe
+    -- qu'on regarde quand on se demande ou l'on en est, et le detail par zone
+    -- se trouvait a trois crans du menu radial.
+    p:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     p:SetScript("OnClick", function(_, bouton)
-        if bouton == "RightButton" then Ecran.ChoisirAffichage(true) end
+        if bouton == "RightButton" then
+            Ecran.ChoisirAffichage(true)
+        elseif UI.Vues then
+            -- Le meme clic la referme : on l'ouvre pour jeter un oeil, pas
+            -- pour aller chercher sa croix (le MJ, 24 octobre 2026).
+            UI.Vues.Basculer("sante")
+        end
     end)
     UI.Bulle(p, "Points de vie totaux", function(soi)
-        return string.format("%d / %d — %d %%\nClic droit : affichage classique de WoW.",
+        return string.format("%d / %d — %d %%\nClic gauche : ouvre et referme la fenêtre Santé."
+            .. "\nClic droit : affichage classique de WoW.",
             soi.courant, soi.maximum, soi.pct)
     end, 0.25)
     return p

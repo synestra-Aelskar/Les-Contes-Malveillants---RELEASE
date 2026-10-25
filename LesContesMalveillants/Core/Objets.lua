@@ -199,10 +199,6 @@ function Objets.Enlever(entity, id, exemplaireId)
                 local exemplaire = liste[i]
                 if not exemplaireId or exemplaire.id == exemplaireId then
                 table.remove(rangee, i)
-                if categorie == "outil" and type(entity.ceinturePlaces) == "table" then
-                    table.remove(entity.ceinturePlaces, i)
-                    if #entity.ceinturePlaces == 0 then entity.ceinturePlaces = nil end
-                end
                 if #rangee == 0 then entity.equipement[categorie] = nil end
                 if not next(entity.equipement) then entity.equipement = nil end
                 table.remove(liste, i)

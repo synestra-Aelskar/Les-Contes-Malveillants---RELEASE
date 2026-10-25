@@ -129,11 +129,11 @@ function Races.Construire(definition)
     if not Morphologies.byId[morphologyId] then
         Erreur("race " .. id .. " : morphologie inconnue « " .. morphologyId .. " »")
     end
-    local bonus, avantage = LCM.Effets.Lire(id, definition, Erreur, true)
+    local bonus, avantage, desavantage, pourcent = LCM.Effets.Lire(id, definition, Erreur, true)
     -- Icone, description, tags, couleurs... : l'onglet General du compendium.
     return LCM.ChampsCommuns(definition, {
         id = id, label = tostring(definition.label or id), morphology = morphologyId,
-        bonus = bonus, avantage = avantage,
+        bonus = bonus, avantage = avantage, desavantage = desavantage, pourcent = pourcent,
         -- Une race que seul le MJ peut donner (un PNJ, une race de campagne
         -- pas encore ouverte) : absente de la creation d'un joueur, et
         -- refusee s'il la designe quand meme. Ce n'est PAS un secret : la

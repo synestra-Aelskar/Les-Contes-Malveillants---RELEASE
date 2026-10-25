@@ -53,6 +53,7 @@ function Roll.Field(entity, fieldId, options)
         trait, source = options.traitExpertise, "trait"
     end
     local avantage = options.avantage == true and trait ~= nil
+    local annule = false
 
     -- Le DESAVANTAGE, lui, ne se coche pas : il s'impose des qu'un trait porte
     -- un bonus negatif sur ce jet. On ne choisit pas ses faiblesses.
@@ -62,8 +63,14 @@ function Roll.Field(entity, fieldId, options)
     -- Les deux a la fois s'annulent : relancer pour garder le meilleur ET le
     -- pire n'a pas de sens, et c'est le cas d'un trait qui donne et reprend sur
     -- le meme jet.
-    if avantage and desavantage then
+    --
+    -- Et cocher « avantage » face a un desavantage SUFFIT a l'annuler, sans
+    -- qu'aucun trait ne l'accorde (le MJ, 24 octobre 2026) : on ne demande pas
+    -- a relancer pour garder le meilleur, on demande a revenir au neutre.
+    -- L'avantage SEUL, lui, exige toujours un trait ou un objet.
+    if desavantage and options.avantage == true then
         avantage, desavantage = false, false
+        annule = true
     end
 
     local premier = Alea(minimum, maximum)
@@ -94,7 +101,11 @@ function Roll.Field(entity, fieldId, options)
         sourceGenante = desavantageChoisi and "trait" or sourceGenante,
         -- Vrai quand la case etait cochee mais qu'aucun trait ne l'autorisait :
         -- on le dit plutot que d'ignorer en silence.
-        avantageRefuse = options.avantage == true and trait == nil,
+        -- Vrai quand la case a servi a ANNULER un desavantage plutot qu'a
+        -- gagner une relance : la fenetre le dit, sinon le joueur croit avoir
+        -- perdu son avantage.
+        annule = annule == true,
+        avantageRefuse = options.avantage == true and trait == nil and not annule,
     }
 end
 
@@ -116,7 +127,13 @@ function Roll.ResoudreExpertise(entity, fieldId, dd, nf, options)
     local traitExpertise = LCM.Traits and LCM.Traits.BonusPositif
         and LCM.Traits.BonusPositif(entity, fieldId) or nil
     local avantageExistant = options.avantage == true and LCM.Effets.Avantage(entity, fieldId) ~= nil
-    if (options.desavantage == true or (options.avantage == true and not avantageExistant))
+    -- Un desavantage impose : cocher « avantage » sert alors a l'ANNULER, et
+    -- n'exige rien. Le jet partait en erreur (« aucun trait ne donne de bonus a
+    -- cette expertise »), si bien qu'on ne pouvait pas revenir au neutre
+    -- (le MJ, 24 octobre 2026).
+    local genantExistant = LCM.Effets.Desavantage(entity, fieldId) ~= nil
+    if (options.desavantage == true
+        or (options.avantage == true and not avantageExistant and not genantExistant))
         and not traitExpertise then
         return nil, "aucun trait ne donne de bonus à cette expertise"
     end

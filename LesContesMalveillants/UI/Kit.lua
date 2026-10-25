@@ -2527,6 +2527,17 @@ end)
 -- Un seul endroit le calcule et le colore, pour que les trois s'accordent —
 -- ils le disaient chacun a leur facon, et seule la carte le disait vraiment.
 
+-- Un nombre comme on l'ecrit : « 7 » et non « 7.0 », « 2,5 » et non « 3 ».
+-- Les couts peuvent etre fractionnaires (le bareme des cibles donne un demi-PA
+-- par cible au-dela de la sixieme) : les arrondir a l'affichage ferait lire un
+-- prix qui n'est pas celui qu'on paie (21 octobre 2026).
+function UI.Nombre(v)
+    v = tonumber(v)
+    if not v then return "?" end
+    if v == math.floor(v) then return string.format("%d", v) end
+    return (string.format("%.2f", v):gsub("0+$", ""):gsub("%.$", ""):gsub("%.", ","))
+end
+
 function UI.Hex(couleur)
     couleur = couleur or UI.C.texte
     return string.format("%02x%02x%02x",

@@ -92,23 +92,34 @@ Vues.Add({
     },
 })
 
--- Sante : Physique (les zones du corps), Etats, Maladies, Intangible (Esprit,
--- Ame et les etats intangibles) — les quatre onglets du template.
+-- Sante : Sante Globale (ce qui tient le personnage debout), Physique (ses
+-- etats), Maladies, Intangible.
+--
+-- Les IDENTIFIANTS gardent leur nom d'origine — `physique` porte desormais
+-- « Santé Globale », et `etats` porte « Physique » (le MJ, 24 octobre 2026).
+-- Ils designent l'onglet dans ce qui est deja enregistre ; les renommer aurait
+-- rouvert la fenetre sur un autre volet que celui qu'on avait quitte.
 Vues.Add({
     id = "sante", titre = "Santé",
     largeur = 336, hauteur = 450,
     onglets = {
-        { id = "physique", label = "Physique", blocs = {
+        { id = "physique", label = "Santé Globale", blocs = {
+            -- L'Esprit et l'Ame etaient au fond d'« Intangible » : ce sont des
+            -- jauges de sante, elles ouvrent la fenetre avec les autres.
+            { section = { "general", "existence" } },
+            -- Les PV en un seul chiffre, avant le detail par zone : on veut
+            -- d'abord savoir ou l'on en est, et ensuite seulement ou ca fait
+            -- mal.
+            { label = "Points de vie", champs = { { id = "corps", zones = false } } },
             { label = "Parties corporelles", champs = { { id = "corps", total = false } } },
         } },
         -- Ajout a la structure du template : les etats qu'une action a poses
         -- (Immobilise, un buff...), avec leur duree.
-        { id = "etats", label = "États", blocs = {
+        { id = "etats", label = "Physique", blocs = {
             { conteneur = { "etats", "etat" } }, { temporaires = "etat" } } },
         { id = "maladies", label = "Maladies", blocs = {
             { conteneur = { "etats", "maladie" } }, { temporaires = "maladie" } } },
         { id = "intangible", label = "Intangible", blocs = {
-            { section = { "general", "existence" } },
             { conteneur = { "etats", "intangible" } },
             { temporaires = "intangible" },
         } },

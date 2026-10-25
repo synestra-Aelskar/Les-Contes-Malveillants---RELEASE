@@ -60,9 +60,9 @@ Fiches.DansLeGroupe = DansLeGroupe
 
 -- ===== Cote joueur : repondre ==============================================
 
--- Les parties de l'entite necessaires aux sept vues de consultation. Cette
--- liste blanche est volontaire : pas de sorts personnels, d'inventaire ni de
--- brouillons. Le MJ recoit ce qui se voit sur ces fiches, et rien d'autre.
+-- Les parties de l'entite necessaires aux vues de consultation. Cette liste
+-- blanche est volontaire : pas de sorts personnels ni de brouillons. Le MJ
+-- recoit ce qui se voit sur ces fiches, et rien d'autre.
 local ANNEXES = {
     traits = "t",
     body = "b",
@@ -77,6 +77,117 @@ local ANNEXES = {
     bourse = "bo",
     xp = "xp",
 }
+
+-- ===== L'inventaire porte, en une seule chaine =============================
+--
+-- Il restait dehors quand la Bourse avait sa propre fenetre ; depuis qu'elle
+-- est une colonne de l'inventaire, la tranche de consultation ouvre cette
+-- fenetre-la, et elle doit montrer ce que le joueur porte plutot que des sacs
+-- vides (le MJ, 25 octobre 2026).
+--
+-- Il ne passe PAS par la liste blanche ci-dessus. L'encodeur du reseau dit les
+-- tables imbriquees par des cles pointees — « inv.sacs.1.cases.3.ref=objets/… »
+-- — et un inventaire plein faisait 71 morceaux, soit dix-huit secondes de
+-- canal ; or la fiche consultee repart a chaque changement du personnage. Le
+-- meme contenu tient en une dizaine de morceaux ecrit ainsi, un emplacement
+-- par tranche :
+--
+--     sacs,1,sac,gros_sac,|1,objets/dague,1|3,ressources/eau,2~saccoches,2,…
+--
+-- Les separateurs sont choisis hors de ce que le transport echappe (`%`, `;`,
+-- `=`, les fins de ligne) : une chaine compacte ne doit pas regonfler en
+-- partant. Les exemplaires — l'usure copie par copie — ne voyagent pas : la
+-- consultation montre ce que le joueur porte, pas l'etat de chaque piece.
+local GENRES = { "sac", "tente", "devise", "ceinture", "cristaux" }
+
+-- Un decoupage qui garde les champs VIDES : `gmatch("[^,]+")` avalait le solde
+-- absent, et le genre venait alors prendre sa place.
+local function Couper(texte, separateur)
+    local bouts, debut = {}, 1
+    while true do
+        local i = string.find(texte, separateur, debut, true)
+        if not i then
+            bouts[#bouts + 1] = texte:sub(debut)
+            return bouts
+        end
+        bouts[#bouts + 1] = texte:sub(debut, i - 1)
+        debut = i + #separateur
+    end
+end
+
+local function CoderInventaire(inventaire)
+    if type(inventaire) ~= "table" then return nil end
+    local tranches = {}
+    for categorieId, rangee in pairs(inventaire) do
+        if type(categorieId) == "string" and type(rangee) == "table" then
+            for index, e in pairs(rangee) do
+                local genre, quoi
+                if type(index) == "number" and type(e) == "table" then
+                    for _, g in ipairs(GENRES) do
+                        if e[g] ~= nil then genre = g quoi = e[g] break end
+                    end
+                end
+                if genre then
+                    local bouts = { table.concat({ categorieId, index, genre,
+                        quoi == true and "1" or tostring(quoi),
+                        e.solde and tostring(e.solde) or "" }, ",") }
+                    local cases = type(e.cases) == "table" and e.cases or {}
+                    local indices = {}
+                    for i in pairs(cases) do
+                        if type(i) == "number" then indices[#indices + 1] = i end
+                    end
+                    table.sort(indices)
+                    for _, i in ipairs(indices) do
+                        local c = cases[i]
+                        if type(c) == "table" and c.ref then
+                            bouts[#bouts + 1] = table.concat({ i, tostring(c.ref),
+                                tonumber(c.quantite) or 1 }, ",")
+                        end
+                    end
+                    tranches[#tranches + 1] = table.concat(bouts, "|")
+                end
+            end
+        end
+    end
+    -- Trie : deux encodages du meme inventaire doivent se ressembler, comme
+    -- pour le reste du paquet.
+    table.sort(tranches)
+    return #tranches > 0 and table.concat(tranches, "~") or nil
+end
+Fiches.CoderInventaire = CoderInventaire
+
+local function DecoderInventaire(texte)
+    if type(texte) ~= "string" or texte == "" then return nil end
+    local inventaire = {}
+    for _, tranche in ipairs(Couper(texte, "~")) do
+        local bouts = Couper(tranche, "|")
+        local tete = Couper(bouts[1] or "", ",")
+        local categorieId, index, genre = tete[1], tonumber(tete[2]), tete[3]
+        if categorieId ~= "" and index and genre and genre ~= "" then
+            local e = {}
+            if genre == "ceinture" or genre == "cristaux" then
+                e[genre] = true
+            else
+                e[genre] = tete[4]
+            end
+            local solde = tonumber(tete[5])
+            if solde then e.solde = solde end
+            for rang = 2, #bouts do
+                local c = Couper(bouts[rang], ",")
+                local case, ref = tonumber(c[1]), c[2]
+                if case and ref and ref ~= "" then
+                    e.cases = type(e.cases) == "table" and e.cases or {}
+                    e.cases[case] = { ref = ref, quantite = tonumber(c[3]) or 1 }
+                end
+            end
+            inventaire[categorieId] = type(inventaire[categorieId]) == "table"
+                and inventaire[categorieId] or {}
+            inventaire[categorieId][index] = e
+        end
+    end
+    return next(inventaire) ~= nil and inventaire or nil
+end
+Fiches.DecoderInventaire = DecoderInventaire
 
 -- Detache le paquet de l'entite vivante. Ainsi une reception en boucle dans le
 -- banc, ou un transport remplace plus tard, ne partage jamais ses tables avec
@@ -119,6 +230,7 @@ function Fiches.Paquet(entity)
     for champ, cle in pairs(ANNEXES) do
         if entity[champ] ~= nil then paquet[cle] = Copier(entity[champ]) end
     end
+    paquet.inv = CoderInventaire(entity.inventaire)
     -- La fiche distante doit montrer le même volet d'identité que la fiche
     -- locale. TRP3 ne sait lire directement que les profils connus du client
     -- du MJ : le joueur joint donc un instantané strictement limité aux champs
@@ -161,6 +273,7 @@ function Fiches.Entite(paquet)
         if paquet[cle] ~= nil then entity[champ] = Copier(paquet[cle]) end
     end
     if type(paquet.trp) == "table" then entity.trp = Copier(paquet.trp) end
+    entity.inventaire = DecoderInventaire(paquet.inv)
     return entity
 end
 

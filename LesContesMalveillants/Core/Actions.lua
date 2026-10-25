@@ -2446,11 +2446,42 @@ function Actions.Cibles()
     return joueurs, pnj
 end
 
--- Le supplement par cible : pac=1/3 (une tranche entiere de trois cibles), ou
--- la regle historique de Necronicon, +1 PA / +1 PF par cible au-dela de la
--- premiere, quand l'action ne dit rien et n'est pas monocible.
+-- Ce qu'un BAREME de cibles rend, pour ce nombre de cibles. Les paliers
+-- jusqu'au dernier, puis la part de chaque cible en plus
+-- (Data/Equilibrage.lua, E.cibles). Nil si le bareme n'existe pas.
+function Actions.Bareme(nom, nombre)
+    local bareme = (LCM.Equilibrage.cibles or {})[tostring(nom or "")]
+    if not bareme then return nil end
+    nombre = math.max(0, math.floor(tonumber(nombre) or 0))
+    if nombre == 0 then return 0, 0 end
+    local paliers = bareme.paliers or {}
+    local dernier = #paliers
+    if dernier == 0 then return 0, 0 end
+    if nombre <= dernier then
+        local p = paliers[nombre]
+        return tonumber(p.pa) or 0, tonumber(p.pf) or 0
+    end
+    local p, enPlus = paliers[dernier], bareme.enPlus or {}
+    local sup = nombre - dernier
+    return (tonumber(p.pa) or 0) + (tonumber(enPlus.pa) or 0) * sup,
+           (tonumber(p.pf) or 0) + (tonumber(enPlus.pf) or 0) * sup
+end
+
+-- Le supplement par cible. Trois regles, dans cet ordre :
+--
+--   * le BAREME que l'action demande (`baremeCibles=multicible`), un prix par
+--     nombre de cibles qui n'a pas a etre lineaire (le MJ, 21 octobre 2026) ;
+--   * le cout lineaire qu'elle declare (`pac=` / `pfc=`) ;
+--   * sinon la regle historique de Necronicon, +1 PA / +1 PF par cible au-dela
+--     de la premiere, quand l'action ne dit rien et n'est pas monocible.
 function Actions.Supplement(ctx, nombre, mono)
     local V = ctx.vars
+    local bareme = tostring(V.baremeCibles or "")
+    if bareme ~= "" then
+        local n = mono and math.min(nombre, 1) or nombre
+        local pa, pf = Actions.Bareme(bareme, n)
+        if pa then return pa, pf end
+    end
     local pac, pfc = tonumber(V._coutPAC) or 0, tonumber(V._coutPFC) or 0
     if pac ~= 0 or pfc ~= 0 then
         if mono then nombre = math.min(nombre, 1) end

@@ -67,7 +67,10 @@ local function Carre(parent, libelle, couleur)
     Placer(c.sous, "BOTTOM", c, "BOTTOM", 0, 4)
     c.onglet, c.couleur = onglet, couleur
     function c:Peindre(cout, dispo)
-        local function r(v) return v ~= nil and tostring(math.floor(v + 0.5)) or "?" end
+        -- Un demi-PA se lit « 2,5 » et non « 3 » : le bareme des cibles en
+        -- donne au-dela de la sixieme (21 octobre 2026), et le debit, lui, ne
+        -- s'arrondit pas.
+        local function r(v) return v ~= nil and UI.Nombre(v) or "?" end
         self.valeur:SetText(r(cout) .. " / " .. r(dispo))
         local trop = dispo ~= nil and cout > dispo + 0.005
         local k = trop and { 0.75, 0.2, 0.2, 0.7 } or { self.couleur[1], self.couleur[2], self.couleur[3], 0.6 }
@@ -204,7 +207,10 @@ local function CoutCibles(f)
     trop = f.pf:Peindre(pf, dpf) or trop
     local lignes = {}
     if trop then lignes[#lignes + 1] = "|cffff6060PA / PF insuffisants|r" end
-    if epa > 0 or epf > 0 then lignes[#lignes + 1] = string.format("+%d PA / +%d PF pour les cibles", epa, epf) end
+    if epa > 0 or epf > 0 then
+        lignes[#lignes + 1] = string.format("+%s PA / +%s PF pour les cibles",
+            UI.Nombre(epa), UI.Nombre(epf))
+    end
     f.detail:SetText(table.concat(lignes, "\n"))
     f.declarer:SetEnabled(not trop and n > 0)
     f.declarer:SetAlpha((not trop and n > 0) and 1 or 0.4)

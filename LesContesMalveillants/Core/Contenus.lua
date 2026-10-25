@@ -258,6 +258,7 @@ LCM.LISTES = {
     { id = "type_accessoires", label = "Type Accessoires" },
     { id = "armes",        label = "Liste Armes" },
     { id = "outils",       label = "Liste outils" },
+    { id = "type_etats",   label = "Liste-Type-Etats" },
     { id = "origines",     label = "Liste origine" },
     { id = "ressources",   label = "Liste ressources" },
     -- Ajout de l'addon (23 octobre 2026, le MJ) : les types de consommables
@@ -275,6 +276,13 @@ LCM.Listes = LCM.Registre({
             Erreur(element.id .. " : liste inconnue « " .. liste .. " »")
         end
         element.liste = liste
+        if liste == "type_etats" then
+            local destination = Texte(definition.conteneur)
+            if destination ~= "etat" and destination ~= "maladie" and destination ~= "intangible" then
+                Erreur(element.id .. " : choisis Maladie, Etats ou Intangible pour ce type d'etat")
+            end
+            element.conteneur = destination
+        end
         -- « Table de niveaux » du template : la seule qui existe est la table
         -- XP METIER de l'equilibrage.
         local niveaux = Texte(definition.niveaux)
@@ -311,7 +319,8 @@ end
 LCM.Ressources = LCM.Registre({
     nom = "ressource", prefixe = "Ressources",
     construire = function(definition, element, Erreur)
-        element.bonus, element.avantage = LCM.Effets.Lire(element.id, definition, Erreur, true)
+        element.bonus, element.avantage, element.desavantage, element.pourcent =
+            LCM.Effets.Lire(element.id, definition, Erreur, true)
     end,
 })
 LCM.Effets.Source("ressource", function() return {} end, function() return LCM.Ressources.list end)
@@ -330,7 +339,8 @@ LCM.Effets.Source("ressource", function() return {} end, function() return LCM.R
 LCM.Consommables = LCM.Registre({
     nom = "consommable", prefixe = "Consommables",
     construire = function(definition, element, Erreur)
-        element.bonus, element.avantage = LCM.Effets.Lire(element.id, definition, Erreur, true)
+        element.bonus, element.avantage, element.desavantage, element.pourcent =
+            LCM.Effets.Lire(element.id, definition, Erreur, true)
         local etat = definition.etatApplique
         if etat ~= nil then
             if type(etat) ~= "table" then Erreur(element.id .. " : etat pose illisible") end

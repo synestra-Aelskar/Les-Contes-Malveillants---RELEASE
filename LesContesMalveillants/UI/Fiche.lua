@@ -119,9 +119,17 @@ function Fiche.Decomposition(e, field, base, apport, options)
         local source = LIBELLE_SOURCE[part.nom] or (part.nom:sub(1, 1):upper() .. part.nom:sub(2))
         for _, element in ipairs(part.elements or {}) do
             local nom = element.label and (source .. " · " .. tostring(element.label)) or source
-            lignes[#lignes + 1] = { nom, Montant(element.montant),
+            lignes[#lignes + 1] = { nom, Montant(element.montant) .. (element.pourcent and " %" or ""),
                                     element.montant < 0 and UI.C.plein or UI.C.accent }
         end
+    end
+    -- Les pourcentages portes s'appliquent a la fin, sur l'ensemble
+    -- (Formules.Module) : la bulle le dit dans cet ordre, sinon son total ne
+    -- tombe pas sur la valeur que la fiche affiche juste a cote.
+    local avantPourcent = total
+    total = LCM.Formules.Module(e, field.id, total)
+    if total ~= avantPourcent then
+        lignes[#lignes + 1] = { "Total avant pourcentage", Nombre(avantPourcent), UI.C.discret }
     end
     if options.sansBase and #lignes == 0 then lignes[#lignes + 1] = { "Bonus portés", "0" } end
     local mecaniqueId = field.id and field.id:match("^meca_(.+)$")
@@ -859,6 +867,7 @@ function Fiche.Effets(element)
     for champ, montant in pairs(element.bonus) do
         local field = LCM.Schema.Field(champ)
         bonus[#bonus + 1] = (field and field.label or champ) .. " " .. Montant(montant)
+            .. LCM.Effets.Unite(element, champ)
     end
     for champ in pairs(element.avantage) do
         local field = LCM.Schema.Field(champ)
@@ -905,7 +914,7 @@ function Fiche.EffetsGroupes(element)
         plats[#plats + 1] = {
             id = champ,
             label = (field and field.label) or champ,
-            valeur = Montant(montant),
+            valeur = Montant(montant) .. LCM.Effets.Unite(element, champ),
             groupe = Fiche.groupeChamp[champ] or "Autres",
             rang = Fiche.rangChamp[champ] or 9999,
         }
@@ -1427,7 +1436,9 @@ local function Emplacement(conteneur, c)
     -- viser le fondu. Le bouton ne capte donc plus la souris ; la ligne recoit
     -- le clic et allume le fondu a son survol.
     function l:Agir()
-        if self.elementId then conteneur:Retirer(self.elementId, self.rangPorte) else conteneur:Proposer(self.action) end
+        if self.lanterne then conteneur:RetirerLanterne()
+        elseif self.elementId then conteneur:Retirer(self.elementId, self.rangPorte)
+        else conteneur:Proposer(self.action) end
     end
     l.action = UI.BoutonDegrade(l, function() l:Agir() end)
     l.action:EnableMouse(false)
@@ -1438,7 +1449,11 @@ local function Emplacement(conteneur, c)
     -- Cible de glissement : on y depose un objet venu d'un sac, s'il va dans
     -- cette categorie. Equiper demandait d'ouvrir le menu « + Ajouter » et de
     -- retrouver l'objet dans une liste, alors qu'on l'a sous la souris.
-    if UI.Glisser then
+    --
+    -- `sansGlisser` : les etats temporaires empruntent cette case pour avoir
+    -- la meme allure que les etats portes, mais ils ne se glissent nulle part
+    -- — ils ne sont pas dans un catalogue, et un sac n'en voudrait pas.
+    if UI.Glisser and not conteneur.sansGlisser then
         UI.Glisser.Cible(l, function(objet)
             if conteneur.entity and conteneur.entity.distante then
                 return false, "fiche distante en lecture seule."
@@ -1452,6 +1467,9 @@ local function Emplacement(conteneur, c)
             if l.elementId then return false, "cet emplacement est déjà pris." end
             local ref = tostring(objet.ref or "")
             local famille, id = ref:match("^([%w_]+)/(.+)$")
+            if famille == "lanternes" and conteneur:EstCeinture() then
+                return conteneur:AccepteLanterne(id, objet)
+            end
             if not famille then
                 -- Glisse depuis le compendium : l'element porte sa categorie.
                 id = objet.element and objet.element.id
@@ -1470,7 +1488,13 @@ local function Emplacement(conteneur, c)
             return true
         end, function(objet)
             local ref = tostring(objet.ref or "")
-            local _, id = ref:match("^([%w_]+)/(.+)$")
+            local famille, id = ref:match("^([%w_]+)/(.+)$")
+            -- La lanterne se prend elle-meme dans le sac (EquiperLanterne) :
+            -- appeler aussi `objet.retirer` la ferait sortir deux fois.
+            if famille == "lanternes" and conteneur:EstCeinture() then
+                conteneur:EquiperLanterne(id)
+                return
+            end
             id = id or (objet.element and objet.element.id)
             local ok, raison = conteneur.catalogue.Placer(conteneur.entity, id,
                 objet.exemplaires and objet.exemplaires[1])
@@ -1501,7 +1525,9 @@ local function Emplacement(conteneur, c)
         -- 2026).
         l:RegisterForDrag("LeftButton")
         l:SetScript("OnDragStart", function(self)
-            if not self.elementId then return end
+            -- La lanterne ne se reprend pas en glissant : ce chemin passe par
+            -- le catalogue des objets, qui ne la connait pas. Le clic la retire.
+            if not self.elementId or self.lanterne then return end
             if not conteneur:Autorise(conteneur.entity) then return end
             local element = conteneur.catalogue.Get(self.elementId)
             local porte = self.elementId
@@ -1564,6 +1590,7 @@ local function Emplacement(conteneur, c)
 
     function l:Habiller(catalogue, id, mj)
         self.elementId = id
+        self.lanterne = nil
         local element = id and catalogue.Get(id)
         if not id then
             self.icone:SetTexture(VIDE)
@@ -1641,100 +1668,243 @@ local function Emplacement(conteneur, c)
         end
         self.action:SetShown(mj)
     end
+
+    -- La lanterne equipee, sur une place de la ceinture. Elle n'est pas un
+    -- objet (famille `lanternes`, Core/Lanternes.lua) : ni etat ni vies a
+    -- montrer, seulement ce qu'elle est.
+    function l:HabillerLanterne(id, mj)
+        local lanterne = LCM.Lanternes.Get(id)
+        self.elementId = id
+        self.lanterne = true
+        self.icone:SetTexture(lanterne and lanterne.icone or "Interface\\Icons\\INV_Misc_QuestionMark")
+        UI.TeinterBrise(self.icone, false)
+        self.vies.texte:SetText("")
+        self.vies:Hide()
+        local nom = lanterne and lanterne.label or ("? " .. tostring(id))
+        self.nom:SetText(nom)
+        local couleur = lanterne and UI.C.titre or UI.C.plein
+        self.nom:SetTextColor(couleur[1], couleur[2], couleur[3])
+        self.description:SetText(lanterne and lanterne.description or "")
+        self.effets:SetText("")
+        self.survol = nil
+        local texte = not lanterne and "N'existe pas dans cette version de l'addon."
+            or (lanterne.description and lanterne.description ~= "" and lanterne.description)
+            or "La lanterne de la ceinture."
+        self.bulle = { titre = nom, texte = texte }
+        self.action:Signe("×", "Retirer", "Remettre la lanterne dans un sac.")
+        self.action:SetShown(mj)
+    end
     return l
 end
 
--- Les etats temporaires (Core/EtatsTemporaires.lua) : une ligne par etat —
--- icone, nom, effets, duree. Le MJ peut retirer ; un etat qui se guerit par
--- un jet propose « Guérir ». Aucun : une ligne le dit.
+-- Le joueur dont cette fiche est la copie, quand le MJ le consulte — ou nil
+-- quand on regarde sa propre fiche, ou celle de quelqu'un qu'on ne suit pas.
+-- C'est lui qui applique : une copie recue ne se modifie pas.
+local function Consulte(entity)
+    if type(entity) ~= "table" or not entity.distante then return nil end
+    local C = UI.ConsultationMJ
+    if not (C and C.joueur and C.entity == entity) then return nil end
+    return C.joueur
+end
+
+-- Les etats temporaires (Core/EtatsTemporaires.lua) : une case par etat, la
+-- MEME que celle des etats PORTES juste au-dessus (le MJ, 24 octobre 2026).
+-- Deux listes d'etats dans une meme fenetre ne peuvent pas se lire de deux
+-- facons. Le MJ pose et retire ; un etat qui se guerit par un jet propose
+-- « Guérir » a celui qui le porte.
 function Lignes.temporaires(bloc, c, conteneur)
     local l = CreateFrame("Frame", nil, bloc)
-    l.lignes = {}
-    l.vide = UI.Texte(l, "Aucun état temporaire.", UI.C.discret)
-    UI.Police(l.vide, c.police * 0.85)
-    l.vide:SetPoint("TOPLEFT", l, "TOPLEFT", 8, -6)
+    -- Ce qu'une case d'emplacement attend de son conteneur. Le catalogue et la
+    -- categorie servent au clic droit, qui ouvre la carte de l'etat ; un etat
+    -- pose, lui, ne se glisse nulle part — aucun sac n'en voudrait.
+    l.conteneur = conteneur
+    l.catalogue, l.categorie = LCM.Etats, conteneur
+    l.sansGlisser = true
+    -- Ce qui distingue ce bloc de celui des etats PORTES, auquel il ressemble
+    -- desormais en tout point.
+    l.temporaires = true
+    l.emplacements = {}
+
+    -- Qui peut agir : le MJ, sur sa fiche comme sur celle qu'il consulte. Une
+    -- copie recue qu'on ne suit pas (un PNJ d'une autre machine) n'offre rien,
+    -- elle n'a personne a qui parler.
+    local function Permis(e)
+        return e ~= nil and (not e.distante or Consulte(e) ~= nil) and LCM.IsMaster()
+    end
+
+    -- Poser un etat sans quitter la fiche qu'on regarde (le MJ, 24 octobre
+    -- 2026) : il fallait passer par l'onglet « Imposer un etat » du Panel MJ
+    -- et glisser l'etat sur le bon joueur, en lisant une autre fenetre.
+    function l:Proposer(ancre)
+        local ent = self.entity
+        if not (ent and Permis(ent)) then return end
+        local options = {}
+        for _, etat in ipairs((LCM.Etats and LCM.Etats.list) or {}) do
+            -- Chaque onglet ne propose que SES etats : on ne pose pas une
+            -- maladie dans la case des etats intangibles.
+            if not self.conteneur or LCM.Etats.Conteneur(etat) == self.conteneur then
+                options[#options + 1] = { id = etat.id, label = etat.label }
+            end
+        end
+        table.sort(options, function(a, b) return tostring(a.label) < tostring(b.label) end)
+        if #options == 0 then LCM.Alerte("aucun état de cette sorte au compendium.") return end
+        self.choix = self.choix or UI.Choix("fiche_poser_etat", "Imposer un état")
+        self.choix:Proposer(ancre, options, function(id)
+            local etat = LCM.Etats.Get(id)
+            if not etat then return end
+            UI.Demande():Demander(string.format("Combien de rounds pour « %s » ?\n"
+                .. "Laisse vide : jusqu'au retrait — il rejoint alors les états portés.",
+                etat.label), "", function(texte)
+                local rounds = nil
+                if tostring(texte or ""):gsub("%s+", "") ~= "" then
+                    rounds = tonumber(texte)
+                    if not rounds or rounds ~= math.floor(rounds) or rounds < 1 then
+                        return false, "la durée doit être un nombre entier positif."
+                    end
+                end
+                local joueur = Consulte(ent)
+                if joueur then
+                    local ok, raison = LCM.EtatsTemporaires.Envoyer(joueur, id, rounds)
+                    if not ok then return false, raison end
+                    LCM.Ok(string.format("« %s » imposé à %s.", etat.label, joueur))
+                    return true
+                end
+                -- Sa propre fiche, ou celle d'un PNJ qu'on tient : on pose.
+                -- Sans duree, l'etat rejoint les etats PORTES, juste au-dessus
+                -- (Core/EtatsTemporaires.lua : c'est la duree qui decide).
+                local ok, raison = LCM.EtatsTemporaires.Imposer(ent, etat, rounds)
+                if not ok then return false, raison end
+                l:Actualiser(ent)
+                return true
+            end)
+        end)
+    end
+
+    -- Le geste d'une case occupee : retirer l'etat, ou tenter de le guerir.
+    -- On le retrouve par son RANG, le nom pouvant se repeter d'un onglet a
+    -- l'autre.
+    function l:Retirer(_, rang)
+        local etat = self.liste and self.liste[rang]
+        local ent = self.entity
+        if not (etat and ent) then return end
+        local T = LCM.EtatsTemporaires
+        if etat.guerison and etat.guerison.mode == "rand" and not LCM.IsMaster() then
+            local _, ligne = T.Guerir(ent, etat.nom)
+            if ligne then LCM.Actions.Annoncer(ligne) end
+            return
+        end
+        -- Une fiche CONSULTEE n'est qu'une copie : la retirer ici ne changerait
+        -- rien chez le joueur, qui tient sa propre liste. On la lui demande
+        -- (le MJ, 24 octobre 2026).
+        local joueur = Consulte(ent)
+        if joueur then
+            local ok, raison = T.EnvoyerRetrait(joueur, etat.nom)
+            if not ok then LCM.Alerte(tostring(raison)) end
+            return
+        end
+        T.Retirer(ent, etat.nom)
+    end
+
+    -- Une case : l'etat qu'elle porte, ou la case libre qui sert a en poser un.
+    function l:Habiller(r, etat, permis)
+        r.vies.texte:SetText("")
+        r.vies:Hide()
+        r.survol = nil
+        UI.TeinterBrise(r.icone, false)
+        if not etat then
+            r.elementId = nil
+            r.icone:SetTexture(VIDE)
+            local aucun = #(self.liste or {}) == 0
+            r.nom:SetText(aucun and "Aucun état temporaire." or "Imposer un état…")
+            r.nom:SetTextColor(UI.C.discret[1], UI.C.discret[2], UI.C.discret[3])
+            r.description:SetText("")
+            r.bulle = { titre = "États temporaires",
+                texte = "Ce qu'une action ou le maître du jeu pose pour quelques rounds. "
+                    .. "Un état sans durée n'a rien de temporaire : il se range avec les "
+                    .. "états portés, au-dessus." }
+            r.action:Signe("+", "Imposer un état", "Choisir un état à poser sur cette fiche.")
+            r.action:SetShown(permis)
+            return
+        end
+        local T = LCM.EtatsTemporaires
+        r.elementId = etat.id or etat.nom
+        r.icone:SetTexture(LCM.Icone(etat.icone))
+        -- Un DOT porte ses stacks devant son nom : c'est le nombre qui dit
+        -- combien il mord, et celui qu'une dissipation fait tomber.
+        local dotResume, dotStacks, dotRand
+        if LCM.Dot then dotResume, dotStacks, dotRand = LCM.Dot.Resume(self.entity, etat) end
+        r.nom:SetText(dotStacks and string.format("x%d  %s", dotStacks, etat.nom) or etat.nom)
+        local couleur = etat.debuff and UI.C.plein or UI.C.titre
+        r.nom:SetTextColor(couleur[1], couleur[2], couleur[3])
+        local effets = {}
+        for champ, n in pairs(etat.bonus or {}) do
+            local field = LCM.Schema.Field(champ)
+            effets[#effets + 1] = string.format("%s %+d%s", field and field.label or champ, n,
+                LCM.Effets.Unite(etat, champ))
+        end
+        table.sort(effets)
+        -- Ce qu'il grignote passe AVANT la durée : c'est ce qu'on regarde.
+        if dotResume and dotResume ~= "" then table.insert(effets, 1, dotResume) end
+        -- Sous le nom, la ou un objet porte sa description : ce que l'etat
+        -- fait, puis le temps qu'il lui reste.
+        local texte = table.concat(effets, ", ")
+        if texte ~= "" then texte = "|cff" .. UI.Hex(UI.C.accent) .. texte .. "|r  ·  " end
+        r.description:SetText(texte .. T.Duree(etat))
+        local aide = ((etat.description or "") ~= "" and (etat.description .. "\n\n") or "")
+            .. (etat.lanceur and ("De " .. etat.lanceur .. ". ") or "") .. "Durée : " .. T.Duree(etat)
+        if dotStacks then
+            -- Le rand COURANT, puisqu'il baisse d'un round a l'autre : sans
+            -- lui on ne peut pas juger si une dissipation valait le coup.
+            aide = aide .. string.format("\n\n%d stack%s, %s par round."
+                .. "\nÀ battre pour dissiper : %d — et chaque point au-dessus"
+                .. " emporte un stack de plus.", dotStacks, dotStacks > 1 and "s" or "",
+                dotResume ~= "" and dotResume or "rien", dotRand or 0)
+        end
+        r.bulle = { titre = etat.nom, texte = aide }
+        local guerir = etat.guerison and etat.guerison.mode == "rand" and not LCM.IsMaster()
+        if guerir then
+            r.action:Signe("Guérir", "Guérir (" .. tostring(etat.guerison.competence) .. ")",
+                "Tenter de s'en défaire par un jet.")
+        else
+            r.action:Signe("×", "Retirer", "Lever cet état.")
+        end
+        r.action:SetShown(permis or guerir)
+    end
+
     function l:Actualiser(e)
         self.entity = e
-        local T = LCM.EtatsTemporaires
-        local liste = T.Liste(e, self.conteneur)
+        local liste = LCM.EtatsTemporaires.Liste(e, self.conteneur)
+        self.liste = liste
+        local permis = Permis(e)
+        -- Une case libre au bout pour en poser un, comme un conteneur garde la
+        -- sienne. Sans etat ET sans droit d'en poser, elle reste tout de meme :
+        -- elle dit qu'il n'y en a pas, la ou une section vide ressemblerait a
+        -- une panne.
+        local n = #liste + ((permis or #liste == 0) and 1 or 0)
         local y = 0
-        for i, etat in ipairs(liste) do
-            local r = self.lignes[i]
+        for index = 1, n do
+            local r = self.emplacements[index]
             if not r then
-                r = Ligne(self, c)
-                r:SetHeight(math.max(40, c.ligne))
-                Icone(r, c, VIDE)
-                Nom(r, c, "", true)
-                r.effets = UI.Texte(r, "", UI.C.accent)
-                UI.Police(r.effets, c.police * 0.72)
-                r.effets:SetPoint("LEFT", r, "LEFT", c.plage, 0)
-                r.effets:SetPoint("RIGHT", r, "LEFT", c.action - 8 * c.echelle, 0)
-                r.effets:SetJustifyH("RIGHT")
-                r.effets:SetWordWrap(false)
-                r.action = UI.Bouton(r, "", c.actionLargeur, c.boutonH, function(self_)
-                    local et = self_:GetParent().etat
-                    local ent = l.entity
-                    if not (et and ent) then return end
-                    if et.guerison and et.guerison.mode == "rand" and not LCM.IsMaster() then
-                        local _, ligne = T.Guerir(ent, et.nom)
-                        if ligne then LCM.Actions.Annoncer(ligne) end
-                    else
-                        T.Retirer(ent, et.nom)
-                    end
-                end)
-                r.action:SetPoint("LEFT", r, "LEFT", c.action, 0)
-                UI.Police(r.action.label, c.police * 0.8)
-                self.lignes[i] = r
+                r = Emplacement(self, c)
+                self.emplacements[index] = r
             end
-            r.etat = etat
-            r.icone:SetTexture(LCM.Icone(etat.icone))
-            -- Un DOT porte ses stacks devant son nom : c'est le nombre qui dit
-            -- combien il mord, et celui qu'une dissipation fait tomber.
-            local dotResume, dotStacks, dotRand
-            if LCM.Dot then dotResume, dotStacks, dotRand = LCM.Dot.Resume(e, etat) end
-            r.nom:SetText(dotStacks and string.format("x%d  %s", dotStacks, etat.nom) or etat.nom)
-            local couleur = etat.debuff and UI.C.plein or UI.C.titre
-            r.nom:SetTextColor(couleur[1], couleur[2], couleur[3])
-            local effets = {}
-            for champ, n in pairs(etat.bonus or {}) do
-                local field = LCM.Schema.Field(champ)
-                effets[#effets + 1] = string.format("%s %+d", field and field.label or champ, n)
-            end
-            table.sort(effets)
-            -- Ce qu'il grignote passe AVANT la durée : c'est ce qu'on regarde.
-            if dotResume and dotResume ~= "" then
-                table.insert(effets, 1, dotResume)
-            end
-            r.effets:SetText(table.concat(effets, ", ") .. "  |cff9a9a9a" .. T.Duree(etat) .. "|r")
-            local aide = ((etat.description or "") ~= "" and (etat.description .. "\n\n") or "")
-                .. (etat.lanceur and ("De " .. etat.lanceur .. ". ") or "") .. "Durée : " .. T.Duree(etat)
-            if dotStacks then
-                -- Le rand COURANT, puisqu'il baisse d'un round a l'autre : sans
-                -- lui on ne peut pas juger si une dissipation valait le coup.
-                aide = aide .. string.format("\n\n%d stack%s, %s par round."
-                    .. "\nÀ battre pour dissiper : %d — et chaque point au-dessus"
-                    .. " emporte un stack de plus.", dotStacks, dotStacks > 1 and "s" or "",
-                    dotResume ~= "" and dotResume or "rien", dotRand or 0)
-            end
-            Bulle(r, etat.nom, aide)
-            local guerir = etat.guerison and etat.guerison.mode == "rand" and not LCM.IsMaster()
-            r.action.label:SetText(guerir and string.format("Guérir (%s)", etat.guerison.competence) or "Retirer")
-            r.action:SetShown(not e.distante and (LCM.IsMaster() or guerir))
+            r.rangPorte = index
+            self:Habiller(r, liste[index], permis)
             r:ClearAllPoints()
             r:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -y)
             r:SetPoint("TOPRIGHT", self, "TOPRIGHT", 0, -y)
             r:Show()
-            y = y + r:GetHeight() + 2
+            y = y + r:GetHeight() + ECART_LIGNES
         end
-        for i = #liste + 1, #self.lignes do self.lignes[i]:Hide() end
-        self.vide:SetShown(#liste == 0)
-        local h = math.max(#liste == 0 and 24 or 0, y)
+        for index = n + 1, #self.emplacements do self.emplacements[index]:Hide() end
+        local h = math.max(1, y - ECART_LIGNES)
         if h ~= self.hauteur then
             self.hauteur = h
             self:SetHeight(h)
             if self.onChange then self.onChange() end
         end
     end
+    l:SetScript("OnHide", function() if Fiche.choixConteneur then Fiche.choixConteneur:Hide() end end)
     return l
 end
 
@@ -1777,6 +1947,48 @@ function Lignes.conteneur(bloc, def, c)
         return self:DepuisLesSacs() and LCM.Personnages.Actif() == entity
     end
 
+    -- La ceinture porte les outils ET la lanterne (le MJ, 24 octobre 2026) :
+    -- une lanterne est un outil, rangee dans sa propre famille du compendium
+    -- pour son editeur. La fiche ne proposait que la categorie « outil », et
+    -- la lanterne restait introuvable depuis l'emplacement.
+    function l:EstCeinture()
+        return self.catalogue == LCM.Objets and self.categorie == "outil" and LCM.Lanterne ~= nil
+    end
+
+    -- Equiper ou retirer une lanterne ne vaut que pour SOI : Core/Lanternes
+    -- agit sur le personnage joue, pas sur la fiche qu'on regarde.
+    function l:LanterneIci()
+        return self:EstCeinture() and self:DepuisLesSacs() and self.entity ~= nil
+            and self.entity == LCM.Entities.Self()
+    end
+
+    function l:AccepteLanterne(id, objet)
+        if not self:LanterneIci() then
+            return false, "une lanterne ne s'équipe que sur son propre personnage."
+        end
+        if not LCM.Lanternes.Get(id) then return false, "lanterne inconnue." end
+        if not (objet.origine and objet.origine.case) then
+            return false, "glisse la lanterne depuis tes sacs."
+        end
+        return true
+    end
+
+    function l:EquiperLanterne(id)
+        local ok, raison = LCM.Lanterne.EquiperLanterne(id)
+        if not ok then LCM.Alerte(raison) end
+        self:Actualiser(self.entity)
+        if UI.Inventaires then UI.Inventaires.Actualiser() end
+        return ok
+    end
+
+    function l:RetirerLanterne()
+        if not (self:Autorise(self.entity) and self:LanterneIci()) then return end
+        local ok, raison = LCM.Lanterne.RetirerLanterne()
+        if not ok then LCM.Alerte(raison) end
+        self:Actualiser(self.entity)
+        if UI.Inventaires then UI.Inventaires.Actualiser() end
+    end
+
     function l:Proposer(ancre)
         if not self:Autorise(self.entity) then return end
         local categorie = self.catalogue.Categorie(self.categorie)
@@ -1787,9 +1999,17 @@ function Lignes.conteneur(bloc, def, c)
         for _, element in ipairs(candidats) do
             options[#options + 1] = { id = element.id, label = element.label }
         end
+        -- Prefixees : un identifiant de lanterne pourrait aussi etre celui
+        -- d'un objet.
+        local lanternes = self:LanterneIci()
+        if lanternes then
+            for _, lanterne in ipairs(LCM.Lanterne.LanternesPortees()) do
+                options[#options + 1] = { id = "lanternes/" .. lanterne.id, label = lanterne.label }
+            end
+        end
         if #options == 0 then
-            LCM.Alerte(sacs
-                and string.format("aucun objet de type %s dans les sacs.", categorie.label:lower())
+            LCM.Alerte(lanternes and "aucun outil ni lanterne dans les sacs."
+                or sacs and string.format("aucun objet de type %s dans les sacs.", categorie.label:lower())
                 or string.format("rien a ajouter en %s.", categorie.label:lower()))
             return
         end
@@ -1797,6 +2017,11 @@ function Lignes.conteneur(bloc, def, c)
         local choix = Choix()
         choix.titre:SetText(categorie.label)
         choix:Proposer(ancre, options, function(id)
+            local lanterne = lanternes and tostring(id):match("^lanternes/(.+)$")
+            if lanterne then
+                self:EquiperLanterne(lanterne)
+                return
+            end
             local placer = sacs and self.catalogue.Equiper or self.catalogue.Placer
             local ok, raison = placer(self.entity, id)
             if not ok then
@@ -1839,6 +2064,12 @@ function Lignes.conteneur(bloc, def, c)
         -- main libre qu'il annonce (5 octobre 2026).
         local occupe = self.catalogue.Occupation and self.catalogue.Occupation(e, self.categorie)
             or #portes
+        -- La lanterne prend une place de la ceinture (Lanterne.PlacesCeinture) :
+        -- le compte et les lignes doivent la voir, sinon on annonce une place
+        -- que l'equipement refusera.
+        local lanterne = self:EstCeinture() and LCM.Lanterne.IdEquipe(e) or nil
+        if lanterne then occupe = occupe + 1 end
+        local prises = #portes + (lanterne and 1 or 0)
         -- Au-dessus du total (capacite reduite apres coup), le compte passe au
         -- rouge : rien n'est retire en douce.
         bloc.occupation:SetText(string.format("%d / %d", occupe, places))
@@ -1850,9 +2081,9 @@ function Lignes.conteneur(bloc, def, c)
         local categorie = self.catalogue.Categorie(self.categorie)
         -- Une case libre en plus seulement s'il RESTE une place : a cote d'une
         -- arme a deux mains, il n'y en a pas.
-        local n = (occupe < places) and (#portes + 1) or #portes
-        n = math.max(#portes, n)
-        if categorie and categorie.toutesLesCases then n = math.max(#portes, places) end
+        local n = (occupe < places) and (prises + 1) or prises
+        n = math.max(prises, n)
+        if categorie and categorie.toutesLesCases then n = math.max(prises, places) end
         local y = 0
         for index = 1, n do
             local ligne = self.emplacements[index]
@@ -1862,8 +2093,14 @@ function Lignes.conteneur(bloc, def, c)
             end
             -- Le rang AVANT l'habillage : c'est lui qui dit quel exemplaire
             -- montrer, et donc quel etat.
-            ligne.rangPorte = index
-            ligne:Habiller(self.catalogue, portes[index], mj)
+            -- Les outils d'abord, puis la lanterne, puis les places libres.
+            if lanterne and index == #portes + 1 then
+                ligne.rangPorte = nil
+                ligne:HabillerLanterne(lanterne, mj and self:LanterneIci())
+            else
+                ligne.rangPorte = index
+                ligne:Habiller(self.catalogue, portes[index], mj)
+            end
             ligne:ClearAllPoints()
             ligne:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -y)
             ligne:SetPoint("TOPRIGHT", self, "TOPRIGHT", 0, -y)

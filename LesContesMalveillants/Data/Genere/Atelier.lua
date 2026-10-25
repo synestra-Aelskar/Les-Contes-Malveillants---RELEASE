@@ -18,6 +18,98 @@ LCM.PublierPublique(LCM.AccessoiresCamping, "accessoires_camping", {
     origine = "Kaléa",
 }, "323d4907b00feaef")
 
+-- ----- consommables (5) --------------------------------------------
+LCM.PublierPublique(LCM.Consommables, "consommables", {
+    bonus = {  },
+    couleurTitre = "FF8CB8",
+    description = "De l'eau classique que n'importe qui peut boire. C'est juste là.. Pour boire.",
+    forge = "lcm_132159_6adb718b_2005bd2b_0004_7abb48/commun",
+    icone = "Interface\\ICONS\\pet_type_water",
+    id = "lcm_132159_6adb71d4_2006d99d_0005_039df9",
+    label = "Eau claire",
+    tags = "Commun",
+    type = "lcm_64a651_6ad69a7f_205bdff2_0013_e59c87",
+}, "c92cb014cb5a9102")
+
+LCM.PublierPublique(LCM.Consommables, "consommables", {
+    bonus = {  },
+    couleurTitre = "FF8CB8",
+    description = "Une bande de tissu grossièrement découpée, aux fibres rêches et effilochées. Peu hygiénique, mais suffisante pour couvrir une plaie.",
+    forge = "lcm_64a651_6ad65ba9_1f666be6_0003_7e668c/commun",
+    icone = "Interface\\ICONS\\inv_misc_bandage_03",
+    id = "lcm_64a651_6ad691e4_203a41c9_0005_edf1c8",
+    label = "Bandage de piètre qualité.",
+    tags = "Commun",
+    transfertDe = { "ressources/lcm_64a651_6ad691e4_203a41c9_0005_edf1c8" },
+    type = "lcm_64a651_6ad6939e_2040ff8f_0007_cd304f",
+}, "1376b2161db3f8ef")
+
+LCM.PublierPublique(LCM.Consommables, "consommables", {
+    bonus = {  },
+    couleurTitre = "FF8CB8",
+    description = "Un maigre assortiment de viande séchée, de biscuits durcis et de quelques fruits secs. De quoi tromper la faim durant une journée.",
+    forge = "lcm_64a651_6ad65ba9_1f666be6_0003_7e668c/commun",
+    icone = "Interface\\ICONS\\inv_misc_paperpackage01b",
+    id = "lcm_64a651_6ad693b8_204164db_0008_1cbf44",
+    label = "Petite ration de voyage",
+    tags = "Commun",
+    transfertDe = { "ressources/lcm_64a651_6ad693b8_204164db_0008_1cbf44" },
+    type = "lcm_64a651_6ad6933b_203f7d7a_0006_c0e4d5",
+}, "aefc817be0f2cc12")
+
+LCM.PublierPublique(LCM.Consommables, "consommables", {
+    bonus = {  },
+    couleurTitre = "FF8CB8",
+    description = "Un onguent épais à l'odeur âcre, conservé dans un petit pot de terre cuite. Appliqué sur la peau, il apaise les morsures du froid et soulage les engelures superficielles.",
+    forge = "lcm_64a651_6ad65ba9_1f666be6_0003_7e668c/commun",
+    icone = "Interface\\ICONS\\w3reforgedhealingsalve",
+    id = "lcm_64a651_6ad693f0_20423093_0001_2f767b",
+    label = "Onguent anti-engelures",
+    tags = "Commun",
+    transfertDe = { "ressources/lcm_64a651_6ad693f0_20423093_0001_2f767b" },
+    type = "lcm_64a651_6ad69431_20433b69_0002_621c6d",
+}, "ea028bf1f8f835bb")
+
+LCM.PublierPublique(LCM.Consommables, "consommables", {
+    bonus = {  },
+    couleurTitre = "FF8CB8",
+    description = "Un cristal d'aspecta rafiné. Allez savoir à quoi cela sert. En revanche, il dégage une lueur verte appaisante.",
+    forge = "lcm_64a651_6ad65ba9_1f666be6_0003_7e668c/commun",
+    icone = "Interface\\ICONS\\inv_misc_uncutgemsuperior2",
+    id = "lcm_64a651_6ad6a21c_20799d29_001f_2e1783",
+    label = "Cristal d'aspecta rafiné",
+    tags = "Commun",
+    transfertDe = { "ressources/lcm_64a651_6ad6a21c_20799d29_001f_2e1783" },
+    type = "lcm_64a651_6ad6a260_207aa4a3_0021_04ec5d",
+}, "5688ca0c261ec1cf")
+
+-- ----- cristaux (3) ------------------------------------------------
+LCM.PublierPublique(LCM.Cristaux, "cristaux", {
+    consommable = true,
+    description = "",
+    duree = 60,
+    icone = "Interface\\ICONS\\inv_enchanting_80_veiledcrystal",
+    id = "lcm_132159_6adaa530_1ce76f00_0002_059867",
+    label = "Cristal de Test",
+    pileMax = 50,
+}, "c8fc15cb1b5092e8")
+
+LCM.PublierPublique(LCM.Cristaux, "cristaux", {
+    description = "",
+    duree = 660,
+    icone = "Interface\\ICONS\\inv_enchanting_80_veiledcrystal",
+    id = "lcm_132159_6adb704d_2000e302_0002_8828e1",
+    label = "Cristal de TEst 2",
+}, "48050852aaf489a8")
+
+LCM.PublierPublique(LCM.Cristaux, "cristaux", {
+    description = "",
+    duree = 6000,
+    icone = "Interface\\ICONS\\inv_enchanting_80_veiledcrystal",
+    id = "lcm_132159_6adb706d_20015e68_0003_803248",
+    label = "Cristal de test 3",
+}, "fd3a30cbf1842c39")
+
 -- ----- devises (1) -------------------------------------------------
 LCM.PublierPublique(LCM.Devises, "devises", {
     description = "Une monnai somme tout relativement banale.",
@@ -27,37 +119,168 @@ LCM.PublierPublique(LCM.Devises, "devises", {
     materiel = true,
 }, "f4e54a717e552624")
 
--- ----- etats (1) ---------------------------------------------------
+-- ----- etats (6) ---------------------------------------------------
+LCM.PublierPublique(LCM.Etats, "etats", {
+    avantage = {  },
+    bonus = {  },
+    categorie = "maladie",
+    couleurTitre = "FF8CB8",
+    desavantage = {  },
+    description = "",
+    forge = "lcm_64a651_6acd99d5_102ca8dd_0002_e477e8/commun",
+    icone = "Interface\\ICONS\\ability_ironmaidens_corruptedblood",
+    id = "infection_de_sang",
+    label = "Infection de sang",
+    tags = "Commun",
+    type = "lcm_64a651_6adc94a9_0ea39278_0008_86d1d0",
+}, "f2effe2cdacb9f86")
+
 LCM.PublierPublique(LCM.Etats, "etats", {
     bonus = {
-        acrobaties = -1,
-        communication = -1,
-        cosmique = -1,
-        elementaire = -1,
-        equilibre = -1,
-        escalade = -1,
-        esprit = -2,
-        force = -1,
-        investigation = -1,
-        odorat_gout = -1,
-        ouie = -1,
-        perception = -1,
-        pistage = -1,
-        resi_contondant = -2,
-        toucher = -1,
-        vue = -1,
+        acrobaties = -15,
+        adresse = -10,
+        course = -15,
+        def_agilite = -15,
+        def_courage = -15,
+        def_defense = -15,
+        def_esprit_libre = -15,
+        def_insensible = -15,
+        def_mental = -15,
+        def_stable = -15,
+        equilibre = -15,
+        escalade = -15,
+        esprit = -10,
+        evasion = -15,
+        investigation = -15,
+        meca_confusion = -15,
+        meca_controle_mental = -15,
+        meca_creation = -15,
+        meca_dissipation = -15,
+        meca_illusion = -15,
+        meca_intimidation = -15,
+        meca_levitation = -15,
+        meca_permutation = -15,
+        meca_peur = -15,
+        meca_provocation = -15,
+        nage = -15,
+        perception = -10,
     },
     categorie = "etat",
-    couleurTitre = "4DE04D",
-    description = "<Vous avez vraiment très mal au crâne.>",
-    forge = "lcm_64a651_6acd99d5_102ca8dd_0002_e477e8/inhabituel",
+    couleurTitre = "FF8CB8",
+    description = "Vous avez vraiment très mal au crâne.",
+    forge = "lcm_64a651_6acd99d5_102ca8dd_0002_e477e8/commun",
     icone = "Interface\\ICONS\\inv_misc_bone_humanskull_02",
     id = "lcm_64a651_6acd8c83_0ff8950c_0001_18d910",
     label = "Commossion Cérébrale.",
-    tags = "Inhabituel",
-}, "0f159fc2b5e33cbc")
+    pourcent = { "acrobaties", "adresse", "course", "def_agilite", "def_courage", "def_defense", "def_esprit_libre", "def_insensible", "def_mental", "def_stable", "equilibre", "escalade", "esprit", "evasion", "investigation", "meca_confusion", "meca_controle_mental", "meca_creation", "meca_dissipation", "meca_illusion", "meca_intimidation", "meca_levitation", "meca_permutation", "meca_peur", "meca_provocation", "nage", "perception" },
+    tags = "Commun",
+    type = "lcm_64a651_6adc93f5_0ea0d176_0002_0e8574",
+}, "29af5c6046366a1e")
 
--- ----- listes (33) --------------------------------------------------
+LCM.PublierPublique(LCM.Etats, "etats", {
+    avantage = {  },
+    bonus = {
+        acrobaties = -4,
+        adresse = -1,
+        constitution = -1,
+        course = -4,
+        def_defense = -1,
+        endurance = -4,
+        equilibre = -4,
+        escalade = -4,
+        esprit = -1,
+        force = -1,
+        mystique = -1,
+        odorat_gout = -4,
+        ouie = -4,
+        pen_feu = -10,
+        perception = -1,
+        resi_eau = -10,
+        resi_vent = -10,
+        resistance = -4,
+        toucher = -4,
+        vue = -4,
+    },
+    categorie = "etat",
+    couleurTitre = "FF9926",
+    desavantage = {  },
+    description = "ATTENTION : RISQUE DE MORT. \n\nSi vous ne trouvez pas une source de chaleur rapidement, ou un moyen de contrer ce processus, vous finirez congelé, et probablement M.O.R.T.",
+    forge = "lcm_64a651_6acd99d5_102ca8dd_0002_e477e8/epique",
+    icone = "Interface\\ICONS\\ability_mage_frostjaw",
+    id = "lcm_64a651_6ad6b28b_20b9bf23_0001_a315f2",
+    label = "Congelation en cours",
+    tags = "Épique",
+    type = "lcm_64a651_6adc9409_0ea12403_0003_ffc54c",
+}, "3bbf5a67ff84e6df")
+
+LCM.PublierPublique(LCM.Etats, "etats", {
+    avantage = {  },
+    bonus = {
+        mystique = -10,
+    },
+    categorie = "etat",
+    couleurTitre = "FF9926",
+    desavantage = {  },
+    description = "Utiliser toute forme de magie inflige une douleur tétanisante, comme si vos os se craquaient sous un étau. - Et ce n'est pas qu'une impression ! -\nN'empêche pas l'utilisation de la magie, bien que la douleur - ou le risque de mort - dissuade le porteur de s'y risquer.\nPeut entrainer la mort par suffocation, ou par répétition de douleur.",
+    forge = "lcm_64a651_6acd99d5_102ca8dd_0002_e477e8/epique",
+    icone = "Interface\\ICONS\\hd_silence_1",
+    id = "lcm_64a651_6ad6b4fc_20c35703_0003_18b5af",
+    label = "COLLIER DE SILENCE",
+    tags = "Épique",
+    type = "lcm_64a651_6adc94b2_0ea3b62b_0009_a682b7",
+}, "d685e56640cd3a22")
+
+LCM.PublierPublique(LCM.Etats, "etats", {
+    avantage = {  },
+    bonus = {
+        acrobaties = -1,
+        equilibre = -1,
+        escalade = -1,
+    },
+    categorie = "etat",
+    couleurTitre = "FF8CB8",
+    desavantage = {  },
+    description = "Une mélasse verte, nauséabonde, et visqueuse.. qui colle à vos vêtements..",
+    forge = "lcm_64a651_6acd99d5_102ca8dd_0002_e477e8/commun",
+    icone = "Interface\\ICONS\\ability_creature_poison_02",
+    id = "lcm_aa9c40_6ad93309_016e48e4_0001_182b4e",
+    label = "Mélasse verte",
+    tags = "Commun",
+    type = "lcm_64a651_6adc93f5_0ea0d176_0002_0e8574",
+}, "1a1d29a15a22137a")
+
+LCM.PublierPublique(LCM.Etats, "etats", {
+    bonus = {
+        acrobaties = -25,
+        course = -25,
+        depl_nage = -25,
+        depl_terrestre = -25,
+        equilibre = -25,
+        escalade = -25,
+        nage = -25,
+    },
+    categorie = "etat",
+    couleurTitre = "FF8CB8",
+    description = "Après une mauvaise chute.. une de vos chevilles est semble-t-il foulée.",
+    forge = "lcm_64a651_6acd99d5_102ca8dd_0002_e477e8/commun",
+    icone = "Interface\\ICONS\\dos2_rogue2",
+    id = "lcm_aa9c40_6adcc761_0f699f11_0001_ca781b",
+    label = "Cheville foulée.",
+    pourcent = { "acrobaties", "course", "depl_nage", "depl_terrestre", "equilibre", "escalade", "nage" },
+    tags = "Commun",
+    type = "lcm_64a651_6adc93f5_0ea0d176_0002_0e8574",
+}, "12aabeb45448de5a")
+
+-- ----- lanternes (1) -----------------------------------------------
+LCM.PublierPublique(LCM.Lanternes, "lanternes", {
+    description = "Une lantere qui sert à faire des test",
+    icone = "Interface\\ICONS\\inv_misc_trinket6oih_lanterna2",
+    id = "lcm_132159_6adaa616_1ceaef75_0002_d12bd4",
+    label = "Lanterne d Test",
+    multiplicateur = 1,
+}, "7e23f96b80a1b5cd")
+
+-- ----- listes (48) --------------------------------------------------
 LCM.PublierPublique(LCM.Listes, "listes", {
     description = "",
     icone = "Interface\\ICONS\\inv_jewelry_ring_03",
@@ -163,6 +386,23 @@ LCM.PublierPublique(LCM.Listes, "listes", {
 }, "92383a462d5307a7")
 
 LCM.PublierPublique(LCM.Listes, "listes", {
+    description = "Des outils qui servent en tant que pioche afin de pouvoir récupérer des trucs. Ou en ouvrir d'autre.",
+    icone = "Interface\\ICONS\\inv_axe_1h_6dr_pickaxe_a_01",
+    id = "lcm_132159_6ad3adf6_01b19bc9_0002_567205",
+    label = "Pioche",
+    liste = "outils",
+    maxEquipe = 5,
+}, "d089cdd5c989701b")
+
+LCM.PublierPublique(LCM.Listes, "listes", {
+    description = "",
+    icone = "Interface\\ICONS\\inv_helmet_121",
+    id = "lcm_132159_6ad7981d_10fc569c_0007_a14edd",
+    label = "Masque",
+    liste = "type_accessoires",
+}, "109a725d77b6d9c4")
+
+LCM.PublierPublique(LCM.Listes, "listes", {
     icone = "Interface\\ICONS\\inv_sword_19",
     id = "lcm_64a651_6acd5c7c_0f3d04b6_0002_62d5d3",
     label = "Épée deux mains",
@@ -232,67 +472,182 @@ LCM.PublierPublique(LCM.Listes, "listes", {
 }, "2b017459462025f0")
 
 LCM.PublierPublique(LCM.Listes, "listes", {
+    description = "Sert principalement à ouvrir des serrures, des verroues etc.",
+    icone = "Interface\\ICONS\\inv_misc_1h_jewelcraftingtool_a_03",
+    id = "lcm_64a651_6ad257b0_0fb70286_0002_90a6d4",
+    label = "Crochetage",
+    liste = "outils",
+    maxEquipe = 10,
+}, "87dac0ca65d0f980")
+
+LCM.PublierPublique(LCM.Listes, "listes", {
+    description = "Une petite pierre runique.. allez savoir à quoi cela sert. ",
+    icone = "Interface\\ICONS\\inv_misc_rune_04",
+    id = "lcm_64a651_6ad65bc0_1f66c19c_0004_cdf550",
+    label = "Pierre runique",
+    liste = "ressources",
+}, "4e8d26c4d66a6ea3")
+
+LCM.PublierPublique(LCM.Listes, "listes", {
+    description = "",
     icone = "Interface\\ICONS\\inv_inscription_inkblack02",
     id = "lcm_64a651_6ad69189_2038de7c_0003_65dfb5",
     label = "Encre",
     liste = "ressources",
-}, "0b3d0fe7f740b096")
+}, "81e7441cb50b197f")
 
 LCM.PublierPublique(LCM.Listes, "listes", {
+    description = "",
     icone = "Interface\\ICONS\\inv_misc_paperbundle02a",
     id = "lcm_64a651_6ad691c0_2039b590_0004_033a49",
     label = "Papier",
     liste = "ressources",
-}, "8c045bfe277b4260")
+}, "54a08c38e3b13f68")
 
 LCM.PublierPublique(LCM.Listes, "listes", {
+    description = "",
     icone = "Interface\\ICONS\\inv_misc_food_159_fish_82",
     id = "lcm_64a651_6ad6933b_203f7d7a_0006_c0e4d5",
     label = "Nourriture",
-    liste = "ressources",
-}, "f22f52e4259c92c1")
+    liste = "consommables",
+}, "443fa37cbeaa3412")
 
 LCM.PublierPublique(LCM.Listes, "listes", {
+    description = "",
     icone = "Interface\\ICONS\\inv_misc_bandage_01",
     id = "lcm_64a651_6ad6939e_2040ff8f_0007_cd304f",
     label = "Bandage",
-    liste = "ressources",
-}, "5ab085a1b79597c2")
+    liste = "consommables",
+}, "770b0c9b42ecf577")
 
 LCM.PublierPublique(LCM.Listes, "listes", {
+    description = "",
     icone = "Interface\\ICONS\\w3reforgedbronzebowlfull",
     id = "lcm_64a651_6ad69431_20433b69_0002_621c6d",
     label = "Baume",
-    liste = "ressources",
-}, "e0daae5e97045f45")
+    liste = "consommables",
+}, "017b4f2a03a6beaf")
 
 LCM.PublierPublique(LCM.Listes, "listes", {
+    description = "",
     icone = "Interface\\ICONS\\eps_arc_book_blacksmith1",
     id = "lcm_64a651_6ad6963b_204b33a4_0007_f08a79",
     label = "Livre",
     liste = "ressources",
-}, "797b0bb2ff6702a3")
+}, "1bdce2be424c9676")
 
 LCM.PublierPublique(LCM.Listes, "listes", {
+    description = "",
     icone = "Interface\\ICONS\\hots_thebutcher_furnaceblast_fire",
     id = "lcm_64a651_6ad698cf_205548ef_000f_056abe",
     label = "Chaleur",
     liste = "outils",
-}, "ea3a1917d057f25e")
+}, "9aa4c43cc0f2fd48")
 
 LCM.PublierPublique(LCM.Listes, "listes", {
+    description = "",
     icone = "Interface\\ICONS\\inv_drink_07",
     id = "lcm_64a651_6ad69a7f_205bdff2_0013_e59c87",
     label = "Boisson",
-    liste = "ressources",
-}, "92d2aba8fcae8abb")
+    liste = "consommables",
+}, "9993da4c5c410f29")
 
 LCM.PublierPublique(LCM.Listes, "listes", {
+    description = "",
     icone = "Interface\\ICONS\\eps_rumble_powercrystalgreen",
     id = "lcm_64a651_6ad6a260_207aa4a3_0021_04ec5d",
     label = "Cristal",
+    liste = "consommables",
+}, "e5e6c5c145699382")
+
+LCM.PublierPublique(LCM.Listes, "listes", {
+    description = "",
+    icone = "Interface\\ICONS\\inv_misc_azsharacoin",
+    id = "lcm_64a651_6ad6b267_20b93f97_0009_924d4c",
+    label = "Pièce",
     liste = "ressources",
-}, "433bd8608bbbc684")
+}, "3df0e1823c5fd4c0")
+
+LCM.PublierPublique(LCM.Listes, "listes", {
+    description = "",
+    icone = "Interface\\ICONS\\inv_hammer_15",
+    id = "lcm_64a651_6adb7b60_0a58d5af_0006_a624f1",
+    label = "Marteaux à deux mains",
+    liste = "armes",
+    maxEquipe = "1",
+}, "277c2fc19c6b5da8")
+
+LCM.PublierPublique(LCM.Listes, "listes", {
+    conteneur = "etat",
+    description = "",
+    id = "lcm_64a651_6adc93f5_0ea0d176_0002_0e8574",
+    label = "Altérations physiques",
+    liste = "type_etats",
+}, "c1816ac1381795a9")
+
+LCM.PublierPublique(LCM.Listes, "listes", {
+    conteneur = "etat",
+    description = "",
+    id = "lcm_64a651_6adc9409_0ea12403_0003_ffc54c",
+    label = "Altérations élémentaires",
+    liste = "type_etats",
+}, "9fbf2c71061350eb")
+
+LCM.PublierPublique(LCM.Listes, "listes", {
+    conteneur = "maladie",
+    description = "",
+    id = "lcm_64a651_6adc941d_0ea17036_0004_2aa645",
+    label = "Altérations mentales",
+    liste = "type_etats",
+}, "57add735f05ecd6a")
+
+LCM.PublierPublique(LCM.Listes, "listes", {
+    conteneur = "intangible",
+    description = "",
+    id = "lcm_64a651_6adc942b_0ea1a7ce_0005_2556b5",
+    label = "Altérations magiques",
+    liste = "type_etats",
+}, "eaba6b00e0cb6cd6")
+
+LCM.PublierPublique(LCM.Listes, "listes", {
+    conteneur = "etat",
+    description = "",
+    id = "lcm_64a651_6adc9436_0ea1d18e_0006_2c7892",
+    label = "Altérations de mobilité",
+    liste = "type_etats",
+}, "5a4aa7aa803bd106")
+
+LCM.PublierPublique(LCM.Listes, "listes", {
+    conteneur = "etat",
+    description = "",
+    id = "lcm_64a651_6adc943e_0ea1efdf_0007_597516",
+    label = "États incapacitants",
+    liste = "type_etats",
+}, "0e0f63d7d40459b8")
+
+LCM.PublierPublique(LCM.Listes, "listes", {
+    conteneur = "maladie",
+    description = "",
+    id = "lcm_64a651_6adc94a9_0ea39278_0008_86d1d0",
+    label = "Maladie",
+    liste = "type_etats",
+}, "c5606c4d2c6feffc")
+
+LCM.PublierPublique(LCM.Listes, "listes", {
+    conteneur = "etat",
+    description = "",
+    id = "lcm_64a651_6adc94b2_0ea3b62b_0009_a682b7",
+    label = "Objet maudit",
+    liste = "type_etats",
+}, "498836a93f384f90")
+
+LCM.PublierPublique(LCM.Listes, "listes", {
+    conteneur = "intangible",
+    description = "",
+    id = "lcm_64a651_6adc94bc_0ea3dc90_000a_aabd5f",
+    label = "Malédictions",
+    liste = "type_etats",
+}, "c91a1ab62cb1388e")
 
 LCM.PublierPublique(LCM.Listes, "listes", {
     description = "",
@@ -351,6 +706,7 @@ LCM.PublierPublique(LCM.Livres, "livres", {
         texte = "",
         titre = "",
     },
+    description = "",
     dos = {
         texte = "",
         titre = "",
@@ -359,6 +715,7 @@ LCM.PublierPublique(LCM.Livres, "livres", {
     icone = "Interface\\ICONS\\eps_bg3_itemkethericbook",
     id = "lcm_64a651_6ad4cd18_19518f43_0002_ea9d76",
     label = "Ouvrage humide.",
+    modele = "necronicon",
     pages = {
         {
             texte = "[Une large partie de l'ouvrage est vétuste.. rongé par l'humidité, et le temps.. Entre deux pages.. Vous trouvez éventuellement quelques insectes..]\n\nCette page semble contenir des annotations ressemblant à des cercles runiques.. Hélas, l'encre n'a guère survécu à l'humidité des lieux....\n\n{img:Interface\\Garrison\\ShadowlandsMissionLandingPageBackgroundNightFae:256:256:c}\n\n\n\n\n",
@@ -368,16 +725,25 @@ LCM.PublierPublique(LCM.Livres, "livres", {
             texte = "",
             titre = "",
         },
+        {
+            texte = "ad",
+            titre = "ad",
+        },
+        {
+            texte = "test",
+            titre = "da",
+        },
     },
+    pileMax = 1,
     style = {
         accent = "C5A265",
         alignement = "LEFT",
         encre = "E9DDBF",
         fond = "202735",
     },
-}, "d88971ed8d877a7a")
+}, "a7dd3cbf83d6a376")
 
--- ----- objets (45) --------------------------------------------------
+-- ----- objets (56) --------------------------------------------------
 LCM.PublierPublique(LCM.Objets, "objets", {
     avantage = {  },
     bonus = {
@@ -422,35 +788,6 @@ LCM.PublierPublique(LCM.Objets, "objets", {
     label = "Bannière de toute les gloires",
     tags = "Commun",
 }, "e96b41cd686b7d2e")
-
-LCM.PublierPublique(LCM.Objets, "objets", {
-    avantage = {  },
-    bonus = {
-        acrobaties = -1,
-        equilibre = -1,
-        escalade = -1,
-        force_brise_armure = 2,
-        meca_buff = 1,
-        meca_soin = 1,
-        mystique_brise_armure = 2,
-        perception_brise_armure = 2,
-    },
-    categorie = "arme",
-    couleurTitre = "4DE04D",
-    description = "Ce bâton, réalisé à partir du bois de la forêt d'Elestria, a pour principale fonction d'aider un randonneur à se déplacer sous ces frondaisons. Il est orné de l'emblème de la Garde et permet à son porteur de se défendre en cas de problème.\n\nArme à deux mains, au corps à corps.",
-    etat = {
-        courant = 14,
-        max = 14,
-    },
-    forge = "equilibrage_arme/inhabituel",
-    icone = "Interface\\ICONS\\inv_staff_17",
-    id = "baton_forestier",
-    label = "Bâton forestier",
-    remplacePublie = true,
-    tags = "Inhabituel",
-    taille = 1,
-    type = "baton",
-}, "4526a35f0e9f9193")
 
 LCM.PublierPublique(LCM.Objets, "objets", {
     armure = 2,
@@ -660,6 +997,32 @@ LCM.PublierPublique(LCM.Objets, "objets", {
     taille = 1,
     type = "epee",
 }, "eac2dd16c92b643c")
+
+LCM.PublierPublique(LCM.Objets, "objets", {
+    bonus = {
+        meca_debuff = "1",
+        meca_soin = "1",
+    },
+    categorie = "accessoire",
+    couleurTitre = "FF8CB8",
+    description = "Un masque entièrement façonné en os, couvert de runes gravées dans une langue inconnue. Deux cornes ornées de petites clochettes prolongent sa silhouette. Rien ne semble le distinguer d'un simple masque, si ce n'est une légère odeur de cadavre en décomposition.",
+    etat = {
+        courant = "40",
+        max = "40",
+        version = "2",
+    },
+    forge = "equilibrage_armure_copie/commun",
+    ic = {
+        convertis = 0,
+        palier = "rose",
+        proprietes = {  },
+        version = 1,
+    },
+    icone = "Interface\\ICONS\\eps_lol_profileicon_wolfsmask",
+    id = "lcm_132159_6ad79747_10f91382_0006_96fa11",
+    label = "Blud'Sh'Idah Vek",
+    tags = "Commun",
+}, "40e2b21d19a433ca")
 
 LCM.PublierPublique(LCM.Objets, "objets", {
     avantage = {  },
@@ -992,107 +1355,26 @@ LCM.PublierPublique(LCM.Objets, "objets", {
     bonus = {
         def_defense = 1,
         def_mental = 1,
-        resi_contondant = 3,
-        resi_feu = 3,
+        resi_contondant = 2,
+        resi_feu = 2,
         resi_lumiere = 8,
-        resi_perforant = 3,
-        resi_tranchant = 3,
+        resi_perforant = 2,
+        resi_tranchant = 2,
     },
     categorie = "equipement",
     couleurTitre = "4D8CFF",
     description = "Des renforts de metal pour une armure de géolier nhin. Elles semblent enchantée.",
     etat = {
-        courant = 14,
-        max = 14,
+        courant = 18,
+        max = 18,
     },
     forge = "equilibrage_arme_copie/rare",
     icone = "Interface\\ICONS\\inv_bracer_armor_bastioncosmetic_d_01",
     id = "lcm_64a651_6aced3c9_01fbe20c_000b_ffef6c",
     label = "Renfort de géolier du culte pour nhin.",
     tags = "Rare",
-    type = "bottes",
-}, "00d67b2a42d6e637")
-
-LCM.PublierPublique(LCM.Objets, "objets", {
-    armure = 2,
-    avantage = {  },
-    bonus = {
-        def_defense = 1,
-        def_mental = 1,
-        resi_contondant = 3,
-        resi_feu = 3,
-        resi_lumiere = 8,
-        resi_perforant = 3,
-        resi_tranchant = 3,
-    },
-    categorie = "equipement",
-    couleurTitre = "4D8CFF",
-    description = "Des renforts de metal pour une armure de géolier nhin. Elles semblent enchantée.",
-    etat = {
-        courant = 14,
-        max = 14,
-    },
-    forge = "equilibrage_arme_copie/rare",
-    icone = "Interface\\ICONS\\inv_bracer_armor_bastioncosmetic_d_01",
-    id = "lcm_64a651_6aced474_01fe7f4a_000e_7cd315",
-    label = "Renfort de géolier du culte pour nhin. (copie)",
-    tags = "Rare",
     type = "plaque_de_corps",
-}, "d9e171116f096a30")
-
-LCM.PublierPublique(LCM.Objets, "objets", {
-    armure = 2,
-    avantage = {  },
-    bonus = {
-        def_defense = 1,
-        def_mental = 1,
-        resi_contondant = 3,
-        resi_feu = 3,
-        resi_lumiere = 8,
-        resi_perforant = 3,
-        resi_tranchant = 3,
-    },
-    categorie = "equipement",
-    couleurTitre = "4D8CFF",
-    description = "Des renforts de metal pour une armure de géolier nhin. Elles semblent enchantée.",
-    etat = {
-        courant = 14,
-        max = 14,
-    },
-    forge = "equilibrage_arme_copie/rare",
-    icone = "Interface\\ICONS\\inv_bracer_armor_bastioncosmetic_d_01",
-    id = "lcm_64a651_6aced481_01feb200_0011_feea8d",
-    label = "Renfort de géolier du culte pour nhin. (copie) (copie)",
-    tags = "Rare",
-    type = "plastron",
-}, "cf2e283b939a1552")
-
-LCM.PublierPublique(LCM.Objets, "objets", {
-    armure = 2,
-    avantage = {  },
-    bonus = {
-        def_defense = 1,
-        def_mental = 1,
-        resi_contondant = 3,
-        resi_feu = 3,
-        resi_lumiere = 8,
-        resi_perforant = 3,
-        resi_tranchant = 3,
-    },
-    categorie = "equipement",
-    couleurTitre = "4D8CFF",
-    description = "Des renforts de metal pour une armure de géolier nhin. Elles semblent enchantée.",
-    etat = {
-        courant = 14,
-        max = 14,
-    },
-    forge = "equilibrage_arme_copie/rare",
-    icone = "Interface\\ICONS\\inv_bracer_armor_bastioncosmetic_d_01",
-    id = "lcm_64a651_6aced4d3_01fff30d_001f_3216c5",
-    label = "Renfort de géolier du culte pour nhin. (copie) (copie) (copie)",
-    tags = "Rare",
-    type = "jambiere",
-}, "6bcdc6a2694fda00")
+}, "3c3d7f8853e064af")
 
 LCM.PublierPublique(LCM.Objets, "objets", {
     bonus = {
@@ -1142,6 +1424,123 @@ LCM.PublierPublique(LCM.Objets, "objets", {
     tags = "Rare",
     type = "jambiere",
 }, "caa6286a32f3d159")
+
+LCM.PublierPublique(LCM.Objets, "objets", {
+    avantage = {  },
+    bonus = {
+        acrobaties = -1,
+        equilibre = -1,
+        escalade = -1,
+        force_brise_armure = 2,
+        meca_buff = 1,
+        meca_soin = 1,
+        mystique_brise_armure = 2,
+        pen_contondant = 6,
+        pen_terre = 10,
+        pen_vie = 16,
+        perception_brise_armure = 2,
+    },
+    categorie = "arme",
+    couleurTitre = "4DE04D",
+    description = "Ce bâton, réalisé à partir du bois de la forêt d'Elestria, a pour principale fonction d'aider un randonneur à se déplacer sous ces frondaisons. Il est orné de l'emblème de la Garde et permet à son porteur de se défendre en cas de problème.\n\nArme à deux mains, au corps à corps.",
+    etat = {
+        courant = 18,
+        max = 18,
+    },
+    forge = "equilibrage_arme/inhabituel",
+    icone = "Interface\\ICONS\\inv_staff_17",
+    id = "lcm_64a651_6acff035_0652ddbe_0007_085fa2",
+    label = "Bâton forestier",
+    tags = "Inhabituel",
+    taille = 2,
+    type = "baton",
+}, "54f723c6cf9c1d4e")
+
+LCM.PublierPublique(LCM.Objets, "objets", {
+    avantage = {  },
+    bonus = {
+        crochetage = 2,
+    },
+    categorie = "accessoire",
+    couleurTitre = "FF8CB8",
+    description = "Un assortiment de tiges métalliques grossièrement façonnées, aux extrémités tordues et limées. Fragiles et peu précises, elles permettent néanmoins de forcer les serrures les plus rudimentaires.",
+    etat = {
+        courant = 10,
+        max = 10,
+    },
+    forge = "equilibrage_armure_copie/commun",
+    icone = "Interface\\ICONS\\inv_misc_1h_jewelcraftingtool_a_05",
+    id = "lcm_64a651_6ad0c1d8_0985bdbc_0003_781391",
+    label = "Outils  de crochetage rudimentaire.",
+    remplacePublie = true,
+    tags = "Commun",
+}, "99e944a88e3ebbd0")
+
+LCM.PublierPublique(LCM.Objets, "objets", {
+    bonus = {
+        pen_perforant = 2,
+        pen_tranchant = 2,
+    },
+    categorie = "equipement",
+    couleurTitre = "FF8CB8",
+    description = "Un pantalon assez épais troué, dnas un état plus que discutable. Vous protégera. Ou pas.",
+    etat = {
+        courant = 10,
+        max = 10,
+    },
+    forge = "equilibrage_arme_copie/commun",
+    icone = "Interface\\ICONS\\inv_pants_cloth_pvpmage_f_01",
+    id = "lcm_64a651_6ad0c218_0986b5ca_0004_79e46a",
+    label = "Pantalon miteux.",
+    tags = "Commun",
+}, "935aa2c39651a354")
+
+LCM.PublierPublique(LCM.Objets, "objets", {
+    bonus = {
+        resi_contondant = 2,
+        resi_perforant = 1,
+        resi_tranchant = 1,
+    },
+    categorie = "equipement",
+    couleurTitre = "FF8CB8",
+    description = "..Elles ont connue des jours meilleurs.. Je crois que vous sentez même qu'un de vos petons touche directement le sol.",
+    etat = {
+        courant = 14,
+        max = 14,
+    },
+    forge = "equilibrage_arme_copie/commun",
+    icone = "Interface\\ICONS\\inv_boots_07",
+    id = "lcm_64a651_6ad10a50_0aa0cd22_0003_a57e3e",
+    label = "Bottes moisie",
+    tags = "Commun",
+    type = "bottes",
+}, "538827a80ae829cb")
+
+LCM.PublierPublique(LCM.Objets, "objets", {
+    bonus = {
+        crochetage = "2",
+    },
+    categorie = "outil",
+    couleurTitre = "FF8CB8",
+    description = "Ce ne sont clairement pas les meilleurs outils que vous aurez dans vos mains.. mais au moins, cela vous permettra de tenter votre chance.",
+    etat = {
+        courant = "40",
+        max = "40",
+        version = "2",
+    },
+    forge = "lcm_64a651_6ad64dd2_1f305b72_0007_10d35a/commun",
+    ic = {
+        convertis = 0,
+        palier = "rose",
+        proprietes = {  },
+        version = 1,
+    },
+    icone = "Interface\\ICONS\\inv_misc_1h_jewelcraftingtool_a_05",
+    id = "lcm_64a651_6ad64b7b_1f2726d6_0001_9b532f",
+    label = "Neccessaire de crochetage rudimentaire.",
+    tags = "Commun",
+    type = "lcm_64a651_6ad257b0_0fb70286_0002_90a6d4",
+}, "df5798ecb5dbe577")
 
 LCM.PublierPublique(LCM.Objets, "objets", {
     armure = 2,
@@ -1305,6 +1704,36 @@ LCM.PublierPublique(LCM.Objets, "objets", {
 }, "2141d45bab48e51f")
 
 LCM.PublierPublique(LCM.Objets, "objets", {
+    categorie = "outil",
+    contenant = {
+        entrees = { "consommables/lcm_132159_6adb71d4_2006d99d_0005_039df9" },
+        retrait = "100",
+        taille = "1000",
+        types = { "lcm_64a651_6ad69a7f_205bdff2_0013_e59c87" },
+    },
+    couleurTitre = "FF8CB8",
+    description = "A première vue.. Cette gourde ne semble avoir rien de particulier.. Pourtant, vous discerner dans le fond qu'elle contient une rune luissant d'une couleur solaire.",
+    etat = {
+        courant = "64",
+        max = "64",
+        version = "2",
+    },
+    forge = "lcm_64a651_6ad4ab02_18cc6d43_0002_bbe6a7/commun",
+    ic = {
+        convertis = 0,
+        palier = "rose",
+        proprietes = {  },
+        version = 1,
+    },
+    icone = "Interface\\ICONS\\inv_drink_18",
+    id = "lcm_64a651_6ad699e3_20597cb9_0012_35135e",
+    label = "Gourde runique",
+    tags = "Commun",
+    transfertDe = { "ressources/lcm_64a651_6ad699e3_20597cb9_0012_35135e", "consommables/lcm_64a651_6ad699e3_20597cb9_0012_35135e" },
+    type = "lcm_64a651_6ad69a7f_205bdff2_0013_e59c87",
+}, "b94c4844b98dcfe4")
+
+LCM.PublierPublique(LCM.Objets, "objets", {
     avantage = {  },
     bonus = {
         pen_contondant = 4,
@@ -1371,6 +1800,197 @@ LCM.PublierPublique(LCM.Objets, "objets", {
     tags = "Commun",
     type = "anneau",
 }, "54981ce461a956bf")
+
+LCM.PublierPublique(LCM.Objets, "objets", {
+    avantage = {  },
+    bonus = {
+        acrobaties = -1,
+        escalade = -1,
+        force_brise_armure = 2,
+        meca_soin = 1,
+        mystique_brise_armure = 2,
+        pen_contondant = 6,
+        pen_terre = 8,
+        perception_brise_armure = 2,
+    },
+    categorie = "arme",
+    couleurTitre = "FF8CB8",
+    description = "Un bâton somme tout assez banal.. Des petites runes sur le coté indique un enchantement mineur..Et qui le porte sens la volonté de la terre l'animer.",
+    etat = {
+        ancienMax = 18,
+        courant = 28,
+        max = 28,
+        version = 2,
+    },
+    forge = "equilibrage_arme/commun",
+    icone = "Interface\\ICONS\\inv_staff_17",
+    id = "lcm_64a651_6ad6a6b5_208b909d_0002_03630b",
+    label = "Bâton brisé.",
+    tags = "Commun",
+    taille = 2,
+    type = "baton",
+}, "5c86d0e33e817d62")
+
+LCM.PublierPublique(LCM.Objets, "objets", {
+    avantage = {  },
+    bonus = {
+        meca_buff = 2,
+    },
+    categorie = "accessoire",
+    couleurTitre = "FF8CB8",
+    description = "Un libram écrit par les plus fervents combattants de la Croisade, des litanies et quantiques particulièrement guerrier couvrent les pages, de quoi y puiser le courage nécessaire à lancer un nouvel assaut cinglant.\n\nLire un passage du Libram galvanise Kirsa et lui donne un avantage au combat",
+    etat = {
+        courant = 40,
+        max = 40,
+        version = 2,
+    },
+    forge = "equilibrage_armure_copie/commun",
+    icone = "Interface\\ICONS\\inv_offhand_1h_draenorquest95_b_02",
+    id = "lcm_64a651_6ad6a8b1_2093524d_0003_269275",
+    label = "Libram de zèle",
+    tags = "Commun",
+    type = "bijou",
+}, "77ee0c6df47810f9")
+
+LCM.PublierPublique(LCM.Objets, "objets", {
+    bonus = {
+        fatigue = 2,
+    },
+    categorie = "accessoire",
+    couleurTitre = "FF8CB8",
+    description = "Un héritage particulièrement sensible, offert par le supérieur de Kirsa, marque de la dévotion de la combattante et un outil de focalisation particulièrement utile.",
+    etat = {
+        courant = 40,
+        max = 40,
+        version = 2,
+    },
+    forge = "equilibrage_armure_copie/commun",
+    icone = "Interface\\ICONS\\inv_jewelry_necklace_28naxxramas",
+    id = "lcm_64a651_6ad6a914_2094d3ee_0005_fbb4f8",
+    label = "Chapelet de la Première Guerre",
+    tags = "Commun",
+    type = "pendentif",
+}, "d7f4a32ffbeb3dc0")
+
+LCM.PublierPublique(LCM.Objets, "objets", {
+    bonus = {
+        def_courage = 1,
+        def_esprit_libre = 1,
+        def_mental = 1,
+        mystique = -1,
+    },
+    categorie = "accessoire",
+    couleurTitre = "4DE04D",
+    description = "Un anneau étrange, qui lorsqu'il est porté, semble faire mouvoir de l'encre sur le doigt du porteur. A priori, celle-ci se déforme parfois pour former une toile noirâtre. Allez savoir à quoi cela peut servir autre qu'à laisser une trace d'encre qui ne semble jamais disparaitre.",
+    etat = {
+        courant = 82,
+        max = 82,
+        version = 2,
+    },
+    forge = "equilibrage_armure_copie/inhabituel",
+    icone = "Interface\\ICONS\\eps_wc3h_ringofflames",
+    id = "lcm_64a651_6ad6a939_209564a6_0006_8050a9",
+    label = "La toile morbide.",
+    tags = "Inhabituel",
+    type = "bijou",
+}, "4d60db7cc05427c8")
+
+LCM.PublierPublique(LCM.Objets, "objets", {
+    bonus = {
+        cosmique = 2,
+    },
+    categorie = "accessoire",
+    couleurTitre = "FF8CB8",
+    description = "Un ouvrage ancien et modeste dontla reliure de cuir n'est pas sans rapeler des stries c'encre séchée. L'oeuvre est d'un noir total, autant dans sa couverture que ses pages. Les esquisses ou texte inscrit sur ces dernières se tracent uniquement de blanc. Quand un écrit est inscrit, il ne demeure guère longtemps, disparaissant tôt ou tard.. Enfin.. Des pages semblent avoir été arrachés.",
+    etat = {
+        courant = 40,
+        max = 40,
+        version = 2,
+    },
+    forge = "equilibrage_armure_copie/commun",
+    ic = {
+        convertis = 0,
+        palier = "rose",
+        proprietes = {  },
+        version = 1,
+    },
+    icone = "Interface\\ICONS\\eps_arc_book_venthyr2",
+    id = "lcm_64a651_6ad79608_243265dd_0002_42b45b",
+    label = "Le carnet ombreux.",
+    tags = "Commun",
+}, "007088a7e55d12d2")
+
+LCM.PublierPublique(LCM.Objets, "objets", {
+    bonus = {
+        acrobaties = "-1",
+        equilibre = "-1",
+        escalade = "-1",
+        pen_contondant = "15",
+    },
+    categorie = "arme",
+    couleurTitre = "4DE04D",
+    description = "Honnêtement.. Jamais vous ne parviendrez à porter pareil tronc d'arbre.. A moins d'être un ogre ?",
+    etat = {
+        courant = "70",
+        max = "70",
+        version = "2",
+    },
+    forge = "armes/inhabituel",
+    ic = {
+        convertis = 0,
+        palier = "vert",
+        proprietes = {  },
+        version = 1,
+    },
+    icone = "Interface\\ICONS\\inv_hammer_15",
+    id = "lcm_64a651_6adb7af6_0a5736cd_0004_627585",
+    label = "Énorme tronc avec manche.",
+    tags = "Inhabituel",
+    taille = "2",
+    type = "lcm_64a651_6adb7b60_0a58d5af_0006_a624f1",
+}, "72cf6a711c88fb50")
+
+LCM.PublierPublique(LCM.Objets, "objets", {
+    bonus = {
+        resi_contondant = "4",
+        resi_eau = "2",
+        resi_perforant = "4",
+        resi_tranchant = "4",
+        resi_vent = "2",
+    },
+    categorie = "equipement",
+    couleurTitre = "4DE04D",
+    description = "Une armure qui semble en mauvais état.. A l'image d'une combinaison, cette \"armure\" s'est enroulée autour de vos corps. Chaque partie a été sanglée, vous enfermant presque hemertiquement. C'est bien.. Vous êtes presque protégé du froid.",
+    etat = {
+        courant = "18",
+        max = "18",
+    },
+    forge = "equilibrage_arme_copie/inhabituel",
+    icone = "Interface\\ICONS\\inv_chest_cloth_78green",
+    id = "lcm_aa9c40_6acfb25d_056140d0_0001_6ce82a",
+    label = "Armure d'errance rapiecée.",
+    tags = "Inhabituel",
+}, "7b42d7eee369e67f")
+
+LCM.PublierPublique(LCM.Objets, "objets", {
+    bonus = {
+        resi_contondant = 1,
+        resi_perforant = 1,
+        resi_tranchant = 2,
+    },
+    categorie = "equipement",
+    couleurTitre = "FF8CB8",
+    description = "Un manteau en cuir, pièce maîtresse d'une armure légère de cuirassier, portant les stigmates de innombrables campagnes. Son cuir épais, patiné par le temps et marqué de fines éraflures, offre une protection souple mais robuste. Il a été subtilement renforcé aux endroits stratégiques : des plaques d'acier rivetées ornent les coudes et les épaules, ajoutant une touche de rigidité sans compromettre la mobilité. Le col montant, renforcé par une bande métallique interne, protège la gorge contre les c",
+    etat = {
+        courant = 14,
+        max = 14,
+    },
+    forge = "equilibrage_arme_copie/commun",
+    icone = "Interface\\ICONS\\inv_chest_armor_dwarf_d_01",
+    id = "lcm_aa9c40_6ad01d02_0701cde1_0001_4276a5",
+    label = "Manteau d'exploration",
+    tags = "Commun",
+}, "3e234d032ea8aef3")
 
 LCM.PublierPublique(LCM.Objets, "objets", {
     bonus = {
@@ -1476,7 +2096,7 @@ LCM.PublierPublique(LCM.Objets, "objets", {
     tags = "Commun",
 }, "211eae70c4035f12")
 
--- ----- races (8) ---------------------------------------------------
+-- ----- races (9) ---------------------------------------------------
 LCM.PublierPublique(LCM.Races, "races", {
     avantage = {},
     bonus = {
@@ -1779,6 +2399,56 @@ LCM.PublierPublique(LCM.Races, "races", {
 }, "6c1c293766a9b1d4")
 
 LCM.PublierPublique(LCM.Races, "races", {
+    bonus = {
+        adresse = "2",
+        constitution = "5",
+        esprit = "2",
+        force = "5",
+        mystique = "3",
+        pen_contondant = "3",
+        pen_desordre = "3",
+        pen_eau = "3",
+        pen_esprit = "3",
+        pen_feu = "3",
+        pen_lumiere = "3",
+        pen_mort = "3",
+        pen_ombre = "3",
+        pen_ordre = "3",
+        pen_perforant = "3",
+        pen_pourriture = "3",
+        pen_terre = "3",
+        pen_tranchant = "3",
+        pen_vent = "3",
+        pen_vie = "3",
+        perception = "3",
+        resi_contondant = "3",
+        resi_desordre = "3",
+        resi_eau = "3",
+        resi_esprit = "3",
+        resi_feu = "3",
+        resi_lumiere = "3",
+        resi_mort = "3",
+        resi_ombre = "3",
+        resi_ordre = "3",
+        resi_perforant = "3",
+        resi_pourriture = "3",
+        resi_terre = "3",
+        resi_tranchant = "3",
+        resi_vent = "3",
+        resi_vie = "3",
+    },
+    couleurTitre = "FF8CB8",
+    description = "Foutrement gros. Foutrement fort.",
+    forge = "race/commun",
+    icone = "Interface\\ICONS\\achievement_reputation_ogre",
+    id = "lcm_aa9c40_6adb6c92_0a1ef442_0001_98aa1a",
+    label = "Ogre",
+    mjSeulement = true,
+    morphology = "humanoide",
+    tags = "Commun",
+}, "7982bf24788765d7")
+
+LCM.PublierPublique(LCM.Races, "races", {
     avantage = {},
     bonus = {
         adresse = 3,
@@ -1879,7 +2549,7 @@ LCM.PublierPublique(LCM.Races, "races", {
     tags = "Commun",
 }, "7cd83a01972d2ca4")
 
--- ----- ressources (12) ----------------------------------------------
+-- ----- ressources (14) ----------------------------------------------
 LCM.PublierPublique(LCM.Ressources, "ressources", {
     description = "Franchement, c'est solide.",
     etat = {
@@ -1894,6 +2564,78 @@ LCM.PublierPublique(LCM.Ressources, "ressources", {
 LCM.PublierPublique(LCM.Ressources, "ressources", {
     bonus = {  },
     couleurTitre = "FF8CB8",
+    description = "Une petite pierre runique.. allez savoir à quoi cela sert.",
+    forge = "lcm_64a651_6ad65ba9_1f666be6_0003_7e668c/commun",
+    icone = "Interface\\ICONS\\inv_misc_rune_04",
+    id = "lcm_64a651_6ad65961_1f5d7298_0001_bb9861",
+    label = "Pierre runique",
+    tags = "Commun",
+    type = "lcm_64a651_6ad65bc0_1f66c19c_0004_cdf550",
+}, "b96a4675db78c675")
+
+LCM.PublierPublique(LCM.Ressources, "ressources", {
+    bonus = {  },
+    couleurTitre = "4DE04D",
+    description = "Cette pierre d'un rouge feu dégage une petite chaleur au creux de votre main.",
+    forge = "lcm_64a651_6ad65ba9_1f666be6_0003_7e668c/inhabituel",
+    icone = "Interface\\ICONS\\inv_jewelcrafting_80_gem01_red",
+    id = "lcm_64a651_6ad65c1f_1f683923_0006_eecba6",
+    label = "Pierre rouge.",
+    tags = "Inhabituel",
+    type = "lcm_64a651_6ad65bc0_1f66c19c_0004_cdf550",
+}, "e23d5ccb92ca12eb")
+
+LCM.PublierPublique(LCM.Ressources, "ressources", {
+    avantage = {  },
+    couleurTitre = "4DE04D",
+    description = "Une pierre violâtre qui semble dégager une petite brume violacée.",
+    forge = "lcm_64a651_6ad65ba9_1f666be6_0003_7e668c/inhabituel",
+    icone = "Interface\\ICONS\\inv_misc_gem_amethyst_01",
+    id = "lcm_64a651_6ad65d53_1f6ceb05_0008_ac7d09",
+    label = "Pierre violâtre",
+    tags = "Inhabituel",
+    type = "lcm_64a651_6ad65bc0_1f66c19c_0004_cdf550",
+}, "d63ab8bf529579d2")
+
+LCM.PublierPublique(LCM.Ressources, "ressources", {
+    avantage = {  },
+    couleurTitre = "4DE04D",
+    description = "Cette petite pierre verte ne semble rien peser.. Pire.. Lorsqu'elle tombe, celle-ci semble prendre son temps pour rejoindre le sol.",
+    forge = "lcm_64a651_6ad65ba9_1f666be6_0003_7e668c/inhabituel",
+    icone = "Interface\\ICONS\\inv_misc_gem_deepperidot_03",
+    id = "lcm_64a651_6ad65e22_1f70123b_000b_aa9a60",
+    label = "Pierre verte",
+    tags = "Inhabituel",
+    type = "lcm_64a651_6ad65bc0_1f66c19c_0004_cdf550",
+}, "ad8e2a08b5046686")
+
+LCM.PublierPublique(LCM.Ressources, "ressources", {
+    avantage = {  },
+    couleurTitre = "4DE04D",
+    description = "Cette pierre d'un bleu profond est humide entre vos mains et glisserait presque si vous ne ma mainteniez pas correctement. outre ça, son toucher est foutrement froid.. et l'eau qu'elle laisse sur votre peau gèle. ",
+    forge = "lcm_64a651_6ad65ba9_1f666be6_0003_7e668c/inhabituel",
+    icone = "Interface\\ICONS\\inv_jewelcrafting_80_gem02_blue",
+    id = "lcm_64a651_6ad65ebf_1f7276d7_000e_4cb110",
+    label = "Pierre bleu",
+    tags = "Inhabituel",
+    type = "lcm_64a651_6ad65bc0_1f66c19c_0004_cdf550",
+}, "a796f63815c45bce")
+
+LCM.PublierPublique(LCM.Ressources, "ressources", {
+    avantage = {  },
+    couleurTitre = "4DE04D",
+    description = "Une pierre noir.. quand vous tenez celle-ci en main.. vos doigts semblent peu à peu happé vers la pierre.. vous forçant à la serrer.",
+    forge = "lcm_64a651_6ad65ba9_1f666be6_0003_7e668c/inhabituel",
+    icone = "Interface\\ICONS\\inv_misc_gem_pearl_01",
+    id = "lcm_64a651_6ad65f76_1f7541c3_0010_bb7819",
+    label = "Pierre noir",
+    tags = "Inhabituel",
+    type = "lcm_64a651_6ad65bc0_1f66c19c_0004_cdf550",
+}, "5a193e8b8b28105c")
+
+LCM.PublierPublique(LCM.Ressources, "ressources", {
+    bonus = {  },
+    couleurTitre = "FF8CB8",
     description = "Une feuille de papier de mauvaise qualité.",
     forge = "lcm_64a651_6ad65ba9_1f666be6_0003_7e668c/commun",
     icone = "Interface\\ICONS\\inv_misc_paperbundle02a",
@@ -1902,42 +2644,6 @@ LCM.PublierPublique(LCM.Ressources, "ressources", {
     tags = "Commun",
     type = "lcm_64a651_6ad65bc0_1f66c19c_0004_cdf550",
 }, "1c7507b67237f09d")
-
-LCM.PublierPublique(LCM.Ressources, "ressources", {
-    avantage = {  },
-    couleurTitre = "FF8CB8",
-    description = "Une bande de tissu grossièrement découpée, aux fibres rêches et effilochées. Peu hygiénique, mais suffisante pour couvrir une plaie.",
-    forge = "lcm_64a651_6ad65ba9_1f666be6_0003_7e668c/commun",
-    icone = "Interface\\ICONS\\inv_misc_bandage_03",
-    id = "lcm_64a651_6ad691e4_203a41c9_0005_edf1c8",
-    label = "Bandage de piètre qualité.",
-    tags = "Commun",
-    type = "lcm_64a651_6ad6939e_2040ff8f_0007_cd304f",
-}, "73d07d2d8da78b79")
-
-LCM.PublierPublique(LCM.Ressources, "ressources", {
-    bonus = {  },
-    couleurTitre = "FF8CB8",
-    description = "Un maigre assortiment de viande séchée, de biscuits durcis et de quelques fruits secs. De quoi tromper la faim durant une journée.",
-    forge = "lcm_64a651_6ad65ba9_1f666be6_0003_7e668c/commun",
-    icone = "Interface\\ICONS\\inv_misc_paperpackage01b",
-    id = "lcm_64a651_6ad693b8_204164db_0008_1cbf44",
-    label = "Petite ration de voyage",
-    tags = "Commun",
-    type = "lcm_64a651_6ad6933b_203f7d7a_0006_c0e4d5",
-}, "383074e500dd16a7")
-
-LCM.PublierPublique(LCM.Ressources, "ressources", {
-    bonus = {  },
-    couleurTitre = "FF8CB8",
-    description = "Un onguent épais à l'odeur âcre, conservé dans un petit pot de terre cuite. Appliqué sur la peau, il apaise les morsures du froid et soulage les engelures superficielles.",
-    forge = "lcm_64a651_6ad65ba9_1f666be6_0003_7e668c/commun",
-    icone = "Interface\\ICONS\\w3reforgedhealingsalve",
-    id = "lcm_64a651_6ad693f0_20423093_0001_2f767b",
-    label = "Onguent anti-engelures",
-    tags = "Commun",
-    type = "lcm_64a651_6ad69431_20433b69_0002_621c6d",
-}, "fe4f85c7d5c967e6")
 
 LCM.PublierPublique(LCM.Ressources, "ressources", {
     bonus = {  },
@@ -1976,18 +2682,6 @@ LCM.PublierPublique(LCM.Ressources, "ressources", {
 }, "a797ebd200205d8e")
 
 LCM.PublierPublique(LCM.Ressources, "ressources", {
-    bonus = {  },
-    couleurTitre = "FF8CB8",
-    description = "A première vue.. Cette gourde ne semble avoir rien de particulier.. Pourtant, vous discerner dans le fond de l'eau qu'elle contient une rune luissant d'une couleur solaire.",
-    forge = "lcm_64a651_6ad65ba9_1f666be6_0003_7e668c/commun",
-    icone = "Interface\\ICONS\\inv_drink_18",
-    id = "lcm_64a651_6ad699e3_20597cb9_0012_35135e",
-    label = "Gourde d'eau runique",
-    tags = "Commun",
-    type = "lcm_64a651_6ad69a7f_205bdff2_0013_e59c87",
-}, "6fb3386752ea25cd")
-
-LCM.PublierPublique(LCM.Ressources, "ressources", {
     avantage = {  },
     couleurTitre = "FF8CB8",
     description = "Ce bibelot empeste d'une odeur de renfermé. En revanche, son contenue écrit dans une langue inconnue est en parfait état. Parfois, sur certaines pages, d'étranges symboles formant des cercles magiques sont présentés.",
@@ -2001,15 +2695,15 @@ LCM.PublierPublique(LCM.Ressources, "ressources", {
 
 LCM.PublierPublique(LCM.Ressources, "ressources", {
     avantage = {  },
-    couleurTitre = "FF8CB8",
-    description = "Un cristal d'aspecta rafiné. Allez savoir à quoi cela sert. En revanche, il dégage une lueur verte appaisante.",
-    forge = "lcm_64a651_6ad65ba9_1f666be6_0003_7e668c/commun",
-    icone = "Interface\\ICONS\\inv_misc_uncutgemsuperior2",
-    id = "lcm_64a651_6ad6a21c_20799d29_001f_2e1783",
-    label = "Cristal d'aspecta rafiné",
-    tags = "Commun",
-    type = "lcm_64a651_6ad6a260_207aa4a3_0021_04ec5d",
-}, "3f4a22f33369f585")
+    couleurTitre = "BF4DFF",
+    description = "Une pièce, qui parait indestructible. Grâvée d'une lune noire, l'objet semble parfaitement lisse de toute aspérité.",
+    forge = "lcm_64a651_6ad65ba9_1f666be6_0003_7e668c/mythique",
+    icone = "Interface\\ICONS\\eps_rumble_traitearthandmoon",
+    id = "lcm_64a651_6ad6afb5_20aeb7c6_0007_bfca2d",
+    label = "Pièce blanche gravée d'une lune.",
+    tags = "Mythique",
+    type = "lcm_64a651_6ad6b267_20b93f97_0009_924d4c",
+}, "9c6cc4f5c51480ce")
 
 LCM.PublierPublique(LCM.Ressources, "ressources", {
     avantage = {  },
@@ -2023,7 +2717,7 @@ LCM.PublierPublique(LCM.Ressources, "ressources", {
     type = "lcm_64a651_6ad69189_2038de7c_0003_65dfb5",
 }, "9ece97cf811ea052")
 
--- ----- tentes (3) --------------------------------------------------
+-- ----- tentes (4) --------------------------------------------------
 LCM.PublierPublique(LCM.Tentes, "tentes", {
     accessoiresMax = 20,
     bonus = {
@@ -2070,7 +2764,22 @@ LCM.PublierPublique(LCM.Tentes, "tentes", {
     tags = "Commun",
 }, "71edc199723e0471")
 
--- ----- traits (37) --------------------------------------------------
+LCM.PublierPublique(LCM.Tentes, "tentes", {
+    bonus = {
+        recup_fatigue = "4",
+        recup_pv = "4",
+        securite = "2",
+    },
+    couleurTitre = "FF8CB8",
+    description = "fsqdqzd",
+    forge = "lcm_64a651_6acbc610_09097aca_0002_99aa48/commun",
+    icone = "Interface\\AddOns\\LesContesMalveillants\\ressources\\radial\\icones\\actions-supports.tga",
+    id = "lcm_64a651_6acfdf84_0611a8c6_0003_343bf4",
+    label = "Tente de gros",
+    tags = "Commun",
+}, "8f2f4c148d791e38")
+
+-- ----- traits (40) --------------------------------------------------
 LCM.PublierPublique(LCM.Traits, "traits", {
     bonus = {
         pen_perforant = 1,
@@ -2120,18 +2829,19 @@ LCM.PublierPublique(LCM.Traits, "traits", {
 
 LCM.PublierPublique(LCM.Traits, "traits", {
     bonus = {
-        crochetage = 1,
-        discretion = 1,
-        vol_a_la_tire = 1,
+        crochetage = "1",
+        discretion = "1",
+        vol_a_la_tire = "1",
     },
     couleurTitre = "FF8CB8",
-    description = "L'arc et le jeu de scène suffisent assez rarement aux fins de mois. Alors, autrefois, elle se glissait avec quelques copains dans de riches baraques pour en voler les biens. Elle sait se faire discrète, se fondre dans les ombres, - dans une certaine mesure. Crocheter des verrous assez complexes, se faire morte quand le prédateur pointe le bout de son nez. Il est assez connu que Maia volait \"au-delà\" de ses besoins primaires. Elle aime l'argent comme l'orphelin aime la chaleur du feu. Parce qu'el",
+    cout = "1",
+    description = "L'arc et le jeu de scène suffisent assez rarement aux fins de mois. Alors, autrefois, elle se glissait avec quelques copains dans de riches baraques pour en voler les biens. Elle sait se faire discrète, se fondre dans les ombres, - dans une certaine mesure. Crocheter des verrous assez complexes, se faire morte quand le prédateur pointe le bout de son nez. Il est assez connu que Maia volait \"au-delà\" de ses besoins primaires. Elle aime l'argent comme l'orphelin aime la chaleur du feu.",
     forge = "traits/commun",
     icone = "Interface\\ICONS\\ability_stealth",
     id = "cambrioleuse",
     label = "Cambrioleuse",
     tags = "Commun",
-}, "3d16c290eaf5a166")
+}, "7ab7758e73508ea3")
 
 LCM.PublierPublique(LCM.Traits, "traits", {
     bonus = {
@@ -2267,6 +2977,36 @@ LCM.PublierPublique(LCM.Traits, "traits", {
 
 LCM.PublierPublique(LCM.Traits, "traits", {
     bonus = {
+        meca_perce_armure = "1",
+        odorat_gout = "1",
+        resi_contondant = "2",
+    },
+    couleurTitre = "FF8CB8",
+    cout = "1",
+    description = "La porteuse de ces mémoires est capable de pouvoir discuter avec des reptiles, elle connait les secrets et les maniement du sifflement comme personne.",
+    forge = "traits/commun",
+    icone = "Interface\\ICONS\\eps_lol_item_spiritofthedragon",
+    id = "lcm_132159_6ad17f79_08aa84cb_0001_cf7036",
+    label = "Mio'Rina - Souvenir de Reptile",
+    tags = "Commun",
+}, "de59567dd28fde8a")
+
+LCM.PublierPublique(LCM.Traits, "traits", {
+    bonus = {
+        pen_eau = "2",
+        pen_perforant = "4",
+    },
+    couleurTitre = "FF8CB8",
+    cout = "1",
+    description = "zeazeaeazeaze",
+    forge = "traits/commun",
+    id = "lcm_132159_6ad78703_10b97f24_0001_99129e",
+    label = "TEST TEST TEST",
+    tags = "Commun",
+}, "7fe8610219363798")
+
+LCM.PublierPublique(LCM.Traits, "traits", {
+    bonus = {
         discretion = 2,
         pen_ombre = 3,
         resi_lumiere = -2,
@@ -2323,33 +3063,37 @@ LCM.PublierPublique(LCM.Traits, "traits", {
 }, "476db3cadc16875b")
 
 LCM.PublierPublique(LCM.Traits, "traits", {
+    avantage = {  },
     bonus = {
-        investigation = 1,
-        resi_feu = 4,
+        pen_lumiere = 4,
+        resi_lumiere = 2,
     },
     couleurTitre = "FF8CB8",
-    description = "Son séjour dans les mondes démoniaques l’ont rendu très résiliente face aux flammes et lui confère un savoir important sur les engeances démoniaques.",
+    cout = 1,
+    description = "La Lumière habite Kirsa, si l’ont peu avoir des doutes sur la sainteté de la Croisade qu’elle a servie, on ne peut douter de la sienne.",
     forge = "traits/commun",
-    icone = "Interface\\ICONS\\sha_spell_warlock_demonsoul_nightmare",
+    icone = "Interface\\ICONS\\eps_wow_lightsmith",
     id = "lcm_64a651_6acab9e6_04f1ed9d_0001_b03c06",
-    label = "Chevalier Infernal",
+    label = "Vertueuse",
     tags = "Commun",
-}, "8398c8ccdfb17081")
+}, "550c62837a3c535f")
 
 LCM.PublierPublique(LCM.Traits, "traits", {
+    avantage = {  },
     bonus = {
-        endurance = 1,
-        fatigue = 2,
-        puissance = 1,
+        def_courage = 1,
+        def_esprit_libre = 1,
+        def_mental = 1,
     },
     couleurTitre = "FF8CB8",
-    description = "Les chairs tordus de l’elfe lui confère une force démentielle bien plus que l’on pourrait en attendre d’une elfe de sa carrure, sans compter une résilience particulièrement notable.",
+    cout = 1,
+    description = "Peu importe que la Croisade ait disparu, les vœux de Kirsa sont immuable et renforce sa détermination en toute circonstance.",
     forge = "traits/commun",
-    icone = "Interface\\ICONS\\ability_demonhunter_consumemagic",
+    icone = "Interface\\ICONS\\ability_paladin_selflesshealer",
     id = "lcm_64a651_6acabb9f_04f8b719_0002_c63df8",
-    label = "Force Xorothienne",
+    label = "Serment",
     tags = "Commun",
-}, "b6aec4cdd69dbd31")
+}, "b6223434af277430")
 
 LCM.PublierPublique(LCM.Traits, "traits", {
     bonus = {
@@ -2410,6 +3154,38 @@ LCM.PublierPublique(LCM.Traits, "traits", {
     label = "Artiste",
     tags = "Commun",
 }, "2d456be0ee5f8ad9")
+
+LCM.PublierPublique(LCM.Traits, "traits", {
+    bonus = {
+        pen_contondant = "17",
+        resi_contondant = "3",
+        resi_perforant = "3",
+        resi_tranchant = "3",
+    },
+    couleurTitre = "FF9926",
+    cout = "4",
+    description = "Peu me chau de votre stratégie. Moi, je frappe.",
+    forge = "traits/epique",
+    icone = "Interface\\ICONS\\w3reforgedoneheadedogre",
+    id = "lcm_64a651_6adb7916_0a4fe223_0002_603254",
+    label = "Moi tappey très fort !",
+    tags = "Épique",
+}, "813bf91ad3e25c65")
+
+LCM.PublierPublique(LCM.Traits, "traits", {
+    bonus = {
+        initiative = "-1",
+        pa = "1",
+    },
+    couleurTitre = "FF8CB8",
+    cout = "1",
+    description = "Moi pas comprendre.",
+    forge = "traits/commun",
+    icone = "Interface\\ICONS\\spell_shadow_brainwash",
+    id = "lcm_64a651_6adb7ab8_0a5642fe_0003_de4228",
+    label = "Moi pas savoir quoi toi dire.",
+    tags = "Commun",
+}, "b846af94fdba0b50")
 
 LCM.PublierPublique(LCM.Traits, "traits", {
     bonus = {
@@ -2499,21 +3275,6 @@ LCM.PublierPublique(LCM.Traits, "traits", {
     label = "Moon - Danseuse du Val'Razkah",
     tags = "Commun",
 }, "bc6cd1b3cab98d2c")
-
-LCM.PublierPublique(LCM.Traits, "traits", {
-    bonus = {
-        meca_perce_armure = "1",
-        meca_soin = "1",
-        mystique_soin = "2",
-    },
-    couleurTitre = "FF8CB8",
-    description = "Prise sous le voile d'une mystérieuse femme, elle apprit à exploiter ses dons avec bien davantage de précision. On lui enseigna autant à préserver sa propre existence qu'à mettre rapidement un terme à celle de ses adversaires.\n\nElle sait reconnaître ce qui maintient un corps en vie, refermer certaines blessures lorsque personne d'autre ne peut le faire, mais également identifier les faiblesses d'une protection ou d'une anatomie afin de frapper là où cela fera réellement la différence.",
-    forge = "traits/commun",
-    icone = "Interface\\ICONS\\inv_crystallized_life",
-    id = "moon_engeance_de_n",
-    label = "Moon - Engeance de N'",
-    tags = "Commun",
-}, "ae3ad7c9cd8455f9")
 
 LCM.PublierPublique(LCM.Traits, "traits", {
     bonus = {
