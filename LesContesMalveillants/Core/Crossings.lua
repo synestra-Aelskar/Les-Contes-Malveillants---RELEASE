@@ -248,8 +248,6 @@ function ZG:GetDB() return EnsureDB() end
 -- possibles à l'affichage (voir ResolveBannerText).
 local function EnsureCharDB()
     LCM_CrossingsChar = LCM_CrossingsChar or {}
-    LCM_CrossingsChar.learnedZones    = LCM_CrossingsChar.learnedZones or {}
-    LCM_CrossingsChar.learnedSubZones = LCM_CrossingsChar.learnedSubZones or {}
     return LCM_CrossingsChar
 end
 
@@ -1412,24 +1410,92 @@ function ZG:StyleThemeText(text, theme)
     return text
 end
 
+-- ── Qui sait quoi ───────────────────────────────────────────────────────────
+-- Deux regles (le MJ, 31 octobre 2026) :
+--   * le MJ VOIT TOUT : il prepare le jeu, aucun nom ne lui est masque — y
+--     compris ceux crees par l'autre MJ. En mode joueur, il redevient joueur ;
+--   * un joueur ne sait que ce que SON PERSONNAGE a appris — le personnage de
+--     LCM, la fiche jouee, pas le personnage WoW : deux fiches sur le meme
+--     personnage WoW ne partagent pas ce qu'elles savent.
+-- Omega retenait la connaissance par personnage WoW (learnedZones a la
+-- racine de LCM_CrossingsChar) ; ce qui y etait passe au premier personnage
+-- joue (voir MigrerSavoir).
+
+local function MJVoitTout() return LCM.IsMaster and LCM.IsMaster() or false end
+
+local function PersoActif()
+    local P = LCM.Personnages
+    local e = P and P.Actif and P.Actif()
+    return e and e.id or "_"
+end
+
+-- Lecture : ne cree rien (un accesseur de lecture qui seme des tables vides
+-- dans la sauvegarde, c'est un piege deja paye).
+local function Savoir(id)
+    local c = LCM_CrossingsChar
+    local p = type(c) == "table" and type(c.parPerso) == "table" and c.parPerso[id or PersoActif()]
+    return type(p) == "table" and p or nil
+end
+
+-- Le personnage sait-il `cle` dans l'ensemble `champ` ? Ce qui a ete appris
+-- AVANT ce decoupage, sans personnage actif a la migration, reste sous « _ »
+-- et vaut pour tous : on ne perd pas un nom deja connu.
+local function Sait(champ, cle)
+    for _, id in ipairs({ PersoActif(), "_" }) do
+        local s = Savoir(id)
+        if s and type(s[champ]) == "table" and s[champ][cle] == true then return true end
+    end
+    return false
+end
+
+local function SavoirPourEcrire()
+    local c = EnsureCharDB()
+    c.parPerso = type(c.parPerso) == "table" and c.parPerso or {}
+    local id = PersoActif()
+    local p = c.parPerso[id]
+    if type(p) ~= "table" then p = {} c.parPerso[id] = p end
+    p.learnedZones = p.learnedZones or {}
+    p.learnedSubZones = p.learnedSubZones or {}
+    return p
+end
+
+-- Ce qu'Omega savait par personnage WoW va au personnage joue, une fois.
+function ZG:MigrerSavoir()
+    local c = LCM_CrossingsChar
+    if type(c) ~= "table" then return end
+    local zones, lieux = c.learnedZones, c.learnedSubZones
+    if not ((type(zones) == "table" and next(zones)) or (type(lieux) == "table" and next(lieux))) then
+        c.learnedZones, c.learnedSubZones = nil, nil
+        return
+    end
+    local p = SavoirPourEcrire()
+    for k, v in pairs(type(zones) == "table" and zones or {}) do if v then p.learnedZones[k] = true end end
+    for k, v in pairs(type(lieux) == "table" and lieux or {}) do if v then p.learnedSubZones[k] = true end end
+    c.learnedZones, c.learnedSubZones = nil, nil
+end
+
 -- Connaissance du NOM DE LA ZONE, indépendante de celle de la Sous-zone.
 function ZG:HasLearnedZoneName(zoneId)
-    return zoneId ~= nil and EnsureCharDB().learnedZones[zoneId] == true
+    if zoneId == nil then return false end
+    if MJVoitTout() then return true end
+    return Sait("learnedZones", zoneId)
 end
 
 function ZG:MarkLearnedZoneName(zoneId)
     if not zoneId or zoneId == "" then return end
-    EnsureCharDB().learnedZones[zoneId] = true
+    SavoirPourEcrire().learnedZones[zoneId] = true
 end
 
 -- Connaissance du NOM DE LA SOUS-ZONE, indépendante de celle de la Zone.
 function ZG:HasLearnedSubZoneName(subZoneId)
-    return subZoneId ~= nil and EnsureCharDB().learnedSubZones[subZoneId] == true
+    if subZoneId == nil then return false end
+    if MJVoitTout() then return true end
+    return Sait("learnedSubZones", subZoneId)
 end
 
 function ZG:MarkLearnedSubZoneName(subZoneId)
     if not subZoneId or subZoneId == "" then return end
-    EnsureCharDB().learnedSubZones[subZoneId] = true
+    SavoirPourEcrire().learnedSubZones[subZoneId] = true
 end
 
 -- Un lieu fusionné garde ses anciens ids : un nom appris sous l'un d'eux reste connu.
@@ -2534,13 +2600,13 @@ function ZG:RevokeZoneGrant(zoneId, targetName)
 end
 
 function ZG:ForgetLearnedZoneName(zoneId)
-    if not zoneId then return end
-    EnsureCharDB().learnedZones[zoneId] = nil
+    local s = Savoir()
+    if zoneId and s and s.learnedZones then s.learnedZones[zoneId] = nil end
 end
 
 function ZG:ForgetLearnedSubZoneName(subZoneId)
-    if not subZoneId then return end
-    EnsureCharDB().learnedSubZones[subZoneId] = nil
+    local s = Savoir()
+    if subZoneId and s and s.learnedSubZones then s.learnedSubZones[subZoneId] = nil end
 end
 
 local function HandleGrant(rest)
@@ -2726,5 +2792,6 @@ LCM.WhenReady(function()
     MigrateCircles()
     MigrateBannerPlacement()
     MigratePlaces()
+    ZG:MigrerSavoir()
     ZG:Enable()
 end)
