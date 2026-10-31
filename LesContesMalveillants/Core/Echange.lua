@@ -134,16 +134,16 @@ Echange.DefinitionObjet = DefinitionObjet
 Echange.ImporterObjetPartage = ImporterObjetPartage
 
 function Echange.DefinitionPartagee(ref)
-    if tostring(ref or ""):match("^livres/") and LCM.Livres then
-        return LCM.Livres.Definition(ref)
+    if LCM.Lisibles and LCM.Lisibles.Registre(ref) then
+        return LCM.Lisibles.Definition(ref)
     end
     return DefinitionObjet(ref)
 end
 
 function Echange.ImporterPartage(pose)
     if type(pose) ~= "table" then return false end
-    if tostring(pose.ref or ""):match("^livres/") and LCM.Livres then
-        return LCM.Livres.Importer(pose.ref, pose.definition)
+    if LCM.Lisibles and LCM.Lisibles.Registre(pose.ref) then
+        return LCM.Lisibles.Importer(pose.ref, pose.definition)
     end
     return ImporterObjetPartage(pose)
 end

@@ -259,7 +259,7 @@ local function PlierRessources(liste)
             entree = ressource.entree, min = ressource.min, max = ressource.max,
             chance = ressource.chance, aleatoire = ressource.aleatoire,
             regeneration = ressource.regeneration, minutes = ressource.minutes,
-            definition = (LCM.Livres and LCM.Livres.Definition(ressource.entree))
+            definition = (LCM.Lisibles and LCM.Lisibles.Definition(ressource.entree))
                 or (LCM.Echange and LCM.Echange.DefinitionObjet(ressource.entree)) or nil,
         }
     end
@@ -271,8 +271,8 @@ local function LireRessources(liste)
     for _, r in ipairs(liste) do
         local entree = Texte(r.entree)
         if type(r.definition) == "table" then
-            if entree:match("^livres/") and LCM.Livres then
-                LCM.Livres.Importer(entree, r.definition)
+            if LCM.Lisibles and LCM.Lisibles.Registre(entree) then
+                LCM.Lisibles.Importer(entree, r.definition)
             elseif LCM.Echange and LCM.Echange.ImporterObjetPartage then
                 LCM.Echange.ImporterObjetPartage({ ref = entree, definition = r.definition })
             end

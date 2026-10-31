@@ -423,6 +423,25 @@ C.Categorie({
     },
 })
 
+-- Les cartes (31 octobre 2026) : un objet qui devoile une region de Crossings,
+-- certains de ses lieux et des reperes (Core/Cartes.lua). Reservees au MJ
+-- dans la base ; un joueur ne voit ici que celles qu'il a trouvees. La carte
+-- du compendium n'en dit pas le contenu : c'est en la LISANT qu'on l'apprend.
+C.Categorie({
+    id = "cartes", label = "Cartes", type = "generic", registre = "Cartes",
+    famille = "cartes", editeur = "CartesUI", dossiers = { "Général" },
+    lire = {
+        reprend = function(carte)
+            local reprise = carte.reprend and LCM.Cartes.Get(carte.reprend)
+            return reprise and reprise.label or nil
+        end,
+    },
+    champs = {
+        Icone(), Description(true),
+        { cle = "reprend", label = "Reprend la carte", type = "texte", emplacement = "meta" },
+    },
+})
+
 -- Les outils ont leur propre liste de types et leur propre jeu de forge.
 -- Chaque point attribué à un métier apporte +1 à son jet lorsqu'il est porté.
 local bonusMetiers = {}

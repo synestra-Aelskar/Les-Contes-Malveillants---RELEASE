@@ -2,9 +2,9 @@
 ## Title: Les Contes Malveillants
 ## Notes: Systeme de jeu des Contes Malveillants
 ## Author: Syn'estra
-## Version: 0.2.9
-## SavedVariables: LCM_DB, LCM_Journal
-## SavedVariablesPerCharacter: LCM_CharDB
+## Version: 0.3.0
+## SavedVariables: LCM_DB, LCM_Journal, LCM_Crossings
+## SavedVariablesPerCharacter: LCM_CharDB, LCM_CrossingsChar
 
 Core\Init.lua
 Core\Log.lua
@@ -23,6 +23,7 @@ Core\Traits.lua
 Core\Catalogues.lua
 Core\Objets.lua
 Core\Livres.lua
+Core\Cartes.lua
 Core\Etats.lua
 Core\EtatsTemporaires.lua
 Core\Dot.lua
@@ -67,12 +68,12 @@ Core\Campement.lua
 Core\Lanternes.lua
 Core\Raccourcis.lua
 Core\PuitsTonnerre.lua
-Core\Lieux.lua
+Core\Crossings.lua
 Core\Recolte.lua
 Core\Marchands.lua
+Core\Affichages.lua
 Core\Coffres.lua
 Core\SacsAuSol.lua
-Core\Bannieres.lua
 Core\Defenses.lua
 Core\Expertises.lua
 Data\Equilibrage.lua
@@ -94,6 +95,8 @@ Data\Sacs.lua
 Data\Lanternes.lua
 Data\OutilsCeinture.lua
 Data\Inventaire.lua
+Data\CrossingsMusiques.lua
+Data\Affichages.lua
 # Contenu genere par loutil dexport (voir Data\Genere)
 Data\Genere\Races.lua
 Data\Genere\Portraits.lua
@@ -121,6 +124,7 @@ UI\Auras.lua
 UI\Inventaires.lua
 UI\LivresAnimation.lua
 UI\Livres.lua
+UI\Cartes.lua
 UI\Metiers.lua
 UI\Grimoires.lua
 UI\SortEditeur.lua
@@ -135,9 +139,13 @@ UI\Scanner.lua
 UI\Lanterne.lua
 UI\MesOutils.lua
 UI\PanneauRaccourcis.lua
-UI\Banniere.lua
+UI\Crossings\Kit.lua
+UI\Crossings\Banniere.lua
+UI\Crossings\Carte.lua
+UI\Crossings\Arcanum.lua
 UI\Recolte.lua
 UI\Marchand.lua
+UI\Affichage.lua
 UI\Coffre.lua
 UI\Compendium.lua
 UI\DeplacementForce.lua

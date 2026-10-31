@@ -37,13 +37,13 @@ function Coffres.Places(ref, quantite)
     return pile and math.ceil(quantite / pile) or 1
 end
 
-local ACCUEILLIS = { objets = true, livres = true, ressources = true, devises = true,
+local ACCUEILLIS = { objets = true, livres = true, cartes = true, ressources = true, devises = true,
                      sacs = true, accessoires_camping = true, lanternes = true, cristaux = true,
                      consommables = true }
 function Coffres.Accepte(ref)
     local famille, entree = tostring(ref or ""):match("^([%w_]+)/(.+)$")
     if not ACCUEILLIS[famille or ""] then
-        return false, "le coffre accepte des objets, des livres, des ressources, des consommables, des sacs, des lanternes, des cristaux ou des devises."
+        return false, "le coffre accepte des objets, des livres, des cartes, des ressources, des consommables, des sacs, des lanternes, des cristaux ou des devises."
     end
     if famille == "devises" and not (LCM.Bourse and LCM.Bourse.EstMateriel(entree)) then
         return false, "cette monnaie ne se transporte pas : elle reste dans la bourse."
@@ -70,7 +70,7 @@ function Coffres.Paquet(definition, points)
     local objets = {}
     for _, o in ipairs(c.objets or {}) do
         objets[#objets + 1] = { e = o.entree, q = o.quantite,
-            d = (LCM.Livres and LCM.Livres.Definition(o.entree))
+            d = (LCM.Lisibles and LCM.Lisibles.Definition(o.entree))
                 or (LCM.Echange and LCM.Echange.DefinitionObjet(o.entree)) or nil }
     end
     local outils = {}
@@ -91,8 +91,8 @@ function Coffres.Lire(paquet)
     if id == "" then return nil end
     local function importer(ref, definition)
         if type(definition) == "table" then
-            if tostring(ref):match("^livres/") and LCM.Livres then
-                LCM.Livres.Importer(ref, definition)
+            if LCM.Lisibles and LCM.Lisibles.Registre(ref) then
+                LCM.Lisibles.Importer(ref, definition)
             elseif LCM.Echange and LCM.Echange.ImporterObjetPartage then
                 LCM.Echange.ImporterObjetPartage({ ref = ref, definition = definition })
             end

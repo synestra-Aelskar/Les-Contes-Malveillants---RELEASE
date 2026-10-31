@@ -79,6 +79,11 @@ Menu.STRUCTURE = {
                 { id = "coffres", label = "Coffres", icone = RADIAL .. "fenetres-coffres.tga", mjSeulement = true },
                 { id = "vendeur", label = "Vendeurs", icone = RADIAL .. "fenetres-vendeurs.tga", mjSeulement = true },
                 { id = "ressources", label = "Ressources", icone = RADIAL .. "fenetres-recoltes.tga", mjSeulement = true },
+                -- Ajouts du 31 octobre 2026, demandés par le MJ. Ils n'ouvrent
+                -- encore rien : un module les habillera par Menu.Lier. Pas
+                -- encore d'icône noire et dorée : celles du jeu en attendant.
+                { id = "cartes", label = "Cartes", icone = ICONE .. "inv_misc_map_01", mjSeulement = true },
+                { id = "affichage", label = "Affichage", icone = ICONE .. "inv_misc_spyglass_03", mjSeulement = true },
             } },
           { id = "regles", label = "Règles", icone = RADIAL .. "fenetres-regles.tga" },
       } },

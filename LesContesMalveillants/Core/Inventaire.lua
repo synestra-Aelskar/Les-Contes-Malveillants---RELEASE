@@ -589,8 +589,10 @@ end
 --
 -- Lanternes et cristaux (23 octobre 2026) : ils n'existent pour le joueur que
 -- s'il les porte (Core/Lanternes.lua). Il faut donc pouvoir les ranger.
-local RANGEABLES = { objets = true, livres = true, ressources = true, sacs = true, accessoires_camping = true,
-                     lanternes = true, cristaux = true, consommables = true }
+-- Les cartes (31 octobre 2026) : un objet qu'on trouve et qu'on lit, comme
+-- un livre. Oubliees ici, elles ne se rangeaient nulle part.
+local RANGEABLES = { objets = true, livres = true, cartes = true, ressources = true, sacs = true,
+                     accessoires_camping = true, lanternes = true, cristaux = true, consommables = true }
 
 function Inventaire.Accepte(emplacement, index, ref)
     local famille, entree = tostring(ref or ""):match("^([%w_]+)/(.+)$")
@@ -617,7 +619,7 @@ function Inventaire.Accepte(emplacement, index, ref)
             return false, "cette monnaie ne se transporte pas : elle reste dans la bourse."
         end
     elseif not RANGEABLES[famille] then
-        return false, "un sac accepte des objets, des livres, des ressources, des consommables, des accessoires de camping, des lanternes, des cristaux ou des sacoches."
+        return false, "un sac accepte des objets, des livres, des cartes, des ressources, des consommables, des accessoires de camping, des lanternes, des cristaux ou des sacoches."
     end
     -- Un contenant dans un contenant : seul un SAC en accepte, et il faut que
     -- le nouveau venu tienne — il occupe sa case plus toutes les siennes.

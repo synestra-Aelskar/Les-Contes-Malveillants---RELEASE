@@ -7,8 +7,8 @@ UI.Coffre = Ecran
 
 local function Importer(ref, definition)
     if type(definition) ~= "table" then return end
-    if tostring(ref or ""):match("^livres/") then
-        if LCM.Livres then LCM.Livres.Importer(ref, definition) end
+    if LCM.Lisibles and LCM.Lisibles.Registre(ref) then
+        LCM.Lisibles.Importer(ref, definition)
     elseif LCM.Echange and LCM.Echange.ImporterObjetPartage then
         LCM.Echange.ImporterObjetPartage({ ref = ref, definition = definition })
     end

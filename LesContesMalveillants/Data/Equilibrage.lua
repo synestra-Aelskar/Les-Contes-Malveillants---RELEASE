@@ -292,6 +292,16 @@ E.marchands = {
     rayon = 4,
 }
 
+-- ===== Panneaux d'affichage (31 octobre 2026) =============================
+-- A quelle distance d'un panneau pose on peut le lire, et ce qu'il porte au
+-- plus. Ajout de l'addon, absent du template.
+E.affichages = {
+    rayon = 4,
+    maxAffiches = 12,
+    titreMax = 80,
+    texteMax = 2000,
+}
+
 -- ===== Coffres ============================================================
 -- Chaque modèle de coffre peut définir son propre rayon d'interaction. Ces
 -- valeurs servent de défaut et de borne dans le constructeur MJ.

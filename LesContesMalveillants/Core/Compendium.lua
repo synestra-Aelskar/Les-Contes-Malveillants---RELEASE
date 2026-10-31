@@ -288,7 +288,7 @@ end
 
 -- « famille/identifiant » -> l'element et sa categorie.
 local FAMILLES = {
-    objets = "Objets", livres = "Livres", traits = "Traits", races = "Races", etats = "Etats",
+    objets = "Objets", livres = "Livres", cartes = "Cartes", traits = "Traits", races = "Races", etats = "Etats",
     apprentissages = "Apprentissages", sacs = "Sacs", ressources = "Ressources",
     devises = "Devises", informations = "Informations", listes = "Listes",
     connaissances = "Connaissances", resolutions = "Resolutions",

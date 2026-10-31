@@ -220,6 +220,8 @@ end
 local function LireOuVoir(ref, ancre)
     if tostring(ref or ""):match("^livres/") and UI.Livres then
         UI.Livres.Ouvrir(ref)
+    elseif tostring(ref or ""):match("^cartes/") and UI.Cartes then
+        UI.Cartes.Ouvrir(ref)
     else
         Voir(ref, ancre)
     end
@@ -531,6 +533,8 @@ local function MenuObjet(ancre, onglet, index, place, extras)
     local options = { { label = "Voir", action = function() Voir(objet.ref, ancre) end } }
     if tostring(objet.ref or ""):match("^livres/") then
         options[#options + 1] = { label = "Lire", action = function() UI.Livres.Ouvrir(objet.ref) end }
+    elseif tostring(objet.ref or ""):match("^cartes/") and UI.Cartes then
+        options[#options + 1] = { label = "Lire la carte", action = function() UI.Cartes.Ouvrir(objet.ref) end }
     end
     -- Un consommable se consomme, ou s'administre a un allie qui doit
     -- accepter (UI/Consommation.lua, 23 octobre 2026).

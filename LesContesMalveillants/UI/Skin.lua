@@ -457,6 +457,21 @@ local WIDGETS = "Interface\\AddOns\\LesContesMalveillants\\ressources\\aelrazkah
 -- Un morceau de l'atlas, en pixels de l'atlas.
 function UI.AelRef(parent, x, y, w, h, layer)
     local t = parent:CreateTexture(nil, layer or "ARTWORK")
+    -- Ornements partages : textures HD avec alpha, hors du fond de l'atlas.
+    local motif, miroir
+    if y == 119 and h == 19 and (x == 329 or x == 635) then
+        motif, miroir = "ornement-hd", x == 635
+    elseif y == 100 and w == 20 and h == 46 and (x == 262 or x == 742) then
+        motif = "pendentif-hd"
+    elseif x == 347 and y == 344 and w == 45 and h == 17 then
+        motif = "ornement-hd"
+    end
+    if motif then
+        t:SetTexture("Interface\\AddOns\\LesContesMalveillants\\ressources\\aelrazkah\\" .. motif .. ".tga")
+        t:SetTexCoord(miroir and 1 or 0, miroir and 0 or 1, 0, 1)
+        t:SetBlendMode("BLEND")
+        return t
+    end
     t:SetTexture(WIDGETS)
     t:SetTexCoord(x / 1024, (x + w) / 1024, y / 2048, (y + h) / 2048)
     return t
