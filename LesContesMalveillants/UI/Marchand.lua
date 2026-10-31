@@ -12,6 +12,9 @@ local M = LCM.Marchands
 local Ecran = { lignes = {} }
 UI.Marchand = Ecran
 
+local MOI = "__moi"
+local function Court(nom) return (tostring(nom or ""):match("^[^-]+")) or tostring(nom or "") end
+
 -- Deux lignes de texte : le nom, et dessous le prix, qui peut proposer
 -- plusieurs facons de payer (« 600 Essence  ou  400 Essence + 3 Gaufre »).
 local LIGNE = 40
@@ -37,6 +40,34 @@ local function Fenetre()
     f.acheter:SetPoint("TOPLEFT", f.contenu, "TOPLEFT", 0, 0)
     f.revendre = UI.Bouton(f.contenu, "Revendre", 110, 24, function() f.mode = "revendre" Ecran.Afficher() end)
     f.revendre:SetPoint("LEFT", f.acheter, "RIGHT", 6, 0)
+    -- « Acheter pour : » (31 octobre 2026) : moi, ou un joueur a cote. Il
+    -- n'apparait que s'il y a quelqu'un a portee ; l'etal le cherche tant
+    -- qu'il est ouvert (M.ScannerProches).
+    f.pourLabel = UI.Texte(f.contenu, "Acheter pour :", UI.C.discret, "GameFontNormalSmall")
+    f.pour = UI.Deroulant(f.contenu, 150, 24, function()
+        local options = { { id = MOI, label = "Moi" } }
+        for _, p in ipairs(M.ListeProches()) do
+            options[#options + 1] = { id = p.nom, label = string.format("%s  (%.0f m)",
+                p.perso or Court(p.nom), p.distance or 0) }
+        end
+        return options
+    end, function(id)
+        Ecran.pour = id ~= MOI and id or nil
+        Ecran.Afficher()
+    end)
+    f.pour:SetPoint("TOPRIGHT", f.contenu, "TOPRIGHT", -10, 0)
+    f.pourLabel:SetPoint("RIGHT", f.pour, "LEFT", -6, 0)
+    f.attente = 0
+    f:SetScript("OnUpdate", function(self, dt)
+        self.attente = self.attente + (dt or 0)
+        if self.attente < 3 then return end
+        self.attente = 0
+        if self.mode ~= "revendre" then M.ScannerProches() end
+    end)
+    f:HookScript("OnHide", function()
+        Ecran.pour = nil
+        for nom in pairs(M.proches) do M.proches[nom] = nil end
+    end)
     f.zone = UI.Defilement(f.contenu)
     f.zone:SetPoint("TOPLEFT", f.contenu, "TOPLEFT", 0, -32)
     f.zone:SetPoint("BOTTOMRIGHT", f.contenu, "BOTTOMRIGHT", -10, 0)
@@ -75,7 +106,7 @@ local function Ligne(index)
         local function Faire(choix)
             local ok, raison
             if revendre then ok, raison = M.Revendre(Ecran.defId, ligne.offreId, choix)
-            else ok, raison = M.Acheter(Ecran.defId, ligne.offreId, choix) end
+            else ok, raison = M.Acheter(Ecran.defId, ligne.offreId, choix, Ecran.pour) end
             if not ok and raison then LCM.Alerte(tostring(raison)) end
             Ecran.Afficher()
         end
@@ -107,6 +138,14 @@ function Ecran.Afficher()
     f:Titre(definition.label)
     f.acheter:Selectionner(f.mode ~= "revendre")
     f.revendre:Selectionner(f.mode == "revendre")
+    -- Le destinataire choisi est-il toujours a portee ?
+    local proches = M.ListeProches()
+    if Ecran.pour and not M.proches[Ecran.pour] then Ecran.pour = nil end
+    local montrer = f.mode ~= "revendre" and (#proches > 0 or Ecran.pour ~= nil)
+    f.pour:SetShown(montrer)
+    f.pourLabel:SetShown(montrer)
+    local choisi = Ecran.pour and M.proches[Ecran.pour]
+    f.pour:Definir(Ecran.pour or MOI, choisi and (choisi.perso or Court(choisi.nom)) or "Moi")
     local liste = f.mode == "revendre" and definition.rachats or definition.offres
     local h = 0
     for index, offre in ipairs(liste) do
@@ -125,7 +164,7 @@ function Ecran.Afficher()
         else
             local reste = M.Disponible(definition.id, offre)
             l.stock:SetText(reste and string.format("%d / %d", reste, offre.limite) or "")
-            l.action.label:SetText("Acheter")
+            l.action.label:SetText(Ecran.pour and "Offrir" or "Acheter")
             l.action:SetEnabled(reste == nil or reste > 0)
         end
         l:ClearAllPoints()
@@ -146,7 +185,39 @@ function Ecran.Ouvrir(defId)
     local f = Fenetre()
     f.mode = "acheter"
     f:Show()
+    M.ScannerProches()
     Ecran.Afficher()
+end
+
+-- Un joueur a cote repond au scan : le choix « Acheter pour » suit.
+M.onProches = function() Ecran.Afficher() end
+
+-- ===== Chez le destinataire ================================================
+-- Quelqu'un veut m'acheter quelque chose : j'accepte (c'est range dans mon
+-- sac, il paie) ou je refuse (personne ne paie rien). Une seule demande a la
+-- fois : une nouvelle remplace l'ancienne, refusee.
+M.onCadeau = function(demande)
+    if not Ecran.cadeau then
+        local d = UI.Confirmer(UIParent, "", "Accepter")
+        d.non.label:SetText("Refuser")
+        d.non:SetScript("OnClick", function()
+            local en = d.demande
+            d.demande, d.action = nil, nil
+            d:Hide()
+            if en then en.refuser() end
+        end)
+        d.oui.label:SetTextColor(UI.C.accent[1], UI.C.accent[2], UI.C.accent[3])
+        Ecran.cadeau = d
+    end
+    local d = Ecran.cadeau
+    if d.demande and d:IsShown() then d.demande.refuser() end
+    d.demande = demande
+    d:Demander(string.format("%s veut vous offrir %s%s%s.\nAccepter ?", Court(demande.de), demande.label,
+        demande.quantite > 1 and (" x" .. demande.quantite) or "",
+        demande.vendeur ~= "" and (" (" .. demande.vendeur .. ")") or ""), function()
+        d.demande = nil
+        demande.accepter()
+    end)
 end
 
 -- Le bouton suit le vendeur devant lequel on se tient ; s'en eloigner referme

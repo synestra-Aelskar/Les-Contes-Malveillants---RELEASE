@@ -290,6 +290,10 @@ E.recolte = {
 -- pouvoir se tenir devant l'etal sans etre pile dessus (13 octobre 2026).
 E.marchands = {
     rayon = 4,
+    -- « Acheter pour… » (31 octobre 2026) : a quelle distance de l'acheteur un
+    -- joueur peut recevoir ce qu'on lui offre. Ajout de l'addon, absent du
+    -- template.
+    rayonOffrir = 5,
 }
 
 -- ===== Panneaux d'affichage (31 octobre 2026) =============================

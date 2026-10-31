@@ -48,6 +48,11 @@ Marchands.SUJETS = {
     stock      = "mar=",  -- MJ -> groupe   : ce qu'il reste d'une offre
     signaler   = "mar#",  -- joueur -> MJ   : j'ai achete ceci en ton absence
     accuse     = "mar*",  -- MJ -> joueur   : c'est note
+    -- Acheter pour un autre (31 octobre 2026).
+    proches    = "mar@",  -- acheteur -> tous : qui est a cote de moi ?
+    present    = "mar$",  -- joueur -> acheteur : moi, a tant de yards
+    offrir     = "mar>",  -- acheteur -> destinataire : je t'achete ceci
+    accepter   = "mar<",  -- destinataire -> acheteur : range (ou pourquoi non)
 }
 local S = Marchands.SUJETS
 
@@ -374,9 +379,147 @@ local function Livrer(definition, offre, facon)
     return true
 end
 
+-- ===== Acheter pour quelqu'un d'autre ======================================
+-- (le MJ, 31 octobre 2026) Etal ouvert, l'addon cherche les joueurs a cote
+-- (Equilibrage.marchands.rayonOffrir) ; « Acheter pour… » paie avec MES sous
+-- et range l'objet dans SON sac. On ne paie qu'une fois qu'il a accepte et
+-- range : un refus, un sac plein, une absence de reponse ne coutent rien, et
+-- l'unite reservee repart au vendeur comme un achat qui echoue.
+--
+-- Les positions ne viennent pas de l'API du jeu, qui ne donne pas celle d'un
+-- joueur hors groupe, ni rien sur une carte d'instance : chacun mesure SA
+-- distance a la position que l'acheteur annonce (DeplacementForce, la meme
+-- source que lui) et repond s'il est assez pres. Il faut l'addon pour
+-- recevoir l'objet, de toute facon.
+
+local DELAI_CADEAU = 30
+-- « Nytherah », sans le royaume : ce qu'on lit dans un message.
+local function Court(nom) return (tostring(nom or ""):match("^[^-]+")) or tostring(nom or "") end
+Marchands.proches = {}      -- [nom] = { nom, perso, distance, quand }
+Marchands.cadeaux = {}      -- demandes envoyees : [id] = { fin, facon, offre, pour }
+local compteurCadeau = 0
+
+function Marchands.RayonOffrir() return tonumber(Eq().rayonOffrir) or 5 end
+
+-- Demande qui est a portee. Les reponses arrivent dans Marchands.proches.
+function Marchands.ScannerProches()
+    local D = LCM.DeplacementForce
+    local x, y, z, source
+    if D then x, y, z, source = D.Position() end
+    if not x then return false, "position inconnue." end
+    local canal = LCM.Reseau.Diffusable()
+    if not canal then return false, "personne à joindre." end
+    local maintenant = (GetTime and GetTime()) or 0
+    for nom, p in pairs(Marchands.proches) do
+        if maintenant - (p.quand or 0) > 6 then Marchands.proches[nom] = nil end
+    end
+    return LCM.Reseau.Envoyer(S.proches, { x = x, y = y, z = z, s = source,
+        c = LCM.Recolte.Carte(), r = Marchands.RayonOffrir() }, canal)
+end
+
+-- Les joueurs a portee, du plus proche au plus loin.
+function Marchands.ListeProches()
+    local out = {}
+    for _, p in pairs(Marchands.proches) do out[#out + 1] = p end
+    table.sort(out, function(a, b) return (a.distance or 0) < (b.distance or 0) end)
+    return out
+end
+
+-- Repondre a un scan : suis-je a portee de celui qui demande ?
+function Marchands.RepondreProches(expediteur, d)
+    local D = LCM.DeplacementForce
+    if not (D and tonumber(d.x) and tonumber(d.y)) then return false end
+    if d.c and LCM.Recolte.Carte() and tonumber(d.c) ~= tonumber(LCM.Recolte.Carte()) then return false end
+    local x, y, z = D.Position(d.s ~= "" and d.s or nil)
+    if not x then return false end
+    local distance = math.sqrt((x - tonumber(d.x)) ^ 2 + (y - tonumber(d.y)) ^ 2
+        + ((tonumber(z) and tonumber(d.z)) and (tonumber(z) - tonumber(d.z)) ^ 2 or 0))
+    if distance > (tonumber(d.r) or Marchands.RayonOffrir()) then return false end
+    local perso = LCM.Entities.Self()
+    LCM.Reseau.Envoyer(S.present, { d = math.floor(distance * 10 + 0.5) / 10,
+        p = perso and perso.name or nil }, "WHISPER", expediteur)
+    return true
+end
+
+-- Livrer l'unite : dans mon sac, ou dans celui de `pour`. `fin(ok, raison)`
+-- est appele quand c'est tranche — tout de suite pour moi, a la reponse de
+-- l'autre pour lui. Rend vrai si c'est fait OU en cours.
+local function Fournir(definition, offre, facon, pour, fin)
+    if not pour or pour == Moi() then
+        local ok, raison = Livrer(definition, offre, facon)
+        fin(ok, raison)
+        return ok, raison
+    end
+    local entity = LCM.Entities.Self()
+    local peut, manque = LCM.Prix.Peut(entity, facon)
+    if not peut then fin(false, manque) return false, manque end
+    compteurCadeau = (compteurCadeau % 9999) + 1
+    local id = tostring(compteurCadeau)
+    Marchands.cadeaux[id] = { fin = fin, facon = facon, offre = offre, pour = pour }
+    LCM.Reseau.Envoyer(S.offrir, { i = id, e = offre.entree, q = offre.quantite or 1,
+        l = Marchands.Libelle(offre), m = definition.label,
+        x = LCM.Echange and LCM.Echange.DefinitionPartagee(offre.entree) or nil }, "WHISPER", pour)
+    LCM.Info(string.format("Offre envoyée à %s : %s.", Court(pour), Marchands.Libelle(offre)))
+    LCM.Recolte.PlusTard(DELAI_CADEAU, function()
+        local c = Marchands.cadeaux[id]
+        if not c then return end
+        Marchands.cadeaux[id] = nil
+        c.fin(false, string.format("%s n'a pas répondu : rien n'a été payé.", Court(pour)))
+    end)
+    return true
+end
+
+-- La reponse du destinataire : il a range, on paie ; sinon, rien n'est du.
+function Marchands.ReponseCadeau(expediteur, d)
+    local id = Texte(d.i)
+    local c = Marchands.cadeaux[id]
+    if not c or c.pour ~= expediteur then return false end
+    Marchands.cadeaux[id] = nil
+    if tostring(d.ok or "") ~= "1" then
+        c.fin(false, string.format("%s : %s", Court(expediteur),
+            Texte(d.n) ~= "" and Texte(d.n) or "refusé."))
+        return true
+    end
+    local entity = LCM.Entities.Self()
+    LCM.Prix.Payer(entity, c.facon)
+    if LCM.Entities.Changed then LCM.Entities.Changed(entity) end
+    LCM.Ok(string.format("Offert à %s : %s x%d.", Court(expediteur),
+        Marchands.Libelle(c.offre), c.offre.quantite or 1))
+    c.fin(true)
+    return true
+end
+
+-- Chez le destinataire : `repondre(ok, raison)`. L'ecran (UI/Marchand.lua)
+-- pose la question ; sans ecran, on refuse plutot que de ranger en douce.
+function Marchands.RecevoirCadeau(expediteur, d)
+    local ref, q = Texte(d.e), math.max(1, math.floor(tonumber(d.q) or 1))
+    local function Repondre(ok, raison)
+        LCM.Reseau.Envoyer(S.accepter, { i = d.i, ok = ok and 1 or nil, n = raison }, "WHISPER", expediteur)
+    end
+    local function Accepter()
+        if type(d.x) == "table" and LCM.Echange and LCM.Echange.ImporterPartage then
+            LCM.Echange.ImporterPartage({ ref = ref, definition = d.x })
+        end
+        local entity = LCM.Entities.Self()
+        if not entity then Repondre(false, "aucun personnage.") return false end
+        local ok, raison = LCM.Inventaire.Deposer(entity, ref, q)
+        if not ok then Repondre(false, raison or "impossible de ranger.") return false end
+        if LCM.Entities.Changed then LCM.Entities.Changed(entity) end
+        LCM.Ok(string.format("%s vous offre : %s x%d.", Court(expediteur), Texte(d.l), q))
+        Repondre(true)
+        return true
+    end
+    local demande = { de = expediteur, label = Texte(d.l), quantite = q, vendeur = Texte(d.m),
+        accepter = Accepter, refuser = function() Repondre(false, "refusé.") end }
+    if Marchands.onCadeau then LCM.Proteger("cadeau", Marchands.onCadeau, demande)
+    else demande.refuser() end
+    return demande
+end
+
 -- Rend vrai quand l'achat est fait (ou demande au MJ). `choix` : le rang de
 -- la facon de payer, quand l'offre en propose plusieurs (Core/Prix.lua).
-function Marchands.Acheter(defId, offreId, choix)
+-- `pour` : le joueur a qui on l'offre (« Acheter pour… »), nil pour soi.
+function Marchands.Acheter(defId, offreId, choix, pour)
     local offre, definition = Marchands.Offre(defId, offreId)
     if not offre then return false, "offre inconnue." end
     if not Devant(defId) then
@@ -384,7 +527,7 @@ function Marchands.Acheter(defId, offreId, choix)
         local p = Marchands.ProcheHorizontal()
         if p and p.def == defId and D and not D.Position("gps", 1)
             and D.DemanderGPS and D.DemanderGPS(true) then
-            Marchands.attenteGPS = { action = "acheter", defId = defId, offreId = offreId, choix = choix }
+            Marchands.attenteGPS = { action = "acheter", defId = defId, offreId = offreId, choix = choix, pour = pour }
             return true
         end
         return false, "tu n'es pas devant ce marchand, y compris en hauteur."
@@ -406,38 +549,48 @@ function Marchands.Acheter(defId, offreId, choix)
     -- L'arbitre est celui du vendeur DEVANT lequel on se tient.
     local auteur = Marchands.Auteur(Marchands.Proche()) or definition.auteur
 
+    -- Ce qui suit un achat qui echoue plus tard (une offre refusee) : le dire.
+    local function Signaler(ok, raison)
+        if not ok and raison and pour then LCM.Alerte(tostring(raison)) end
+        Prevenir()
+    end
+
     -- Le MJ lui-meme : son propre arbitre.
     if auteur == Moi() then
-        if not reste then return Livrer(definition, offre, facon) end
+        if not reste then return Fournir(definition, offre, facon, pour, Signaler) end
         if not Marchands.Arbitre then return false, "aucun arbitre." end
         local ok, raison = Marchands.Arbitre(defId, offreId, Moi())
         if not ok then return false, raison end
-        local livre, refus = Livrer(definition, offre, facon)
-        if livre then Marchands.Confirmer(defId, offreId, Moi())
-        else Marchands.Restituer(defId, offreId, Moi()) end
-        return livre, refus
+        return Fournir(definition, offre, facon, pour, function(livre, refus)
+            if livre then Marchands.Confirmer(defId, offreId, Moi())
+            else Marchands.Restituer(defId, offreId, Moi()) end
+            Signaler(livre, refus)
+        end)
     end
 
     -- Sans stock a partager, rien a arbitrer : on achete.
-    if not reste then return Livrer(definition, offre, facon) end
+    if not reste then return Fournir(definition, offre, facon, pour, Signaler) end
 
     if LCM.Recolte.EnLigne(auteur) then
         Marchands.enAttente[cle] = maintenant
         Marchands.choix[cle] = facon
         Marchands.arbitres[cle] = auteur
+        Marchands.pour = Marchands.pour or {}
+        Marchands.pour[cle] = pour
         LCM.Reseau.Envoyer(S.acheter, { v = defId, o = offreId }, "WHISPER", auteur)
         return true
     end
 
     -- MJ absent : on achete, et on le lui dira.
-    local ok, raison = Livrer(definition, offre, facon)
-    if not ok then return false, raison end
-    local a = Marchands.attente[cle] or { a = auteur, v = defId, o = offreId, n = 0 }
-    a.n = a.n + 1
-    Marchands.attente[cle] = a
-    Prevenir()
-    LCM.Info("Le marchand en sera averti au retour du MJ.")
-    return true
+    return Fournir(definition, offre, facon, pour, function(ok, raison)
+        if ok then
+            local a = Marchands.attente[cle] or { a = auteur, v = defId, o = offreId, n = 0 }
+            a.n = a.n + 1
+            Marchands.attente[cle] = a
+            LCM.Info("Le marchand en sera averti au retour du MJ.")
+        end
+        Signaler(ok, raison)
+    end)
 end
 
 -- Revendre : le vendeur reprend un objet du sac et paie, de la facon que le
@@ -485,7 +638,7 @@ function Marchands.ReponseGPS()
     if attente.action == "revendre" then
         ok, raison = Marchands.Revendre(attente.defId, attente.offreId, attente.choix)
     else
-        ok, raison = Marchands.Acheter(attente.defId, attente.offreId, attente.choix)
+        ok, raison = Marchands.Acheter(attente.defId, attente.offreId, attente.choix, attente.pour)
     end
     if not ok and raison then LCM.Alerte(raison) end
 end
@@ -551,6 +704,24 @@ LCM.WhenReady(function()
         Prevenir()
     end)
 
+    LCM.Reseau.Ecouter(S.proches, function(expediteur, donnees)
+        if expediteur == Moi() then return end
+        Marchands.RepondreProches(expediteur, donnees)
+    end)
+    LCM.Reseau.Ecouter(S.present, function(expediteur, donnees)
+        if expediteur == Moi() then return end
+        Marchands.proches[expediteur] = { nom = expediteur, perso = Texte(donnees.p) ~= "" and Texte(donnees.p) or nil,
+            distance = tonumber(donnees.d) or 0, quand = (GetTime and GetTime()) or 0 }
+        if Marchands.onProches then LCM.Proteger("proches", Marchands.onProches) end
+    end)
+    LCM.Reseau.Ecouter(S.offrir, function(expediteur, donnees)
+        if expediteur == Moi() then return end
+        Marchands.RecevoirCadeau(expediteur, donnees)
+    end)
+    LCM.Reseau.Ecouter(S.accepter, function(expediteur, donnees)
+        Marchands.ReponseCadeau(expediteur, donnees)
+    end)
+
     LCM.Reseau.Ecouter(S.reponse, function(expediteur, donnees)
         local v, o = Texte(donnees.v), Texte(donnees.o)
         local cle = Cle(v, o)
@@ -568,15 +739,19 @@ LCM.WhenReady(function()
             LCM.Alerte(Texte(donnees.n) ~= "" and Texte(donnees.n) or "il n'y en a plus.")
             return
         end
-        local ok, raison = false, "choisis comment payer."
-        if facon then ok, raison = Livrer(d, offre, facon) end
-        if ok then
-            LCM.Reseau.Envoyer(S.confirmer, { v = v, o = o }, "WHISPER", expediteur)
-        else
-            LCM.Reseau.Envoyer(S.rendre, { v = v, o = o }, "WHISPER", expediteur)
-            LCM.Alerte(tostring(raison))
+        local pour = Marchands.pour and Marchands.pour[cle]
+        if Marchands.pour then Marchands.pour[cle] = nil end
+        local function Fin(ok, raison)
+            if ok then
+                LCM.Reseau.Envoyer(S.confirmer, { v = v, o = o }, "WHISPER", expediteur)
+            else
+                LCM.Reseau.Envoyer(S.rendre, { v = v, o = o }, "WHISPER", expediteur)
+                LCM.Alerte(tostring(raison))
+            end
+            Prevenir()
         end
-        Prevenir()
+        if not facon then Fin(false, "choisis comment payer.") return end
+        Fournir(d, offre, facon, pour, Fin)
     end)
 
     LCM.Reseau.Ecouter(S.accuse, function(expediteur, donnees)
