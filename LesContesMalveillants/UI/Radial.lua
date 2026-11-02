@@ -184,11 +184,11 @@ Radial.STRUCTURE = {
     {
         id = "animation", label = "Animation", icone = ICONE .. "animation.tga", mjSeulement = true,
         entrees = {
-            -- « Résolution Test MJ » a quitté cette place le 2 octobre 2026.
-            -- Elle etait fidele au template et ne servait a rien : elle se
-            -- proposait l'epreuve a soi-meme, avec un paquet vide. Le vrai
-            -- emetteur d'une epreuve de MJ, c'est « Dégât MJ ».
-            { id = "degat_mj",           label = "Dégât MJ",           icone = ICONE .. "resolution_test_mj.tga" },
+            -- « Résolution Test MJ » a quitté cette place le 2 octobre 2026,
+            -- et « Dégât MJ » — l'epreuve du MJ — le 1er novembre : peu
+            -- pratique, peu utilisee. La reception joueur reste en place
+            -- (Data/Receptions.lua) : une epreuve deja partie doit encore
+            -- pouvoir se resoudre.
             { id = "buff_debuff_mj",     label = "Buff / Débuff MJ",   icone = ICONE .. "buff_debuff_mj.tga" },
             { id = "attaque_mj",         label = "Attaque MJ",         icone = ICONE .. "attaque_mj.tga" },
         },

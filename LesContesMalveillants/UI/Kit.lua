@@ -1026,6 +1026,98 @@ function UI.BandeauOnglets(parent, onglets, onChange)
     return bandeau
 end
 
+-- Navigation en colonne, par SECTIONS : un titre en capitales et son filet,
+-- puis des entrees habillees en onglets (le vocabulaire de la colonne des
+-- categories du Compendium). Une entree peut porter des `enfants`, poses en
+-- retrait juste dessous : ce sont des raccourcis vers une sous-partie de la
+-- page, pas une page de plus.
+--
+-- Nee pour le Panel MJ (2 novembre 2026) : huit onglets en une rangee de
+-- 700 px se lisaient mal et ne disaient pas ce qui sert EN seance de ce qui
+-- sert a la preparer. Une colonne range, et se lit de haut en bas.
+--
+-- sections = { { titre = "En séance", entrees = { { id, label, enfants } } } }
+-- `nav.boutons` : toutes les entrees, enfants compris (b.ongletId, b.parentId).
+-- `nav:Selectionner(id)` allume l'entree, et son parent si c'est un enfant.
+function UI.Navigation(parent, sections, onChange, options)
+    options = options or {}
+    local largeur = options.largeur or 150
+    local hauteur = options.hauteur or 26
+    local hauteurEnfant = options.hauteurEnfant or 20
+    local retrait = options.retrait or 14
+
+    local nav = CreateFrame("Frame", nil, parent)
+    nav:SetWidth(largeur)
+    nav.boutons, nav.titres = {}, {}
+
+    local function Entree(def, parentId)
+        local enfant = parentId ~= nil
+        local b = UI.Bouton(nav, def.label, largeur - (enfant and retrait or 0),
+            enfant and hauteurEnfant or hauteur, function(bouton)
+                nav:Selectionner(bouton.ongletId)
+                if onChange then onChange(bouton.ongletId, bouton.parentId) end
+            end)
+        b.ongletId, b.parentId = def.id, parentId
+        b.label:ClearAllPoints()
+        b.label:SetPoint("LEFT", b, "LEFT", enfant and 8 or 10, 1)
+        b.label:SetPoint("RIGHT", b, "RIGHT", -6, 1)
+        b.label:SetJustifyH("LEFT")
+        b.label:SetWordWrap(false)
+        if enfant then
+            -- Un enfant reste un bouton simple : l'habillage d'onglet sur
+            -- 20 px de haut faisait une pile de cadres dores illisible.
+            UI.Police(b.label, 11)
+        elseif UI.HabillerOnglet then
+            UI.HabillerOnglet(b)
+            UI.Police(b.label, 12)
+        end
+        nav.boutons[#nav.boutons + 1] = b
+        return b
+    end
+
+    local y = 0
+    for rang, section in ipairs(sections) do
+        if rang > 1 then y = y + 10 end
+        if section.titre then
+            local t = UI.Texte(nav, UI.Majuscules(section.titre), UI.C.libelle, "GameFontNormalSmall")
+            UI.Police(t, 10)
+            t:SetPoint("TOPLEFT", nav, "TOPLEFT", 2, -y)
+            local filet = UI.Filet(nav, true)
+            filet:SetPoint("TOPLEFT", nav, "TOPLEFT", 0, -(y + 15))
+            filet:SetPoint("TOPRIGHT", nav, "TOPRIGHT", 0, -(y + 15))
+            nav.titres[#nav.titres + 1] = t
+            y = y + 21
+        end
+        for _, def in ipairs(section.entrees or {}) do
+            local b = Entree(def)
+            b:SetPoint("TOPLEFT", nav, "TOPLEFT", 0, -y)
+            y = y + hauteur + 3
+            for _, sous in ipairs(def.enfants or {}) do
+                local e = Entree(sous, def.id)
+                e:SetPoint("TOPLEFT", nav, "TOPLEFT", retrait, -y)
+                y = y + hauteurEnfant + 2
+            end
+        end
+    end
+    nav:SetHeight(math.max(1, y))
+
+    function nav:Selectionner(id)
+        local parentId
+        for _, b in ipairs(self.boutons) do
+            if b.ongletId == id then parentId = b.parentId end
+        end
+        self.actif = id
+        for _, b in ipairs(self.boutons) do
+            b:Selectionner(b.ongletId == id or (parentId ~= nil and b.ongletId == parentId))
+        end
+    end
+
+    function nav:Bouton(id)
+        for _, b in ipairs(self.boutons) do if b.ongletId == id then return b end end
+    end
+    return nav
+end
+
 -- Barre de progression (jauge, partie du corps...).
 function UI.Barre(parent, couleur, largeur, hauteur)
     local b = CreateFrame("Frame", nil, parent)
@@ -3010,13 +3102,26 @@ function UI.Demande()
     -- `bouton` : le verbe du geste (« Scinder »), « Valider » sinon.
     -- `longueur` : 15 caracteres suffisent a un montant, pas a une phrase
     -- (les emotes de la lanterne). Remis a chaque demande.
-    function d:Demander(titre, valeur, onValider, bouton, longueur)
+    -- `ancre` : la fenetre d'ou part la demande. Elle se pose alors EN HAUT
+    -- de celle-la, legerement decalee : au centre de l'ecran et dans la meme
+    -- strate, elle disparaissait derriere une fenetre `SetToplevel` qui se
+    -- releve au moindre clic — on nommait un jeu de choix sans le voir
+    -- (le MJ, 1er novembre 2026).
+    function d:Demander(titre, valeur, onValider, bouton, longueur, ancre)
         self.saisie:SetMaxLetters(longueur or 15)
         self.valider.label:SetText(bouton or "Valider")
         self.titre:SetText(titre)
         self.saisie:SetText(tostring(valeur or ""))
         self.message:SetText("")
         self.onValider = onValider
+        self:ClearAllPoints()
+        if ancre then
+            self:SetPoint("TOP", ancre, "TOP", 24, 24)
+        else
+            self:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
+        end
+        -- Au-dessus de tout : c'est une demande, on y repond avant la suite.
+        self:SetFrameStrata("TOOLTIP")
         self:Show()
         self:Raise()
         self.saisie:SetFocus()

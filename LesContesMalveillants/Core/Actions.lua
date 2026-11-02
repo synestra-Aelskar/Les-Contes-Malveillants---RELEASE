@@ -448,15 +448,31 @@ function Actions.LireQuestions(texte)
                 or ((m2 == "text" or m2 == "texte" or m2 == "libre") and "text")
                 or ((m2 == "multival" or m2 == "kv" or m2 == "listeval") and "multival")
                 or ((m2 == "actors" or m2 == "acteurs") and "actors")
+                -- `repartition` : des parts en POURCENT d'un total, chacune a
+                -- cocher, et leur somme bornee a 100. Chaque option nomme sa
+                -- variable (`var=…`) et sa teinte dans la barre (`couleur=…`).
+                or ((m2 == "repartition" or m2 == "repart") and "repartition")
                 or "single"
             local saisie = mode == "number" or mode == "text"
             local p3 = tostring(parts[3] or "")
-            local avg = (not saisie and mode ~= "multival") and p3:match("^%s*[Aa][Vv][Gg]%s*:%s*(.+)$") or nil
-            local requis, signe = false, false
+            local avg = (not saisie and mode ~= "multival" and mode ~= "repartition")
+                and p3:match("^%s*[Aa][Vv][Gg]%s*:%s*(.+)$") or nil
+            -- `facultatif` laisse passer une saisie vide, et `defaut:` dit par
+            -- quoi la remplacer alors : « Degat critique | number | dmgC |
+            -- facultatif | defaut: {var:dmgN} » — un champ vide vaut le degat
+            -- normal, et on n'oblige plus a retaper le meme nombre.
+            local requis, signe, facultatif, defaut, base = false, false, false, nil, nil
             for _, seg in ipairs(parts) do
                 local s = seg:lower()
                 if s == "require" or s == "req" then requis = true end
                 if s == "signed" or s == "signe" then signe = true end
+                if s == "facultatif" or s == "optionnel" or s == "optional" then facultatif = true end
+                local d = seg:match("^[Dd][Ee][Ff][Aa][Uu][Tt]%s*:%s*(.+)$")
+                    or seg:match("^[Dd][Ee][Ff][Aa][Uu][Ll][Tt]%s*:%s*(.+)$")
+                if d then defaut = Trim(d) end
+                -- Le total sur lequel une repartition se lit : « base: {var:dmgN} ».
+                local b = seg:match("^[Bb][Aa][Ss][Ee]%s*:%s*(.+)$")
+                if b then base = Trim(b) end
             end
             local showIf = p3
             if saisie or mode == "multival" then
@@ -469,7 +485,8 @@ function Actions.LireQuestions(texte)
             end
             showIf = avg and "" or Trim((showIf:gsub("^[Ss][Hh][Oo][Ww][Ii][Ff]%s*:%s*", ""):gsub("^[Ss][Ii]%s*:%s*", "")))
             courante = { id = "q" .. (#questions + 1), label = parts[1] or "", mode = mode, signe = signe,
-                         showIf = showIf, requis = requis, options = {} }
+                         showIf = showIf, requis = requis, options = {},
+                         facultatif = facultatif or nil, defaut = defaut, base = base }
             if saisie or mode == "multival" then courante.variable = Trim(p3) end
             if mode == "actors" then
                 courante.variable = Trim(p3)
@@ -608,9 +625,21 @@ function Composeur:Deriver()
         end
         local variable = q.variable or ""
         if q.mode == "number" then
-            if tonumber(r) and variable ~= "" then V[variable] = tonumber(r) end
+            if tonumber(r) and variable ~= "" then V[variable] = tonumber(r)
+            elseif q.defaut and variable ~= "" then V[variable] = self:Valeur(q.defaut) end
         elseif q.mode == "text" then
-            if type(r) == "string" and Trim(r) ~= "" and variable ~= "" then V[variable] = r end
+            if type(r) == "string" and Trim(r) ~= "" and variable ~= "" then V[variable] = r
+            elseif q.defaut and variable ~= "" then V[variable] = self:Valeur(q.defaut) end
+        elseif q.mode == "repartition" then
+            -- Une part decochee vaut zero, pas « rien » : la declaration doit
+            -- lire un nombre dans tous les cas.
+            for _, o in ipairs(q.options) do
+                local nom = o.set:match("var%s*=%s*([%w_]+)")
+                if nom then
+                    local pct = type(r) == "table" and tonumber(r[o.id]) or nil
+                    V[nom] = math.max(0, math.min(100, pct or 0))
+                end
+            end
         elseif q.mode == "multi" and type(r) == "table" then
             for _, o in ipairs(q.options) do if r[o.id] then Prendre(o) end end
             for k, liste in pairs(cumul) do V[k] = table.concat(liste, ", ") end
@@ -673,6 +702,19 @@ function Composeur:Saisir(q, texte)
     self:Deriver()
 end
 
+-- Une part d'une repartition : `pct` nil la decoche. Une part cochee sans
+-- nombre vaut zero, pour qu'on puisse cocher d'abord et chiffrer ensuite.
+function Composeur:Part(q, optionId, pct)
+    self.reponses[q.id] = type(self.reponses[q.id]) == "table" and self.reponses[q.id] or {}
+    if pct == nil then
+        self.reponses[q.id][optionId] = nil
+    else
+        self.reponses[q.id][optionId] = math.max(0, math.min(100, tonumber(pct) or 0))
+    end
+    if not next(self.reponses[q.id]) then self.reponses[q.id] = nil end
+    self:Deriver()
+end
+
 function Composeur:EstChoisie(q, optionId)
     local r = self.reponses[q.id]
     if type(r) == "table" then return r[optionId] == true end
@@ -682,11 +724,46 @@ end
 -- Les libelles retenus, pour le recapitulatif.
 function Composeur:Choix(q)
     local r, out = self.reponses[q.id], {}
-    if q.mode == "number" or q.mode == "text" then return type(r) == "string" and Trim(r) or "" end
+    if q.mode == "number" or q.mode == "text" then
+        if type(r) == "string" and Trim(r) ~= "" then return Trim(r) end
+        -- Laisse vu ce qui sera retenu : le recapitulatif montre la valeur de
+        -- repli, pas un blanc qu'on croirait oublie.
+        if q.defaut then
+            local v = self.ctx.vars[q.variable or ""]
+            if v ~= nil then return tostring(v) .. " (par défaut)" end
+        end
+        return ""
+    end
+    if q.mode == "repartition" then
+        for _, o in ipairs(q.options) do
+            local pct = type(r) == "table" and tonumber(r[o.id]) or nil
+            if pct then out[#out + 1] = string.format("%s : %d %%", o.label, pct) end
+        end
+        return table.concat(out, "\n  ")
+    end
     for _, o in ipairs(q.options) do
         if (type(r) == "table" and r[o.id]) or r == o.id then out[#out + 1] = o.label end
     end
     return table.concat(out, ", ")
+end
+
+-- Ce qu'une repartition engage en tout, et ce qu'il reste de libre. Au-dela de
+-- cent pour cent on ne peut plus avancer : on promettrait deux fois les memes
+-- degats.
+function Composeur:Repartition(q)
+    local r, total, parts = self.reponses[q.id], 0, {}
+    for _, o in ipairs(q.options) do
+        local pct = type(r) == "table" and tonumber(r[o.id]) or nil
+        parts[o.id] = pct
+        total = total + math.max(0, math.min(100, pct or 0))
+    end
+    return total, parts
+end
+
+-- Le total sur lequel la repartition se lit (« base: {var:dmgN} »), 0 a defaut.
+function Composeur:Base(q)
+    if not q.base then return 0 end
+    return tonumber(self:Valeur(q.base)) or 0
 end
 
 -- Au moins une reponse parmi les questions « require » visibles (les types
@@ -3397,6 +3474,23 @@ function Actions.PerceMinimum(ctx, montant)
         return reste
     end
     return minimum
+end
+
+-- Le brise-armure, symetrique du perce-armure (1er novembre 2026) : la part du
+-- degat qui DOIT aller sur l'armure et les boucliers, quoi que le joueur
+-- repartisse. Les Resistances ne l'allegent pas : elles rendent le placement
+-- plus libre en sante, ce qui n'a pas de sens pour une part qu'on impose
+-- justement HORS de la sante.
+function Actions.BrisePourcentage(ctx)
+    local pct = tonumber(Jeton("recu", "Brise armure", ctx)) or 0
+    return math.max(0, math.min(100, pct))
+end
+
+function Actions.BriseMinimum(ctx, montant)
+    local pct = Actions.BrisePourcentage(ctx)
+    montant = math.max(0, tonumber(montant) or 0)
+    if pct <= 0 or montant <= 0 then return 0 end
+    return math.min(math.ceil(montant - 1e-9), math.ceil(montant * pct / 100 - 1e-9))
 end
 
 -- Applique une repartition : { [index de case] = points }. Les degats d'une

@@ -33,6 +33,16 @@ local CANAUX_EMOTE = {
     { id = "RAID", nom = "Raid" },
 }
 
+-- Ce qui retient « Suivant » sur une question. Une seule regle, lue aux deux
+-- endroits qui l'appliquent : le rendu complet, et la frappe au clavier qui ne
+-- refait pas le rendu pour ne pas perdre le curseur.
+local function Attend(c, q)
+    if not q then return false end
+    if q.mode == "repartition" then return (c:Repartition(q)) > 100 end
+    if q.mode == "multi" or q.facultatif then return false end
+    return c.reponses[q.id] == nil
+end
+
 local function AvecEmoteFinale()
     -- Toute action qui passe par le composeur se termine par sa narration. Les
     -- ecrans speciaux portent desormais leur propre bloc commun : aucune action
@@ -201,7 +211,7 @@ local function Construire()
         if not f.q then return end
         f.composeur:Saisir(f.q, texte)
         Ecran.Entete()
-        local attend = f.q.mode ~= "multi" and f.composeur.reponses[f.q.id] == nil
+        local attend = Attend(f.composeur, f.q)
         f.suivant:SetEnabled(not attend)
         f.suivant:SetAlpha(attend and 0.4 or 1)
     end
@@ -247,7 +257,7 @@ local function Construire()
             local jeu = A.EnregistrerJeu(f.composeur.ctx.resolution.id, nom, f.composeur)
             LCM.Ok(string.format("jeu de choix « %s » enregistré.", jeu.nom))
             return true
-        end)
+        end, nil, nil, f)
     end)
     Placer(f.enregistrer, "LEFT", f.declarer, "RIGHT", 8, 0)
     -- L'accueil et la liste des jeux : de gros boutons, puis une ligne par jeu.
@@ -469,6 +479,8 @@ end
 local function Cacher(f)
     for _, b in ipairs(f.boutons) do b:Hide() end
     for _, c in ipairs(f.cases) do c:Hide() end
+    for _, l in ipairs(f.parts or {}) do l:Hide() end
+    if f.barre then f.barre:Hide() f.barre.legende:Hide() end
     f.saisie:Hide()
     f.narration:Hide()
     f.emoteFinale:Hide()
@@ -514,7 +526,7 @@ local function Jeux(f)
                     A.RenommerJeu(l.resolution, n, nom)
                     Ecran.Rendre()
                     return true
-                end)
+                end, nil, nil, Ecran.frame)
             end)
             l.renommer:SetPoint("RIGHT", l.supprimer, "LEFT", -3, 0)
             l.bas = Petit("v", function(n) A.DeplacerJeu(l.resolution, n, 1) end)
@@ -543,6 +555,137 @@ local function Libelle(o)
     return o.label .. "\n|cff909090( " .. table.concat(couts, " - ") .. " )|r"
 end
 
+-- ===== Repartition en pourcent ==============================================
+-- Des parts d'un meme total, a cocher puis a chiffrer, et une barre qui montre
+-- ce qu'on a engage. Pour l'attaque du MJ : ce qui part en armure obligatoire
+-- (brise-armure), ce qui l'ignore (perce-armure), et ce qui reste libre. La
+-- somme ne peut pas depasser cent pour cent — on promettrait deux fois les
+-- memes degats.
+local TEINTES = {
+    rouge = { 0.78, 0.22, 0.20 },
+    jaune = { 0.82, 0.66, 0.20 },
+    vert  = { 0.33, 0.62, 0.35 },
+    bleu  = { 0.35, 0.52, 0.72 },
+}
+local LIBRE = TEINTES.vert
+
+local function Repartition(f, q)
+    local c = f.composeur
+    local largeur = f.corps:GetWidth()
+    if not largeur or largeur < 40 then largeur = 408 end
+    f.parts = f.parts or {}
+    local total, parts = c:Repartition(q)
+    local base = c:Base(q)
+
+    local y = PAD
+    for index, o in ipairs(q.options) do
+        local ligne = f.parts[index]
+        if not ligne then
+            ligne = CreateFrame("Frame", nil, f.corps.contenu)
+            ligne:SetHeight(26)
+            ligne.case = UI.Case(ligne, "", function(coche)
+                local cible = f.parts[index]
+                if not cible.o then return end
+                -- Cocher pose une part a zero : on chiffre ensuite, sans que la
+                -- case se decoche toute seule pendant qu'on vide le champ.
+                f.composeur:Part(f.q, cible.o.id, coche and (tonumber(cible.champ:GetText()) or 0) or nil)
+                Ecran.Rendre()
+            end)
+            ligne.case:SetPoint("LEFT", ligne, "LEFT", 0, 0)
+            ligne.champ = UI.Champ(ligne, 56, 22, function(texte)
+                local cible = f.parts[index]
+                if not cible.o or not cible.case:EstCochee() then return end
+                f.composeur:Part(f.q, cible.o.id, tonumber(texte) or 0)
+                Ecran.Entete()
+                Ecran.Barre(f.q)
+            end)
+            ligne.champ:SetMaxLetters(3)
+            ligne.champ:SetPoint("RIGHT", ligne, "RIGHT", -26, 0)
+            ligne.pourcent = UI.Texte(ligne, "%", UI.C.discret, "GameFontNormalSmall")
+            ligne.pourcent:SetPoint("LEFT", ligne.champ, "RIGHT", 6, 0)
+            f.parts[index] = ligne
+        end
+        ligne.o = o
+        ligne.case.label:SetText(o.label)
+        ligne.case:Cocher(parts[o.id] ~= nil)
+        ligne.champ:SetText(parts[o.id] and tostring(parts[o.id]) or "")
+        ligne.champ:SetEnabled(parts[o.id] ~= nil)
+        ligne.champ:SetAlpha(parts[o.id] ~= nil and 1 or 0.45)
+        ligne:ClearAllPoints()
+        ligne:SetPoint("TOPLEFT", f.corps.contenu, "TOPLEFT", PAD, -y)
+        ligne:SetPoint("TOPRIGHT", f.corps.contenu, "TOPRIGHT", -PAD, -y)
+        ligne:Show()
+        y = y + 30
+    end
+    for index = #q.options + 1, #f.parts do f.parts[index]:Hide() end
+
+    if not f.barre then
+        local b = CreateFrame("Frame", nil, f.corps.contenu)
+        b:SetHeight(16)
+        b.fond = UI.Aplat(b, { 0.10, 0.10, 0.10, 1 })
+        b.fond:SetAllPoints(b)
+        UI.BordureFine(b, 0.38)
+        b.segments = {}
+        b.legende = UI.Texte(f.corps.contenu, "", UI.C.discret, "GameFontNormalSmall")
+        b.legende:SetPoint("TOPLEFT", b, "BOTTOMLEFT", 0, -6)
+        b.legende:SetPoint("TOPRIGHT", b, "BOTTOMRIGHT", 0, -6)
+        b.legende:SetJustifyH("LEFT")
+        b.legende:SetWordWrap(true)
+        f.barre = b
+    end
+    f.barre:ClearAllPoints()
+    f.barre:SetPoint("TOPLEFT", f.corps.contenu, "TOPLEFT", PAD, -(y + 8))
+    f.barre:SetPoint("TOPRIGHT", f.corps.contenu, "TOPRIGHT", -PAD, -(y + 8))
+    f.barre:Show()
+    f.barre.legende:Show()
+    Ecran.Barre(q)
+    f.corps:Regler(y + 8 + 16 + 6 + 30)
+end
+
+-- Redessine la seule barre : la frappe dans un champ ne doit pas refaire tout
+-- le rendu, sinon le curseur saute.
+function Ecran.Barre(q)
+    local f = Ecran.frame
+    if not f or not f.barre or not q or q.mode ~= "repartition" then return end
+    local c = f.composeur
+    local total, parts = c:Repartition(q)
+    local base = c:Base(q)
+    local pleine = math.max(1, f.barre:GetWidth() - 2)
+    local x, index, mots = 1, 0, {}
+    local function Segment(pct, teinte)
+        if pct <= 0 then return end
+        index = index + 1
+        local s = f.barre.segments[index]
+        if not s then
+            s = f.barre:CreateTexture(nil, "ARTWORK")
+            f.barre.segments[index] = s
+        end
+        s:SetColorTexture(teinte[1], teinte[2], teinte[3], 1)
+        s:ClearAllPoints()
+        s:SetPoint("TOPLEFT", f.barre, "TOPLEFT", x, -1)
+        s:SetPoint("BOTTOMLEFT", f.barre, "BOTTOMLEFT", x, 1)
+        s:SetWidth(math.max(1, pleine * pct / 100))
+        s:Show()
+        x = x + pleine * pct / 100
+    end
+    for _, o in ipairs(q.options) do
+        local pct = parts[o.id]
+        if pct and pct > 0 then
+            Segment(pct, TEINTES[(o.set:match("couleur%s*=%s*(%a+)") or ""):lower()] or TEINTES.bleu)
+            mots[#mots + 1] = string.format("%s : %d (%d %%)", o.label, math.floor(base * pct / 100 + 0.5), pct)
+        end
+    end
+    local libre = math.max(0, 100 - total)
+    Segment(libre, LIBRE)
+    mots[#mots + 1] = string.format("Libre : %d (%d %%)", math.floor(base * libre / 100 + 0.5), libre)
+    for i = index + 1, #f.barre.segments do f.barre.segments[i]:Hide() end
+    if total > 100 then
+        f.barre.legende:SetText(string.format("|cffff6b61Déjà %d %% engagés : on ne peut pas dépasser 100 %%.|r", total))
+    else
+        f.barre.legende:SetText(table.concat(mots, "  ·  "))
+    end
+end
+
 local function Question(f, q)
     local c = f.composeur
     local largeur = f.corps:GetWidth()
@@ -569,6 +712,11 @@ local function Question(f, q)
         f.saisie:SetPoint("TOP", f.corps.contenu, "TOP", 0, -12)
         f.saisie:Show()
         f.corps:Regler(visible)
+        return
+    end
+
+    if q.mode == "repartition" then
+        Repartition(f, q)
         return
     end
 
@@ -729,8 +877,9 @@ function Ecran.Rendre()
     f.precedent:SetEnabled(f.pos > 1 or #A.JeuxDeChoix(c.ctx.resolution.id) > 0)
     f.suivant:Show()
     f.suivant.label:SetText(f.pos >= #f.visibles and "Terminer" or "Suivant")
-    -- Un choix unique exige une reponse avant d'avancer.
-    local attend = q.mode ~= "multi" and c.reponses[q.id] == nil
+    -- Un choix unique exige une reponse avant d'avancer. Une saisie declaree
+    -- `facultatif` ne l'exige pas : on passe, et son `defaut:` prend le relais.
+    local attend = Attend(c, q)
     f.suivant:SetEnabled(not attend)
     f.suivant:SetAlpha(attend and 0.4 or 1)
 end
@@ -750,7 +899,7 @@ function Ecran.Aller(sens)
         return Ecran.Rendre()
     end
     local q = f.q
-    if sens > 0 and q and q.mode ~= "multi" and f.composeur.reponses[q.id] == nil then return end
+    if sens > 0 and Attend(f.composeur, q) then return end
     if sens > 0 and f.pos >= #f.visibles then
         f.ecran = "fin"
     else

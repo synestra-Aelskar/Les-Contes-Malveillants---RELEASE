@@ -152,6 +152,57 @@ Reception({
                     aggregatorName = "",
                     amount = "",
                     branches = {
+                        -- Le MJ peut declarer une attaque a laquelle on
+                        -- n'oppose rien (« Jet oppose = non », 1er novembre
+                        -- 2026) : on encaisse les degats normaux, reduction de
+                        -- defense comprise, sans qu'aucun jet ne soit demande.
+                        -- En tete, car la premiere branche vraie l'emporte ; et
+                        -- une declaration qui ne dit rien tombe comme avant
+                        -- dans les branches suivantes.
+                        {
+                            condition = "recu:Jet oppose contient non",
+                            id = "b_parSubir",
+                            kind = "if",
+                            steps = {
+                                {
+                                    aggregator = "pack_les_contes_malveillants_mj_aelskar__378",
+                                    aggregatorName = "Réduction Défense",
+                                    aggregatorUid = "cuid:257816326:4:330466108304",
+                                    amount = "",
+                                    callTarget = "",
+                                    id = "cpN_subir",
+                                    inject = "degats=recu:Total Normal",
+                                    label = "",
+                                    message = "",
+                                    out = "net",
+                                    sign = "-",
+                                    tag = "",
+                                    tags = "",
+                                    type = "compute",
+                                },
+                                {
+                                    id = "mN_subir",
+                                    message = "Attaque subie\nRien ne vous est laissé pour l'esquiver : vous encaissez le coup.",
+                                    sign = "-",
+                                    type = "message",
+                                },
+                                {
+                                    aggregator = "",
+                                    aggregatorName = "",
+                                    amount = "var:net",
+                                    callTarget = "",
+                                    id = "apN_subir",
+                                    inject = "",
+                                    label = "",
+                                    message = "",
+                                    out = "",
+                                    sign = "-",
+                                    tag = "",
+                                    tags = "recu:Zones",
+                                    type = "apply",
+                                },
+                            },
+                        },
                         {
                             condition = "recu:Rand Nom contient Adresse",
                             id = "b_parIf",

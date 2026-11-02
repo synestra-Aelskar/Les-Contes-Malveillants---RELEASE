@@ -620,6 +620,10 @@ local function ConstruireRepartition()
     f.perce = Compteur("Perce-armure (santé mini)")
     f.perce:SetPoint("TOPLEFT", f.place, "TOPRIGHT", 6, 0)
     f.perce:SetPoint("TOPRIGHT", f.aide, "BOTTOMRIGHT", 0, -8)
+    -- Le brise-armure se compte a cote du perce-armure, et se range sous eux
+    -- quand les deux sont imposes : la rangee ne tient pas quatre compteurs.
+    f.brise = Compteur("Brise-armure (armure mini)")
+    f.brise:Hide()
 
     f.zone = UI.Defilement(f)
     f.zone:SetPoint("TOPLEFT", f.reste, "BOTTOMLEFT", 0, -10)
@@ -661,6 +665,17 @@ local function MinimumSantePossible(f, possible)
     return math.min(f.minimum or 0, capacite, possible or f.montant)
 end
 
+-- Et le symetrique : ce que le brise-armure impose HORS sante, borne par ce que
+-- l'armure et les boucliers peuvent encore encaisser. Sans armure debout, un
+-- brise-armure n'exige rien — on ne bloque pas sur une repartition impossible.
+local function MinimumArmurePossible(f, possible)
+    local capacite = 0
+    for _, case in ipairs(f.cases) do
+        if not case.sante then capacite = capacite + math.max(0, tonumber(case.plafond) or 0) end
+    end
+    return math.min(f.minimumBrise or 0, capacite, possible or f.montant)
+end
+
 -- `saisieEnCours` : la ligne ou l'on tape. On ne lui reecrit pas son texte
 -- sous les doigts ; sa valeur bornee lui est rendue par l'appelant, et
 -- seulement si elle differe de ce qui est tape.
@@ -668,10 +683,16 @@ local function Rafraichir(f, saisieEnCours)
     local place, sante, possible = Etat(f)
     local requis = MinimumSantePossible(f, possible)
     local perceOk = sante >= requis
+    local requisBrise = MinimumArmurePossible(f, possible)
+    local briseOk = (place - sante) >= requisBrise
     f.reste.valeur:SetText(tostring(f.montant - place))
     f.place.valeur:SetText(tostring(place))
     f.perce.valeur:SetText(string.format("%d / %d", math.min(sante, requis), requis))
     f.perce.valeur:SetTextColor(perceOk and 0.4 or 1, perceOk and 1 or 0.55, perceOk and 0.4 or 0.2)
+    if f.brise then
+        f.brise.valeur:SetText(string.format("%d / %d", math.min(place - sante, requisBrise), requisBrise))
+        f.brise.valeur:SetTextColor(briseOk and 0.4 or 1, briseOk and 1 or 0.55, briseOk and 0.4 or 0.2)
+    end
     f.reste.valeur:SetTextColor(place == possible and 0.4 or 1, place == possible and 1 or 0.82,
         place == possible and 0.4 or 0.2)
     for i, case in ipairs(f.cases) do
@@ -697,9 +718,10 @@ local function Rafraichir(f, saisieEnCours)
         if i ~= saisieEnCours then l.valeur:SetText(tostring(n)) end
         l.etat:SetText(string.format("%d / %d  ->  %d", case.courant, case.max, case.courant + (f.signe == "+" and n or -n)))
     end
-    -- On a tout place (ou tout ce qui pouvait l'etre), et la sante a recu au
-    -- moins le perce-armure (ou tout ce qu'elle pouvait encore recevoir).
-    local ok = place == possible and perceOk
+    -- On a tout place (ou tout ce qui pouvait l'etre), la sante a recu au moins
+    -- le perce-armure, et l'armure au moins le brise-armure (ou tout ce qu'ils
+    -- pouvaient encore recevoir).
+    local ok = place == possible and perceOk and briseOk
     f.appliquer:SetEnabled(ok)
     f.appliquer:SetAlpha(ok and 1 or 0.4)
     f.pret = ok
@@ -720,12 +742,17 @@ function Ecran.Repartir(ctx, fin)
     f.ignorer:SetShown(LCM.IsMaster())
     f.minimum = signe == "-" and A.PerceMinimum(ctx, montant) or 0
     f.pourcentagePerce = signe == "-" and A.PercePourcentage(ctx) or 0
+    f.minimumBrise = signe == "-" and A.BriseMinimum(ctx, montant) or 0
+    f.pourcentageBrise = signe == "-" and A.BrisePourcentage(ctx) or 0
     f.valeurs = {}
     f.emote:SetText("")
     f.titre:SetText(string.format("%s : %d point%s à répartir", signe == "-" and "Dégâts" or "Gain", montant,
         montant > 1 and "s" or ""))
     local aide = "Répartissez sur vos zones."
     if f.minimum > 0 then aide = aide .. string.format(" Le perce-armure impose au moins %d en santé.", f.minimum) end
+    if f.minimumBrise > 0 then
+        aide = aide .. string.format(" Le brise-armure impose au moins %d sur l'armure.", f.minimumBrise)
+    end
     if #inconnus > 0 then
         aide = aide .. "\n|cffff8080Sans jauge sur la fiche : " .. table.concat(inconnus, ", ") .. "|r"
     end
@@ -742,6 +769,33 @@ function Ecran.Repartir(ctx, fin)
         f.perce.titre:SetText(string.format("Perce-armure %d%% (santé mini)", math.floor(f.pourcentagePerce + 0.5)))
     else
         f.place:SetPoint("TOPRIGHT", f.aide, "BOTTOMRIGHT", 0, -8)
+    end
+    -- Le brise-armure prend la place libre du perce-armure, ou se glisse a sa
+    -- droite quand les deux sont imposes.
+    f.brise:SetShown(f.minimumBrise > 0)
+    if f.minimumBrise > 0 then
+        f.brise.titre:SetText(string.format("Brise-armure %d%% (armure mini)", math.floor(f.pourcentageBrise + 0.5)))
+        f.brise:ClearAllPoints()
+        f.place:SetWidth(160)
+        if f.minimum > 0 then
+            f.perce:ClearAllPoints()
+            f.perce:SetPoint("TOPLEFT", f.place, "TOPRIGHT", 6, 0)
+            f.perce:SetWidth(160)
+            f.brise:SetPoint("TOPLEFT", f.perce, "TOPRIGHT", 6, 0)
+            f.brise:SetPoint("TOPRIGHT", f.aide, "BOTTOMRIGHT", 0, -8)
+        else
+            f.place:ClearAllPoints()
+            f.place:SetPoint("TOPLEFT", f.reste, "TOPRIGHT", 6, 0)
+            f.place:SetWidth(160)
+            f.brise:SetPoint("TOPLEFT", f.place, "TOPRIGHT", 6, 0)
+            f.brise:SetPoint("TOPRIGHT", f.aide, "BOTTOMRIGHT", 0, -8)
+        end
+    elseif f.minimum > 0 then
+        -- Remettre le perce-armure dans sa place d'origine : les ancres
+        -- survivent d'une resolution a l'autre, la fenetre est recyclee.
+        f.perce:ClearAllPoints()
+        f.perce:SetPoint("TOPLEFT", f.place, "TOPRIGHT", 6, 0)
+        f.perce:SetPoint("TOPRIGHT", f.aide, "BOTTOMRIGHT", 0, -8)
     end
 
     local y = 0
@@ -839,6 +893,13 @@ local function Borner(f, i, voulu)
         local requis = MinimumSantePossible(f, possible)
         local horsSanteSansCetteCase = (place - sante) - n
         voulu = math.min(voulu, math.max(0, possible - requis - horsSanteSansCetteCase))
+    end
+    -- Et l'inverse pour le brise-armure : on ne peut pas tout mettre en sante
+    -- quand une part doit tomber sur l'armure.
+    if case.sante and (f.minimumBrise or 0) > 0 then
+        local requisBrise = MinimumArmurePossible(f, possible)
+        local santeSansCetteCase = sante - n
+        voulu = math.min(voulu, math.max(0, possible - requisBrise - santeSansCetteCase))
     end
     return voulu
 end

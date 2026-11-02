@@ -375,10 +375,18 @@ end
 -- reseau, qui ne rend que du texte : la duree se comparait alors a 1 et la
 -- consultation s'arretait sur une erreur (le MJ, 25 octobre 2026). On la relit
 -- en nombre ici, pour que l'affichage tienne quelle que soit la source.
+-- Hors combat, le round ne dit plus rien a personne : on compte le temps qui
+-- passe, a raison de vingt minutes par round (1er novembre 2026). Les etats
+-- vieillissent toujours au round, c'est leur affichage qui change.
+Temporaires.MINUTES_PAR_ROUND = 20
+
 function Temporaires.Duree(etat)
     local restant = tonumber(etat.restant)
     if not restant then return "jusqu'à retrait" end
-    return string.format("%d round%s", restant, restant > 1 and "s" or "")
+    if LCM.Combat and LCM.Combat.EnCours() then
+        return string.format("%d round%s", restant, restant > 1 and "s" or "")
+    end
+    return string.format("%d mn", restant * Temporaires.MINUTES_PAR_ROUND)
 end
 
 -- Une source d'effets comme les traits : ses elements ont un libelle, des

@@ -52,7 +52,9 @@ end
 
 -- ===== Les instances =======================================================
 
-function Incarnation.Instancier(pnjId, nom)
+-- `options.horsScene` : un exemplaire qu'on JOUE sans le mettre en scene
+-- (voir Incarnation.Incarner).
+function Incarnation.Instancier(pnjId, nom, options)
     local modele = LCM.PNJ.Get(pnjId)
     if not modele then return nil, "PNJ inconnu." end
     local id = IdentifiantLibre(modele.id)
@@ -69,6 +71,7 @@ function Incarnation.Instancier(pnjId, nom)
         equipement = LCM.Copie(modele.equipement or {}),
         etats = LCM.Copie(modele.etats or {}),
         apprentissages = LCM.Copie(modele.apprentissages or {}),
+        horsScene = (type(options) == "table" and options.horsScene) and true or nil,
     }
     InstancesPourEcrire()[id] = instance
     return instance
@@ -78,9 +81,14 @@ function Incarnation.Instance(id)
     return Instances()[tostring(id or "")]
 end
 
-function Incarnation.Liste()
+-- Les PNJ EN SCENE : ceux que les joueurs ciblent, que le combat invite, dont
+-- les rounds font vieillir les etats. `tout` y ajoute les exemplaires hors
+-- scene, qu'on joue sans les montrer — pour qui doit tout voir (nettoyer).
+function Incarnation.Liste(tout)
     local out = {}
-    for _, instance in pairs(Instances()) do out[#out + 1] = instance end
+    for _, instance in pairs(Instances()) do
+        if tout or not instance.horsScene then out[#out + 1] = instance end
+    end
     table.sort(out, function(a, b) return tostring(a.name):lower() < tostring(b.name):lower() end)
     return out
 end
@@ -130,10 +138,22 @@ function Incarnation.Relacher()
     return avant ~= ""
 end
 
--- Raccourci : instancier si besoin, puis prendre.
+-- Jouer un PNJ du catalogue SANS le mettre en scene (le MJ, 2 novembre 2026).
+-- Incarner creait une instance, et toute instance etait en scene : chaque
+-- clic sur « Incarner » ajoutait un exemplaire ciblable par les joueurs. Ce
+-- qu'on incarne ainsi est un exemplaire HORS SCENE, un seul par modele :
+-- incarner de nouveau le reprend, avec ses blessures, au lieu d'en creer un
+-- autre. Mettre en scene reste le geste « + Scène » (Instancier).
 function Incarnation.Incarner(pnjId, nom)
     if not LCM.IsMaster() then return nil, "reserve au maitre du jeu." end
-    local instance, raison = Incarnation.Instancier(pnjId, nom)
+    local modele = LCM.PNJ.Get(pnjId)
+    if not modele then return nil, "PNJ inconnu." end
+    for _, instance in pairs(Instances()) do
+        if instance.horsScene and instance.modele == modele.id then
+            return Incarnation.Prendre(instance.id)
+        end
+    end
+    local instance, raison = Incarnation.Instancier(pnjId, nom, { horsScene = true })
     if not instance then return nil, raison end
     return Incarnation.Prendre(instance.id)
 end

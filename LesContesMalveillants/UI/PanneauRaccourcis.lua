@@ -152,7 +152,8 @@ local function Construire()
     Ecran.frame = f
     -- Centre sur le sceau, au-dessus du radial : tout se place a sa droite.
     f:SetFrameStrata("HIGH")
-    f:SetSize(2 * (ECART + R.MAX_ENTREES * PAS), 2 * 150)
+    -- Assez haut pour la colonne d'actions d'un outil (UI.MesOutils.Hauteur).
+    f:SetSize(2 * (ECART + R.MAX_ENTREES * PAS), 2 * UI.MesOutils.Hauteur())
     f:EnableMouse(false)
     f.jet = R.CreerJet(f, f:GetFrameLevel())
     f.boutons = {}

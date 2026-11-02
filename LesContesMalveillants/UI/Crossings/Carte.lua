@@ -52,7 +52,12 @@ end
 local triCache=setmetatable({},{__mode="k"})
 local function Triangulate(points)
     local n=#points
-    local key=n..":"..(n>0 and (points[1].x..","..points[n].y) or "")
+    -- La clé regarde TOUS les sommets. Elle ne lisait que le premier et le
+    -- dernier : déplacer un sommet du milieu (ce que fait la carte des zones
+    -- du MJ) laissait le remplissage sur l'ancienne découpe.
+    local somme=0
+    for i=1,n do somme=somme+points[i].x*31+points[i].y*17 end
+    local key=n..":"..string.format("%.3f",somme)
     local cached=triCache[points]
     if cached and cached.key==key then return cached.tris end
     local idx={}
@@ -103,6 +108,14 @@ local function LineEnds(sub)
     local a=sub.facing or 0;local r=(sub.width or 6)/2
     return {x=sub.x-math.cos(a)*r,y=sub.y+math.sin(a)*r},{x=sub.x+math.cos(a)*r,y=sub.y-math.sin(a)*r}
 end
+
+-- La carte des zones du panneau MJ (Crossings/CarteZones.lua) dessine la même
+-- chose, en modifiable. Elle emprunte la géométrie d'ici plutôt que d'en tenir
+-- une seconde écriture : deux triangulations à maintenir, c'est une de trop.
+ZG.Geo = {
+    Area = Area, Triangulate = Triangulate, IsClosed = IsClosed,
+    PointInPolygon = PointInPolygon, LineEnds = LineEnds, Color = PlaceColor,
+}
 
 -- Région où se trouve le joueur : celle du lieu où il est, sinon celle dont
 -- un périmètre le contient, sinon celle du passage le plus proche (même carte).
@@ -185,18 +198,31 @@ local function Build()
     -- Pays (clé du pays, ou NONE pour les régions sans pays).
     function win:ShowCountry(key,follow)
         self.level,self.country,self.zone,self.follow="country",key,nil,follow and true or false
+        self.batiment=nil
         picker:SetText(CountryName(key))
         self:Fit();self:Draw()
     end
     function win:ShowRegion(zone)
         if not zone then return end
         self.level,self.country,self.zone,self.follow="region",zone.countryId or NONE,zone,false
+        self.batiment=nil
+        picker:SetText(CountryName(self.country))
+        self:Fit();self:Draw()
+    end
+    -- La carte d'un bâtiment : son intérieur, à sa propre échelle. Elle
+    -- s'ouvre d'un clic sur son point, ou toute seule quand on y entre.
+    function win:ShowBatiment(place)
+        if not place then return end
+        local zone=ZG:GetZone(place.zoneId)
+        self.level,self.batiment,self.zone,self.follow="batiment",place,zone,false
+        self.country=zone and (zone.countryId or NONE) or NONE
         picker:SetText(CountryName(self.country))
         self:Fit();self:Draw()
     end
     function win:ShowCurrent()
         local zone=ZG:CurrentRegion()
         self.here=zone
+        self.batiment=nil
         if zone then self:ShowCountry(zone.countryId or NONE,true)
         else self.level,self.country,self.zone,self.follow="country",nil,nil,true;picker:SetText("Aucun pays");self:Draw() end
     end
@@ -304,8 +330,35 @@ local function Build()
         for id,n in pairs(counts) do if not best or n>counts[best] then best=id end end
         return best or map
     end
+    -- Les pièces d'un bâtiment, son empreinte comprise : la carte d'un
+    -- bâtiment ne montre QUE son intérieur, et celle de la région ne le
+    -- montre pas du tout — elle s'y marque d'un point.
+    function win:SubsBatiment()
+        local b=self.batiment
+        local zone=b and ZG:GetZone(b.zoneId)
+        if not zone then return {} end
+        local dedans,bouge={[b.id]=true},true
+        while bouge do
+            bouge=false
+            for _,p in pairs(zone.places or {}) do
+                if not dedans[p.id] and p.parent and dedans[p.parent] then dedans[p.id]=true;bouge=true end
+            end
+        end
+        local list={}
+        for _,sub in pairs(zone.subZones or {}) do
+            local lieu=sub.enterPlace and zone.places[sub.enterPlace]
+            if lieu and dedans[lieu.id] and sub.enabled~=false then
+                local vide=sub.shape=="polygon" and #(sub.points or {})<2
+                if not vide then list[#list+1]={sub=sub,zone=zone} end
+            end
+        end
+        table.sort(list,function(a,b2) return a.sub.id<b2.sub.id end)
+        return list
+    end
+
     -- Passages visibles, chacun avec sa région : { {sub=, zone=} }.
     function win:Subs()
+        if self.batiment then return self:SubsBatiment() end
         local zones=self:Zones()
         local map=self:Map(zones)
         local list={}
@@ -313,11 +366,51 @@ local function Build()
             for _,sub in pairs(zone.subZones or {}) do
                 -- Une carte lue dessine TOUTE région qu'elle montre ; c'est
                 -- le dessin qui tait les noms qu'elle ne dévoile pas.
-                if sub.mapID==map and sub.enabled~=false then list[#list+1]={sub=sub,zone=zone} end
+                -- Une zone sans sommets, elle, n'a rien à montrer : depuis
+                -- qu'un lieu naît avec la sienne, toute région en porte.
+                local vide=sub.shape=="polygon" and #(sub.points or {})<2
+                -- Un intérieur ne s'étale pas sur la carte du dehors : ses
+                -- cloisons noieraient le reste, et elles sont à une tout
+                -- autre échelle.
+                if sub.mapID==map and sub.enabled~=false and not vide and not ZG:EstInterieur(sub) then
+                    list[#list+1]={sub=sub,zone=zone}
+                end
             end
         end
         table.sort(list,function(a,b) return a.sub.id<b.sub.id end)
         return list
+    end
+
+    -- Les bâtiments visibles sur la carte du dehors : un point et un nom.
+    function win:Batiments()
+        if self.batiment then return {} end
+        local zones=self:Zones()
+        local map=self:Map(zones)
+        local list={}
+        for _,zone in ipairs(zones) do
+            for _,place in pairs(zone.places or {}) do
+                if place.batiment then
+                    for _,sub in pairs(zone.subZones or {}) do
+                        if sub.enterPlace==place.id and sub.mapID==map and sub.enabled~=false
+                            and sub.points and #sub.points>=1 then
+                            list[#list+1]={place=place,sub=sub,zone=zone}
+                            break
+                        end
+                    end
+                end
+            end
+        end
+        table.sort(list,function(a,b) return a.place.id<b.place.id end)
+        return list
+    end
+
+    -- Le bâtiment où se tient le joueur, s'il y en a un.
+    function win:BatimentIci()
+        for placeId in pairs(ZG.here or {}) do
+            local place=ZG:FindPlace(placeId)
+            local b=place and ZG:BatimentDe(place)
+            if b then return b end
+        end
     end
     function win:Fit()
         local minx,maxx,miny,maxy
@@ -341,8 +434,18 @@ local function Build()
         local w,h=math.max(20,maxx-minx),math.max(20,maxy-miny)
         self.scale=math.max(MIN_SCALE,math.min(MAX_SCALE,math.min((CW-80)/w,(CH-80)/h)))
     end
+    -- Le contour de la RÉGION (voir Core/Crossings.lua) : l'étendue de la
+    -- région elle-même, qui contient ses lieux. On ne le remplit pas — son
+    -- aplat les noierait — sauf sur la carte d'un pays, où c'est justement la
+    -- région qu'on veut voir d'un bloc.
+    -- L'empreinte d'un BÂTIMENT suit la même règle : sur sa propre carte,
+    -- elle entoure ses pièces et ne se remplit donc pas.
+    local function EstContourRegion(sub)
+        local place=sub.enterPlace and ZG:FindPlace(sub.enterPlace)
+        return place~=nil and (place.pourRegion==true or place.batiment==true)
+    end
     -- Polygone fermé : rempli, contour, et boîte englobante (écran) pour l'étiquette.
-    local function DrawPolygon(self,sub,color,outlineAlpha,box)
+    local function DrawPolygon(self,sub,color,outlineAlpha,box,remplirQuandMeme)
         local screen={}
         for i,p in ipairs(sub.points) do
             local x,y=self:ToScreen(p.x,p.y);screen[i]={x,y}
@@ -351,7 +454,7 @@ local function Build()
                 box.miny=math.min(box.miny or y,y);box.maxy=math.max(box.maxy or y,y)
             end
         end
-        if IsClosed(sub) and CAN_FILL then
+        if IsClosed(sub) and CAN_FILL and (remplirQuandMeme or not EstContourRegion(sub)) then
             for _,t in ipairs(Triangulate(sub.points)) do Tri(screen[t[1]],screen[t[2]],screen[t[3]],color) end
         end
         for i=2,#screen do Line(screen[i-1][1],screen[i-1][2],screen[i][1],screen[i][2],color,2,outlineAlpha) end
@@ -372,6 +475,8 @@ local function Build()
         libre=RADIAL.."fenetres-lieux.tga",
     }
     local COULEUR_REPERE={.95,.85,.55}
+    -- Les bâtiments, en violet, comme dans l'éditeur.
+    local COULEUR_BATIMENT={.70,.52,.88}
     local pinPool,usedPin={},0
     local function Pin(x,y,genre)
         usedPin=usedPin+1
@@ -476,6 +581,7 @@ local function Build()
     -- Ouvre la carte lue. `vue` : ce que rend Cartes.Vue.
     function win:ShowCarte(vue)
         self.carte=vue
+        self.batiment=nil
         self.level,self.zone,self.follow="region",vue.region and ZG:GetZone(vue.region) or nil,false
         self.country=self.zone and (self.zone.countryId or NONE) or NONE
         picker:Hide()
@@ -489,9 +595,16 @@ local function Build()
         for i=1,usedLine do linePool[i]:Hide() end
         for i=1,usedLabel do labelPool[i]:Hide() end
         usedTri,usedLine,usedLabel=0,0,0
+        self.batimentsVus={}
         if self.ailleurs then self.ailleurs:Hide() end
         if self.carte then return self:DrawCarte() end
-        self.help:SetText(self.level=="region" and "Clic droit : retour au pays · Molette : zoom · Glisser : déplacer" or "Clic : ouvrir une région · Molette : zoom · Glisser : déplacer")
+        if self.level=="batiment" then
+            self.help:SetText("Clic droit : ressortir · Molette : zoom · Glisser : déplacer")
+        elseif self.level=="region" then
+            self.help:SetText("Clic droit : retour au pays · Clic sur un bâtiment : y entrer · Molette : zoom · Glisser : déplacer")
+        else
+            self.help:SetText("Clic : ouvrir une région · Molette : zoom · Glisser : déplacer")
+        end
         local subs=self:Subs()
         if self.country==nil or #subs==0 then
             self.title:SetText(self.country and CountryName(self.country) or "Carte")
@@ -511,7 +624,7 @@ local function Build()
                 if IsClosed(e.sub) then
                     local box=boxes[e.zone.id] or {zone=e.zone}
                     boxes[e.zone.id]=box
-                    DrawPolygon(self,e.sub,PlaceColor(e.zone.id),.45,box)
+                    DrawPolygon(self,e.sub,PlaceColor(e.zone.id),.45,box,true)
                 end
             end
             for _,box in pairs(boxes) do
@@ -522,8 +635,14 @@ local function Build()
             end
         else
             local zone=self.zone
-            self.title:SetText(ZoneKnown(zone) and (zone.name or "") or ZG:MaskText(zone.name or ""))
-            self.subtitle:SetText("Région · "..CountryName(self.country))
+            if self.batiment then
+                self.title:SetText(PlaceKnown(self.batiment,zone) and (self.batiment.name or "")
+                    or ZG:MaskText(self.batiment.name or ""))
+                self.subtitle:SetText("Bâtiment · "..(ZoneKnown(zone) and (zone.name or "") or ZG:MaskText(zone.name or "")))
+            else
+                self.title:SetText(ZoneKnown(zone) and (zone.name or "") or ZG:MaskText(zone.name or ""))
+                self.subtitle:SetText("Région · "..CountryName(self.country))
+            end
             local placeLabel={}
             for _,e in ipairs(subs) do
                 local sub=e.sub
@@ -531,7 +650,10 @@ local function Build()
                 local color=place and PlaceColor(place.id) or {.6,.6,.6}
                 if sub.shape=="polygon" and sub.points and #sub.points>=2 then
                     local screen=DrawPolygon(self,sub,color,.95)
-                    if place and IsClosed(sub) then
+                    -- Le contour de la région — comme l'empreinte d'un
+                    -- bâtiment sur sa propre carte — porte un nom déjà en
+                    -- titre : l'étiqueter au centre ferait double emploi.
+                    if place and not place.pourRegion and not place.batiment and IsClosed(sub) then
                         -- Le nom se place au centre du plus grand périmètre du lieu.
                         local area=math.abs(Area(sub.points))
                         if not placeLabel[place.id] or area>placeLabel[place.id].area then
@@ -553,6 +675,24 @@ local function Build()
                 if l.x>-40 and l.x<CW+40 and l.y>-20 and l.y<CH+20 then
                     local name=PlaceKnown(l.place,zone) and (l.place.name or "") or ZG:MaskText(l.place.name or "")
                     Text(l.x,l.y,name,Light(l.color),l.area>0)
+                end
+            end
+            -- Les bâtiments : un point et un nom, pas leurs cloisons. Un clic
+            -- dessus ouvre leur carte à eux.
+            self.batimentsVus={}
+            for _,b in ipairs(self:Batiments()) do
+                local sx,sy,n=0,0,0
+                for _,p in ipairs(b.sub.points or {}) do
+                    local x,y=self:ToScreen(p.x,p.y);sx,sy,n=sx+x,sy+y,n+1
+                end
+                if n>0 then
+                    local x,y=sx/n,sy/n
+                    if x>-40 and x<CW+40 and y>-20 and y<CH+20 then
+                        Pin(x,y,"libre")
+                        local name=PlaceKnown(b.place,zone) and (b.place.name or "") or ZG:MaskText(b.place.name or "")
+                        Text(x,y-18,name,Light(COULEUR_BATIMENT),false)
+                        self.batimentsVus[#self.batimentsVus+1]={place=b.place,x=x,y=y}
+                    end
                 end
             end
         end
@@ -595,16 +735,25 @@ local function Build()
     -- un clic droit dans une région revient à son pays.
     canvas:SetScript("OnMouseUp",function(_,button)
         if button=="RightButton" then
-            if win.level=="region" and not win.carte then win:OpenCountry(win.country) end
+            -- Dans un bâtiment, on ressort d'abord vers sa région.
+            if win.level=="batiment" and not win.carte then win:ShowRegion(win.zone)
+            elseif win.level=="region" and not win.carte then win:OpenCountry(win.country) end
             return
         end
         local drag=win.drag;win.drag=nil
-        if button~="LeftButton" or not drag or win.level~="country" then return end
+        if button~="LeftButton" or not drag then return end
         local mx,my=GetCursorPosition()
         if math.abs(mx-drag.mx)+math.abs(my-drag.my)>4 then return end
         local es=canvas:GetEffectiveScale();local left,top=canvas:GetLeft(),canvas:GetTop()
         if not left or not top then return end
-        local zone=win:RegionAt(mx/es-left,top-my/es)
+        local ox,oy=mx/es-left,top-my/es
+        -- Un clic sur le point d'un bâtiment ouvre sa carte, à tous les
+        -- niveaux où ce point se montre.
+        for _,b in ipairs(win.batimentsVus or {}) do
+            if math.abs(ox-b.x)<=14 and math.abs(oy-b.y)<=14 then win:ShowBatiment(b.place);return end
+        end
+        if win.level~="country" then return end
+        local zone=win:RegionAt(ox,oy)
         if zone then win:ShowRegion(zone) end
     end)
 
@@ -624,8 +773,16 @@ local function Build()
             if zone~=self.here then self:ShowCurrent() end
         end
     end)
-    -- M rouvre toujours le pays où l'on se trouve.
-    win:SetScript("OnShow",function(self) if not self.carte then picker:Show();self:ShowCurrent() end end)
+    -- M rouvre toujours le pays où l'on se trouve — ou, si l'on est dans un
+    -- bâtiment, l'intérieur de ce bâtiment : c'est ce qu'on a sous les pieds,
+    -- et la carte du dehors n'en montre qu'un point.
+    win:SetScript("OnShow",function(self)
+        if self.carte then return end
+        picker:Show()
+        self:ShowCurrent()
+        local b=self:BatimentIci()
+        if b then self:ShowBatiment(b) end
+    end)
     UISpecialFrames=UISpecialFrames or {};table.insert(UISpecialFrames,"LCMCrossingsRegionMap")
 end
 

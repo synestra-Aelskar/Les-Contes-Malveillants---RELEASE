@@ -29,6 +29,8 @@
 --   combat!  joueur -> groupe  « ou en est-on ? » (apres un /reload)
 --   combatK  joueur -> MJ   changement de son etat KO       { s, k }
 --   combatK= MJ -> groupe   changement KO d'un combattant   { s, j, k }
+--   combatI  joueur -> MJ   son initiative a bouge          { s, v }
+--   combatI= MJ -> groupe   l'initiative d'un combattant    { s, j, v }
 -- L'etat complet n'est envoye qu'au lancement et sur demande : WoW limite le
 -- debit des messages d'addon, et un pas de tour tient en un seul message.
 
@@ -269,6 +271,59 @@ local function DefinirKO(id, ko, diffuser)
     return true
 end
 
+-- ===== L'initiative qui bouge en cours de combat ===========================
+-- Un buff ou un debuff d'initiative doit DEPLACER le score, pas relancer le
+-- de : « 10 + 4 d'initiative » plus un buff de 4 fait 18, avec le meme de.
+-- On retient donc la part FIXE du jet (valeur, apports, bonus — le `fixe` de
+-- Core/Roll.lua) et on applique l'ecart.
+
+local function FixeInitiative(entity)
+    if not entity then return 0 end
+    return (tonumber(LCM.Entities.Get_Value(entity, "initiative")) or 0)
+        + (tonumber(LCM.Formules.Apport(entity, "initiative")) or 0)
+        + (tonumber(LCM.Effets.Bonus(entity, "initiative")) or 0)
+end
+
+-- La part fixe connue, par combattant. Chacun ne suit que ce qu'il TIENT :
+-- son personnage, ou les PNJ qu'il incarne s'il mene. Les bonus d'un autre ne
+-- se lisent pas d'ici, c'est lui qui les annonce.
+local fixesConnus = {}
+
+-- L'entite que ce client tient pour une entree, s'il la tient.
+local function MienneEntite(etat, entree)
+    if not entree.pnj and entree.id == Moi() then return LCM.Entities.Personnage() end
+    if etat.mj == Moi() and entree.pnj and LCM.Incarnation then
+        return LCM.Incarnation.Instance(entree.id)
+    end
+    return nil
+end
+
+-- Retrie ce qui n'a PAS encore joue dans le round. Les entrees jusqu'au tour
+-- courant, celui-ci compris, gardent leur place : un debuff ne peut donc
+-- jamais rendre un tour deja pris. Au mieux il retarde le moment de jeu, au
+-- pire il n'agit qu'au round suivant, quand l'ordre se refait en entier.
+local function RetrierLaSuite(etat)
+    local suite = {}
+    for i = etat.c + 1, #etat.entrees do suite[#suite + 1] = etat.entrees[i] end
+    Combat.Trier(suite)
+    for i, entree in ipairs(suite) do etat.entrees[etat.c + i] = entree end
+end
+
+-- Meme partage que le KO : le MJ relaie, un client ne parle que pour lui.
+local function DefinirInitiative(id, v, diffuser)
+    local entree = EntreeParId(id)
+    if not entree then return false end
+    v = tonumber(v)
+    if not v or entree.v == v then return false end
+    entree.v = v
+    RetrierLaSuite(Combat.etat)
+    Prevenir()
+    if diffuser then
+        Envoyer("combatI=", { s = Combat.etat.s, j = entree.id, v = v }, Combat.CanalGroupe())
+    end
+    return true
+end
+
 -- ===== Les annonces ========================================================
 
 local function Annoncer(texte)
@@ -342,6 +397,9 @@ end
 local function Appliquer(etat)
     local avant = Combat.etat
     Combat.etat = etat
+    -- Un autre combat, ou plus de combat : les parts fixes retenues ne valent
+    -- plus rien, le prochain jet repart de zero.
+    if not etat or not avant or avant.s ~= etat.s then wipe(fixesConnus) end
     local charDb = LCM.charDb
     if charDb then
         local participe = false
@@ -361,10 +419,14 @@ local function Appliquer(etat)
     -- retire des PA : cette perte doit compter dans sa tranche.
     if etat then
         for _, entree in ipairs(etat.entrees or {}) do
-            if not entree.pnj and entree.id == Moi() then
-                Combat.PADisponibles(LCM.Entities.Personnage())
-            elseif etat.mj == Moi() and entree.pnj and LCM.Incarnation then
-                Combat.PADisponibles(LCM.Incarnation.Instance(entree.id))
+            local mienne = MienneEntite(etat, entree)
+            if mienne then
+                Combat.PADisponibles(mienne)
+                -- La part fixe de son initiative, retenue des qu'on voit
+                -- l'entree : l'ecart a venir se mesure a partir de la.
+                if fixesConnus[entree.id] == nil then
+                    fixesConnus[entree.id] = FixeInitiative(mienne)
+                end
             end
         end
     end
@@ -375,6 +437,11 @@ local function Appliquer(etat)
     -- Un round de plus : les etats temporaires vieillissent (chez chacun, pour
     -- ce qu'il porte). Revenir en arriere ne leur rend rien.
     if avant and etat and avant.s == etat.s and (etat.t > avant.t or (etat.t == avant.t and etat.r > avant.r)) then
+        -- Et l'ordre se refait EN ENTIER : ce qu'un buff ou un debuff n'avait
+        -- pas pu deplacer dans le round (un combattant qui avait deja joue)
+        -- prend effet ici. Tout le monde trie les memes valeurs, donc tout le
+        -- monde tombe sur le meme ordre sans qu'on le rediffuse.
+        Combat.Trier(etat.entrees)
         if LCM.EtatsTemporaires then LCM.EtatsTemporaires.Vieillir() end
     end
     -- Le deplacement se rend quand c'est DE NOUVEAU a nous de jouer, pas au
@@ -801,6 +868,25 @@ LCM.WhenReady(function()
         DefinirKO(tostring(d.j or ""), tostring(d.k) == "1", false)
     end)
 
+    -- Un joueur dit ou SON initiative en est maintenant. Comme pour le KO, le
+    -- MJ choisit l'entree d'apres l'expediteur et relaie une version qui fait
+    -- foi : personne ne deplace le score d'un autre.
+    R.Ecouter("combatI", function(expediteur, d)
+        local etat = Combat.etat
+        if not etat or not Combat.EstMJ() or etat.s ~= tostring(d.s) then return end
+        local joueur = IdJoueur(expediteur)
+        local entree = EntreeParId(joueur)
+        if not entree or entree.pnj then return end
+        DefinirInitiative(joueur, d.v, true)
+    end)
+
+    R.Ecouter("combatI=", function(expediteur, d)
+        local etat = Combat.etat
+        if not etat or Combat.EstMJ() then return end
+        if etat.mj ~= IdJoueur(expediteur) or etat.s ~= tostring(d.s) then return end
+        DefinirInitiative(tostring(d.j or ""), d.v, false)
+    end)
+
     R.Ecouter("combat.", function(expediteur, d)
         local etat = Combat.etat
         if not etat or Combat.EstMJ() then
@@ -894,6 +980,32 @@ LCM.WhenReady(function()
             DefinirKO(id, ko, true)
         elseif id == Moi() and DefinirKO(id, ko, false) then
             Envoyer("combatK", { s = etat.s, k = ko and 1 or 0 }, "WHISPER", etat.mj)
+        end
+    end)
+
+    -- Et l'initiative, qu'un etat temporaire fait monter ou descendre. On ne
+    -- filtre aucun champ : un bonus d'initiative peut venir d'un etat, d'un
+    -- trait, d'un objet porte. Relire la part fixe coute trois lectures, et
+    -- rien ne part tant qu'elle n'a pas vraiment bouge.
+    LCM.Entities.Ecouter(function(entity)
+        local etat = Combat.etat
+        if not etat then return end
+        local entree
+        for _, candidate in ipairs(etat.entrees or {}) do
+            if MienneEntite(etat, candidate) == entity then entree = candidate break end
+        end
+        if not entree then return end
+        local connu = fixesConnus[entree.id]
+        local fixe = FixeInitiative(entity)
+        if connu == nil then fixesConnus[entree.id] = fixe return end
+        if fixe == connu then return end
+        fixesConnus[entree.id] = fixe
+        -- L'ECART, pas un nouveau jet : le de tire au lancement reste le sien.
+        local valeur = entree.v + (fixe - connu)
+        if Combat.EstMJ() then
+            DefinirInitiative(entree.id, valeur, true)
+        elseif DefinirInitiative(entree.id, valeur, false) then
+            Envoyer("combatI", { s = etat.s, v = valeur }, "WHISPER", etat.mj)
         end
     end)
 end)

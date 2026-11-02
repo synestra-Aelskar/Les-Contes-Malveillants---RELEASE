@@ -32,7 +32,17 @@ local SCANNER = "outil_scanner_valrazkah"
 -- Les outils au pas d'un eventail du radial (61 entre deux voisines, pour
 -- Radial.ACTION = 46) ; les actions, un cran plus petites, sous leur outil.
 local ECART_TETE, PAS = 72, 61
-local ACTION, PAS_ACTION, DESSOUS = 38, 54, 70
+-- PAS_ACTION descend d'une action a la suivante : vignette (38), sa legende
+-- (4 de marge, une ligne), et de quoi respirer.
+local ACTION, PAS_ACTION, DESSOUS = 38, 60, 70
+-- Une lanterne en propose trois : Allumer, Voir, Desequiper.
+local MAX_ACTIONS = 3
+
+-- De quoi loger la colonne d'actions la plus longue, demi-hauteur depuis le
+-- centre. Les Raccourcis s'en servent aussi : ils deplient les memes actions.
+function MesOutils.Hauteur()
+    return DESSOUS + (MAX_ACTIONS - 1) * PAS_ACTION + ACTION
+end
 
 local ICONES = {
     boire = "Interface\\Icons\\INV_Drink_07",
@@ -144,10 +154,12 @@ function MesOutils.PoserActions(f, x0, actions)
         b.action = action
         b.icone:SetTexture(ICONES[action.cle])
         b.legende:SetText(action.label)
-        local x = x0 + (i - (#actions + 1) / 2) * PAS_ACTION
+        -- En colonne, pas en rangee : trois actions cote a cote debordaient
+        -- de l'ecran des que l'outil etait vers la droite du sceau.
+        local y = -(DESSOUS + (i - 1) * PAS_ACTION)
         b:ClearAllPoints()
-        b:SetPoint("CENTER", f, "CENTER", x, -DESSOUS)
-        cibles[i] = { x = x, y = -DESSOUS }
+        b:SetPoint("CENTER", f, "CENTER", x0, y)
+        cibles[i] = { x = x0, y = y }
         R.Bulle(b, action.label, nil)
         b:Show()
     end
@@ -163,7 +175,7 @@ local function Construire()
     -- Au-dessus du menu radial (MEDIUM), qu'il prolonge. Son CENTRE est celui
     -- du bouton Mes Outils : tout se place en decalage de ce point.
     f:SetFrameStrata("HIGH")
-    f:SetSize(2 * (ECART_TETE + 9 * PAS), 2 * (DESSOUS + ACTION))
+    f:SetSize(2 * (ECART_TETE + 9 * PAS), 2 * MesOutils.Hauteur())
     f:EnableMouse(false)
 
     -- Le jet pourpre du retour vers les outils : sous les vignettes.

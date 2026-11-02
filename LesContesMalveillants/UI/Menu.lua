@@ -90,7 +90,9 @@ Menu.STRUCTURE = {
     { id = "outils", label = "Outils", icone = RADIAL .. "fenetres-outils.tga",
       enfants = {
           { id = "campement",  label = "Campement",  icone = ICONE .. "spell_fire_fire" },
-          { id = "incarner",   label = "Incarner",   icone = RADIAL .. "fenetres-incarner.tga", mjSeulement = true },
+          -- « Incarner » n'est plus ici (2 novembre 2026) : la page Scène & PNJ
+          -- du Panel MJ met en scène et incarne, deux menus faisaient la meme
+          -- chose (le MJ).
           { id = "atelier",    label = "Atelier",    icone = RADIAL .. "fenetres-compendium.tga", mjSeulement = true },
           { id = "panneau_mj", label = "Panel MJ",   icone = RADIAL .. "fenetres-panneau_mj.tga", mjSeulement = true },
           { id = "parametres", label = "Paramètres", icone = RADIAL .. "fenetres-parametres.tga" },
