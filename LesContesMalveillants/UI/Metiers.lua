@@ -34,12 +34,46 @@ local function Construire()
     f.liste:SetPoint("TOPLEFT", f.contenu, "TOPLEFT", 0, 0)
     f.liste:SetPoint("BOTTOMLEFT", f.contenu, "BOTTOMLEFT", 0, 0)
     f.liste:SetWidth(COLONNE)
-    f.lignes = {}
-    for index, metier in ipairs(Metiers.list) do
+    -- Rangee par CATEGORIES (Recolte, Artisanat, Campement, Exploration ; le
+    -- MJ, 2 novembre 2026), chacune sous son en-tete et par ordre alphabetique.
+    -- Un metier de deux categories a deux lignes : elles montrent le MEME
+    -- niveau, et s'allument ensemble quand on le choisit.
+    f.lignes, f.entetes = {}, {}
+    local y = 0
+    local ENTETE = 24
+    local function Entete(categorie)
+        local h = CreateFrame("Frame", nil, f.liste.contenu)
+        h:SetHeight(ENTETE)
+        h:SetPoint("TOPLEFT", f.liste.contenu, "TOPLEFT", 0, -y)
+        h:SetPoint("TOPRIGHT", f.liste.contenu, "TOPRIGHT", 0, -y)
+        h.texte = UI.Texte(h, UI.Majuscules(categorie.label), UI.C.libelle, "GameFontNormalSmall")
+        UI.Police(h.texte, 11)
+        h.texte:SetPoint("BOTTOMLEFT", h, "BOTTOMLEFT", 4, 5)
+        h.filet = UI.Filet(h, true)
+        h.filet:SetPoint("BOTTOMLEFT", h, "BOTTOMLEFT", 0, 2)
+        h.filet:SetPoint("BOTTOMRIGHT", h, "BOTTOMRIGHT", 0, 2)
+        h.categorie = categorie.id
+        f.entetes[#f.entetes + 1] = h
+        y = y + ENTETE + 2
+    end
+    local rangees = {}
+    for _, categorie in ipairs(Metiers.Categories()) do
+        rangees[#rangees + 1] = { entete = categorie }
+        for _, metier in ipairs(categorie.metiers) do
+            rangees[#rangees + 1] = { metier = metier, categorie = categorie.id }
+        end
+    end
+    for _, rangee in ipairs(rangees) do
+      if rangee.entete then
+        Entete(rangee.entete)
+      else
+        local metier = rangee.metier
         local b = CreateFrame("Button", nil, f.liste.contenu)
         b:SetHeight(LIGNE - 2)
-        b:SetPoint("TOPLEFT", f.liste.contenu, "TOPLEFT", 0, -(index - 1) * LIGNE)
-        b:SetPoint("TOPRIGHT", f.liste.contenu, "TOPRIGHT", 0, -(index - 1) * LIGNE)
+        b:SetPoint("TOPLEFT", f.liste.contenu, "TOPLEFT", 0, -y)
+        b:SetPoint("TOPRIGHT", f.liste.contenu, "TOPRIGHT", 0, -y)
+        b.categorie = rangee.categorie
+        y = y + LIGNE
         if UI.SurfaceLigne then UI.SurfaceLigne(b) end
         b.survol = UI.Aplat(b, UI.C.survol, "HIGHLIGHT")
         b.survol:SetAllPoints(b)
@@ -57,9 +91,10 @@ local function Construire()
         b.metierId = metier.id
         b:SetScript("OnClick", function(bouton) f:Choisir(bouton.metierId) end)
         UI.Bulle(b, metier.label, metier.description, 0.2)
-        f.lignes[index] = b
+        f.lignes[#f.lignes + 1] = b
+      end
     end
-    f.liste:Regler(#Metiers.list * LIGNE)
+    f.liste:Regler(y)
 
     -- ----- le detail --------------------------------------------------------
     local d = CreateFrame("Frame", nil, f.contenu)

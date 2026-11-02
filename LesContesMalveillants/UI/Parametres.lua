@@ -77,6 +77,15 @@ local function Construire()
     end)
     y = y + 8
 
+    Titre("SON")
+    -- Tous les sons de l'addon (l'appel du combat, les bannieres, le sac, les
+    -- pages) se taisent d'un coup : qui n'en veut pas ne les a plus (le MJ,
+    -- 2 novembre 2026). Le volume du jeu, lui, n'est pas touche.
+    f.sons = Case("Couper le son de l'addon", function(coche)
+        LCM.CouperSons(coche)
+    end)
+    y = y + 8
+
     Titre("PERSONNAGE")
     f.joue = Ligne(UI.C.texte)
     f.choisir = Bouton("Choisir un personnage", 180, function()
@@ -221,6 +230,7 @@ local function Construire()
                               or "Aucun personnage choisi.")
 
         self.traces:Cocher(LCM.db.settings and LCM.db.settings.debug or false)
+        self.sons:Cocher(LCM.SonsCoupes())
         self.version:SetText(string.format("Version %s — %s", tostring(LCM.version),
             LCM.IsMaster() and "maître du jeu" or "joueur"))
 

@@ -62,6 +62,34 @@ function LCM.BasculerModeJoueur(force)
     return true, voulu
 end
 
+-- ===== Sons ================================================================
+-- Tous les sons de l'addon passent par ici (le MJ, 2 novembre 2026) : une
+-- case « Couper le son » dans les parametres les fait taire d'un coup, sans
+-- toucher au volume du jeu. Un son appele directement par PlaySound
+-- echapperait a la case : il n'y en a donc aucun ailleurs. Reglage de COMPTE.
+function LCM.SonsCoupes()
+    return LCM.db and LCM.db.settings and LCM.db.settings.sonsCoupes == true
+end
+
+function LCM.CouperSons(coupe)
+    LCM.EnsureDatabase()
+    LCM.db.settings.sonsCoupes = coupe and true or nil
+end
+
+-- Un son du jeu (identifiant SoundKit). Rend true s'il a joue.
+function LCM.Son(id, canal)
+    if LCM.SonsCoupes() or not PlaySound or not id then return false end
+    local ok, joue = pcall(PlaySound, id, canal or "SFX")
+    return ok and joue ~= false
+end
+
+-- Un fichier son (chemin du jeu ou de l'addon).
+function LCM.SonFichier(chemin, canal)
+    if LCM.SonsCoupes() or not PlaySoundFile or not chemin then return false end
+    local ok, joue = pcall(PlaySoundFile, chemin, canal or "SFX")
+    return ok and joue ~= false
+end
+
 -- ===== Sauvegarde ==========================================================
 -- Deux tables, et deux seulement :
 --   LCM_DB      : ce qui appartient au compte (reglages, contenu partage)

@@ -1118,6 +1118,118 @@ function UI.Navigation(parent, sections, onChange, options)
     return nav
 end
 
+-- ===== Le selecteur de couleur ==============================================
+-- Une pastille qu'on clique ouvre ceci (le MJ, 2 novembre 2026 : « tu cliques
+-- sur la case, et dedans un selecteur + le code hexa ») : l'apercu, une palette
+-- de teintes, le code en hexadecimal, et la roue de couleurs du jeu quand le
+-- client la propose (OpenColorPicker). Une seule fenetre, reutilisee.
+--
+--   UI.SelecteurCouleur():Ouvrir(ancre, "FF8CBF", function(hex) ... end)
+--
+-- Le rappel recoit six chiffres hexadecimaux en majuscules, a « Valider ».
+-- Un code illisible est refuse et le dit ; rien n'est corrige en douce.
+local PALETTE = {
+    "FF8CBF", "66D966", "66A6FF", "FF9933", "F24D4D", "B373F2", "9999A6", "FFFFFF",
+    "FFD36B", "C8A15A", "8C5A2B", "4D3319", "2E8B57", "1E90FF", "00CED1", "000000",
+    "FF69B4", "ADFF2F", "87CEEB", "FFA07A", "DC143C", "9370DB", "708090", "F5DEB3",
+}
+local selecteurCouleur
+function UI.SelecteurCouleur()
+    if selecteurCouleur then return selecteurCouleur end
+    local s = CreateFrame("Frame", "LCM_SelecteurCouleur", UIParent)
+    s:SetSize(236, 196)
+    s:SetFrameStrata("DIALOG")
+    s:EnableMouse(true)
+    s.fond = UI.Aplat(s, { 0.06, 0.05, 0.04, 0.97 })
+    s.fond:SetAllPoints(s)
+    UI.Bordure(s, UI.C.accent)
+    s.titre = UI.Texte(s, "Couleur", UI.C.titre)
+    UI.Police(s.titre, 12)
+    s.titre:SetPoint("TOPLEFT", s, "TOPLEFT", 10, -8)
+    s.apercu = UI.Aplat(s, { 1, 1, 1, 1 }, "ARTWORK")
+    s.apercu:SetSize(36, 36)
+    s.apercu:SetPoint("TOPLEFT", s, "TOPLEFT", 10, -28)
+    s.hex = UI.Champ(s, 90, 22, function(texte)
+        local hex = tostring(texte or ""):gsub("^%s*#?", ""):gsub("%s+$", ""):upper()
+        if hex:match("^%x%x%x%x%x%x$") then s:Montrer(hex, true) end
+    end)
+    s.hex:SetMaxLetters(7)
+    s.hex:SetPoint("LEFT", s.apercu, "RIGHT", 10, 0)
+    s.etiquetteHex = UI.Texte(s, "Hexa", UI.C.discret)
+    UI.Police(s.etiquetteHex, 10)
+    s.etiquetteHex:SetPoint("BOTTOMLEFT", s.hex, "TOPLEFT", 2, 2)
+    s.cases = {}
+    for i, hex in ipairs(PALETTE) do
+        local b = CreateFrame("Button", nil, s)
+        b:SetSize(24, 18)
+        local col, rangee = (i - 1) % 8, math.floor((i - 1) / 8)
+        b:SetPoint("TOPLEFT", s, "TOPLEFT", 10 + col * 27, -74 - rangee * 21)
+        b.fond = UI.Aplat(b, { 1, 1, 1, 1 }, "ARTWORK")
+        b.fond:SetAllPoints(b)
+        local r, g, bl = tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255,
+            tonumber(hex:sub(5, 6), 16) / 255
+        b.fond:SetColorTexture(r, g, bl, 1)
+        UI.BordureFine(b, 0.5)
+        b.hex = hex
+        b:SetScript("OnClick", function(bouton) s:Montrer(bouton.hex) end)
+        s.cases[i] = b
+    end
+    -- La roue du jeu, quand le client l'a : elle sait toutes les teintes.
+    s.roue = UI.Bouton(s, "Roue des couleurs…", 140, 20, function()
+        if type(OpenColorPicker) ~= "function" then return end
+        local r, g, b = tonumber(s.valeur:sub(1, 2), 16) / 255, tonumber(s.valeur:sub(3, 4), 16) / 255,
+            tonumber(s.valeur:sub(5, 6), 16) / 255
+        local function Suivre()
+            if not (ColorPickerFrame and ColorPickerFrame.GetColorRGB) then return end
+            local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+            s:Montrer(string.format("%02X%02X%02X", math.floor(nr * 255 + 0.5),
+                math.floor(ng * 255 + 0.5), math.floor(nb * 255 + 0.5)))
+        end
+        OpenColorPicker({ r = r, g = g, b = b, hasOpacity = false, swatchFunc = Suivre,
+            func = Suivre, cancelFunc = function() end })
+    end)
+    s.roue:SetPoint("TOPLEFT", s, "TOPLEFT", 10, -142)
+    s.valider = UI.Bouton(s, "Valider", 100, 22, function()
+        local hex = tostring(s.hex:GetText() or ""):gsub("^%s*#?", ""):gsub("%s+$", ""):upper()
+        if not hex:match("^%x%x%x%x%x%x$") then
+            LCM.Alerte("une couleur s'écrit en six chiffres hexadécimaux (FF8CBF).")
+            return
+        end
+        s:Hide()
+        if s.rappel then s.rappel(hex) end
+    end)
+    s.valider:SetPoint("BOTTOMRIGHT", s, "BOTTOMRIGHT", -10, 8)
+    s.annuler = UI.Bouton(s, "Annuler", 90, 22, function() s:Hide() end)
+    s.annuler:SetPoint("RIGHT", s.valider, "LEFT", -6, 0)
+
+    -- `depuisSaisie` : ne pas reecrire le champ qu'on est en train de taper.
+    function s:Montrer(hex, depuisSaisie)
+        self.valeur = hex
+        local r, g, b = tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255,
+            tonumber(hex:sub(5, 6), 16) / 255
+        self.apercu:SetColorTexture(r, g, b, 1)
+        if not depuisSaisie then self.hex:SetText(hex) end
+    end
+
+    function s:Ouvrir(ancre, hex, rappel)
+        hex = tostring(hex or "FFFFFF"):gsub("^#", ""):upper()
+        if not hex:match("^%x%x%x%x%x%x$") then hex = "FFFFFF" end
+        self.rappel = rappel
+        self:Montrer(hex)
+        self.roue:SetShown(type(OpenColorPicker) == "function")
+        self:ClearAllPoints()
+        if ancre then self:SetPoint("TOPLEFT", ancre, "BOTTOMLEFT", 0, -4)
+        else self:SetPoint("CENTER", UIParent, "CENTER", 0, 0) end
+        self:Show()
+        self:Raise()
+    end
+
+    s:Hide()
+    if UISpecialFrames then UISpecialFrames[#UISpecialFrames + 1] = s:GetName() end
+    selecteurCouleur = s
+    return s
+end
+
 -- Barre de progression (jauge, partie du corps...).
 function UI.Barre(parent, couleur, largeur, hauteur)
     local b = CreateFrame("Frame", nil, parent)
@@ -2255,6 +2367,27 @@ function UI.Filet(parent, doux, vertical)
     local t = UI.Aplat(parent, doux and UI.C.filetDoux or UI.C.filet, "ARTWORK")
     if vertical then t:SetWidth(1) else t:SetHeight(1) end
     return t
+end
+
+-- Une colonne : fond sombre et filet fin, comme les panneaux du Compendium,
+-- avec son titre en capitales. Le contenu se pose sous `col.haut`. Elle
+-- vivait dans le Panel MJ ; la page Combat la partage depuis le 2 novembre
+-- 2026, d'ou sa place ici. `sansMajuscules` : un titre qui change en cours de
+-- route (« Joueurs du groupe », « À intégrer ») garde sa casse.
+function UI.Colonne(parent, titre, sansMajuscules)
+    local col = CreateFrame("Frame", nil, parent)
+    col.fond = UI.Aplat(col, { 0.05, 0.05, 0.05, 0.55 * UI.C.fond[4] })
+    col.fond:SetAllPoints(col)
+    UI.BordureFine(col, 0.18)
+    titre = titre or ""
+    col.titre = UI.Texte(col, sansMajuscules and titre or UI.Majuscules(titre), UI.C.libelle, "GameFontNormalSmall")
+    UI.Police(col.titre, 11)
+    col.titre:SetPoint("TOPLEFT", col, "TOPLEFT", 8, -8)
+    col.filet = UI.Filet(col, true)
+    col.filet:SetPoint("TOPLEFT", col, "TOPLEFT", 6, -24)
+    col.filet:SetPoint("TOPRIGHT", col, "TOPRIGHT", -6, -24)
+    col.haut = 30
+    return col
 end
 
 -- Poignee de redimensionnement en bas a droite (18 x 18, a 4 du bord). La

@@ -42,6 +42,8 @@ local Recolte = {
     -- Les prises demandees au MJ present et pas encore repondues : l'instant
     -- de la demande. En memoire seulement.
     enAttente = {},
+    -- L'instant du dernier jet, par point : un clic, un jet. En memoire.
+    dernierEssai = {},
     -- Les points recoltes en l'absence de leur MJ, a lui dire :
     -- attente[id] = { a = auteur, d = definition, q = quantite, t = quand }.
     -- En sauvegarde : ils doivent survivre a une deconnexion, c'est tout
@@ -50,6 +52,9 @@ local Recolte = {
     echecs = {}, -- echecs hors ligne : usages locaux a signaler au MJ
 }
 LCM.Recolte = Recolte
+-- Une seconde : assez pour absorber un double clic, trop peu pour gener
+-- celui qui retente apres un echec.
+Recolte.ANTI_REBOND = 1
 Recolte.METIER_AUCUN = "__aucun__"
 
 local INTERVALLE = 0.25
@@ -148,16 +153,26 @@ local function ARegler(p)
 end
 
 -- L'etat appartient au point pose, jamais a sa definition partagee.
+-- « Infini » (limite 0) : le point ne s'epuise JAMAIS. Une ressource sans
+-- regeneration y etait pourtant marquee consommee a la premiere prise, et le
+-- point repondait ensuite « ne donne plus rien » (le MJ, 2 novembre 2026).
+-- Sur un point infini, elle ne se consomme donc pas ; une ressource qui se
+-- regenere garde son delai, c'est un rythme et non une limite.
+function Recolte.Infini(definition)
+    return tonumber(definition and definition.limite) == 0
+end
+
 function Recolte.Disponible(point, definition, maintenant)
     maintenant = maintenant or (time and time()) or 0
     if (tonumber(definition.limite) or 1) > 0
         and (tonumber(point.usages) or 0) >= (tonumber(definition.limite) or 1) then return false end
+    local infini = Recolte.Infini(definition)
     for index, ressource in ipairs(Recolte.RessourcesDuPoint(point, definition)) do
         local prochain = point.prochain and tonumber(point.prochain[index])
         local consomme = point.consomme and point.consomme[index]
         if ressource.regeneration then
             if not prochain or prochain <= maintenant then return true end
-        elseif not consomme then return true end
+        elseif infini or not consomme then return true end
     end
     return false
 end
@@ -182,16 +197,17 @@ function Recolte.Tirer(point, definition, maintenant)
     local lots, consomme, prochain = {}, {}, {}
     for i, v in pairs(point.consomme or {}) do consomme[i] = v end
     for i, v in pairs(point.prochain or {}) do prochain[i] = v end
+    local infini = Recolte.Infini(definition)
     for index, ressource in ipairs(Recolte.RessourcesDuPoint(point, definition)) do
         local disponible = ressource.regeneration
             and (not prochain[index] or prochain[index] <= maintenant)
-            or (not ressource.regeneration and not consomme[index])
+            or (not ressource.regeneration and (infini or not consomme[index]))
         if disponible then
             local chance = math.max(0, math.min(100, tonumber(ressource.chance) or 100))
             if chance == 100 or (chance > 0 and LCM.Roll.Des(1, 100) <= chance) then
                 if ressource.regeneration then
                     prochain[index] = maintenant + math.max(0, tonumber(ressource.minutes) or 0) * 60
-                else
+                elseif not infini then
                     consomme[index] = true
                 end
                 lots[#lots + 1] = { index = index, entree = ressource.entree,
@@ -309,6 +325,7 @@ function Recolte.Paquet(definition, points)
         u = ressources, v = definition.metiers,
         f = definition.echecConsomme and true or nil,
         o = propres,
+        t = Recolte.PlierOutils(definition.outils),
     }
 end
 
@@ -325,8 +342,12 @@ function Recolte.Lire(paquet)
         for _, choix in ipairs(paquet.v) do
             local id = type(choix) == "table" and Texte(choix.id) or Texte(choix)
             if id ~= "" then
+                local dd = type(choix) == "table" and tonumber(choix.dd)
+                local fatigue = type(choix) == "table" and tonumber(choix.fatigue)
                 metiers[#metiers + 1] = { id = id,
-                    bonus = type(choix) ~= "table" or choix.bonus == true or choix.bonus == "true" }
+                    bonus = type(choix) ~= "table" or choix.bonus == true or choix.bonus == "true",
+                    dd = dd and math.max(0, math.floor(dd)) or nil,
+                    fatigue = fatigue and fatigue > 0 and math.floor(fatigue) or nil }
             end
         end
     end
@@ -342,6 +363,7 @@ function Recolte.Lire(paquet)
         rayon = tonumber(paquet.r), limite = tonumber(paquet.l) or 1,
         ressources = ressources,
         echecConsomme = paquet.f == true or paquet.f == "true",
+        outils = Recolte.LireOutils(paquet.t),
     }, (function()
         local points = Recolte.Deplier(paquet.p)
         if type(paquet.o) == "table" then
@@ -572,53 +594,212 @@ function Recolte.Regler()
 end
 
 -- ===== Le jet ==============================================================
--- Un métier de la liste est requis dès qu'elle n'est pas vide. Parmi ceux
--- appris, on garde le meilleur bonus autorisé pour ce point.
+-- Un métier de la liste est requis dès qu'elle n'est pas vide. Chaque ligne
+-- porte son DD et sa fatigue (le MJ, 2 novembre 2026) ; parmi les metiers
+-- appris, on garde celui qui laisse la meilleure MARGE (bonus - DD) — a DD
+-- egaux, c'est le meilleur bonus, comme avant. Une ligne sans DD propre (un
+-- point d'avant) prend celui du point. Rend aussi la ligne retenue.
+-- ===== Les outils autorises ================================================
+-- Un point de recolte lie des TYPES d'outil (la « Liste outils ») a ses
+-- lignes de metier (le MJ, 2 novembre 2026 : « Pioche est liée à Mineur »).
+-- Un outil lie est OBLIGATOIRE pour la ligne : sans pioche, pas de jet de
+-- Mineur. `metier` absent : l'outil vaut pour toutes les lignes. `consomme` :
+-- il se perd a la tentative, comme dans les coffres.
+--
+-- outils = { { type = <id de liste>, metier = <id ou nil>, consomme = bool } }
+
+function Recolte.PlierOutils(outils)
+    if type(outils) ~= "table" or not outils[1] then return nil end
+    local out = {}
+    for _, o in ipairs(outils) do
+        out[#out + 1] = { y = o.type, m = o.metier, c = o.consomme and 1 or nil }
+    end
+    return out
+end
+
+function Recolte.LireOutils(liste)
+    if type(liste) ~= "table" then return nil end
+    local out = {}
+    for _, o in ipairs(liste) do
+        local typeOutil = type(o) == "table" and Texte(o.y or o.type) or ""
+        if typeOutil ~= "" then
+            local metier = Texte(o.m or o.metier)
+            out[#out + 1] = { type = typeOutil, metier = metier ~= "" and metier or nil,
+                consomme = o.c == 1 or o.c == "1" or o.c == true or o.consomme == true or nil }
+        end
+    end
+    return out[1] and out or nil
+end
+
+-- Les prerequis d'une ligne de metier, dans la forme que lit
+-- LCM.OutilsRequis.Resoudre.
+function Recolte.OutilsPour(definition, metierId)
+    local out = {}
+    for _, o in ipairs(type(definition) == "table" and definition.outils or {}) do
+        if o.metier == nil or o.metier == metierId then
+            out[#out + 1] = { typeOutil = o.type, quantite = 1,
+                consomme = o.consomme == true, consommeQuantite = 1 }
+        end
+    end
+    return out
+end
+
+-- Ce que la ligne exige, resolu dans le sac : la liste des exemplaires a
+-- utiliser, ou nil et le nom de l'outil qui manque.
+local function OutilsDeLaLigne(entity, definition, metierId)
+    local requis = Recolte.OutilsPour(definition, metierId)
+    if #requis == 0 then return {} end
+    return LCM.OutilsRequis.Resoudre(entity, requis)
+end
+
 function Recolte.ChoisirMetier(entity, definition)
     local choix = type(definition.metiers) == "table" and definition.metiers
         or (definition.metier and { { id = definition.metier, bonus = true } } or {})
-    if #choix == 0 then return nil, 0, true end
-    local retenu, meilleur, sansMetier = nil, -1, false
+    if #choix == 0 then
+        -- Sans ligne de metier, un outil lie a « toutes les lignes » reste exige.
+        local outils, absent = OutilsDeLaLigne(entity, definition, nil)
+        if not outils then return nil, 0, false, nil, nil, absent end
+        return nil, 0, true, nil, outils
+    end
+    local function DD(regle)
+        return type(regle) == "table" and tonumber(regle.dd) or tonumber(definition.dd) or 0
+    end
+    local retenu, meilleur, marge, regleRetenue, regleSans = nil, -1, nil, nil, nil
+    local outilsRetenus, outilsSans, manque
     for _, regle in ipairs(choix) do
         local id = type(regle) == "table" and regle.id or regle
         if id == Recolte.METIER_AUCUN then
-            sansMetier = true
+            local outils, absent = OutilsDeLaLigne(entity, definition, id)
+            if outils then
+                regleSans, outilsSans = type(regle) == "table" and regle or { id = id }, outils
+            else
+                manque = manque or absent
+            end
         elseif id and LCM.Metiers.Get(id) and LCM.Metiers.Palier(entity, id).rang > 0 then
-            local bonus = (type(regle) ~= "table" or regle.bonus ~= false)
-                and LCM.Metiers.Bonus(entity, id) or 0
-            if bonus > meilleur then retenu, meilleur = id, bonus end
+            -- Un metier appris sans son outil ne compte pas : on retient ce qui
+            -- manque, pour le dire si aucune ligne ne reste.
+            local outils, absent = OutilsDeLaLigne(entity, definition, id)
+            if not outils then
+                manque = manque or string.format("%s (%s)", tostring(absent), LCM.Metiers.Get(id).label)
+            else
+                local bonus = (type(regle) ~= "table" or regle.bonus ~= false)
+                    and LCM.Metiers.Bonus(entity, id) or 0
+                local m = bonus - DD(regle)
+                if marge == nil or m > marge then
+                    retenu, meilleur, marge = id, bonus, m
+                    regleRetenue = type(regle) == "table" and regle or { id = id }
+                    outilsRetenus = outils
+                end
+            end
         end
     end
-    if not retenu and sansMetier then return nil, 0, true end
-    if not retenu then return nil, 0, false end
-    return retenu, meilleur, true
+    if not retenu and regleSans then return nil, 0, true, regleSans, outilsSans end
+    if not retenu then return nil, 0, false, nil, nil, manque end
+    return retenu, meilleur, true, regleRetenue, outilsRetenus
 end
 
 -- D15 + bonus du métier retenu contre le DD (Equilibrage.recolte).
 -- Sans métier requis ni DD, il n'y a rien à réussir : on ramasse.
 
+-- La fatigue de la ligne se paie a CHAQUE tentative, et une tentative qu'on
+-- n'a pas de quoi payer est refusee — la regle des coffres (UI/Coffre.lua).
 function Recolte.Jet(entity, definition)
     local des = Eq().des or {}
-    local metier, bonus, autorise = Recolte.ChoisirMetier(entity, definition)
-    if not autorise then return nil, "aucun des métiers requis n'est appris." end
+    local metier, bonus, autorise, regle, outils, manque = Recolte.ChoisirMetier(entity, definition)
+    if not autorise then
+        if manque then return nil, "il te faut un outil : " .. tostring(manque) .. "." end
+        return nil, "aucun des métiers requis n'est appris."
+    end
+    local dd = math.max(0, math.floor(tonumber(regle and regle.dd) or tonumber(definition.dd) or 0))
+    local cout = math.max(0, math.floor(tonumber(regle and regle.fatigue) or 0))
+    local jauge
+    if cout > 0 then
+        jauge = LCM.Entities.Gauge(entity, "fatigue")
+        if not jauge or (tonumber(jauge.current) or 0) < cout then
+            return nil, "fatigue insuffisante : cette récolte coûte " .. cout .. " PF."
+        end
+    end
     local jet = LCM.Roll.Des(des.min or 0, des.max or 15)
     local total = jet + bonus
-    return { jet = jet, bonus = bonus, metier = metier, total = total, dd = definition.dd,
-             reussi = total >= definition.dd, min = des.min or 0, max = des.max or 15 }
+    if cout > 0 then
+        local ok, erreur = LCM.Entities.SetGauge(entity, "fatigue", (tonumber(jauge.current) or 0) - cout)
+        if not ok then return nil, tostring(erreur or "impossible de dépenser la fatigue.") end
+    end
+    -- L'outil « consommé » se perd a la tentative, reussie ou non : la regle
+    -- des coffres.
+    local perdus = {}
+    for _, outil in ipairs(outils or {}) do
+        if outil.consomme then
+            for _ = 1, outil.consommeQuantite or 1 do
+                if LCM.OutilsRequis.Consommer(entity, outil.entree) then perdus[#perdus + 1] = outil.entree end
+            end
+        end
+    end
+    return { outilsPerdus = perdus[1] and perdus or nil, jet = jet, bonus = bonus, metier = metier, total = total, dd = dd,
+             reussi = total >= dd, min = des.min or 0, max = des.max or 15, fatigue = cout }
 end
 
 local function Annoncer(definition, r)
     local metier = r.metier and LCM.Metiers.Get(r.metier)
-    local texte = string.format("Récolte : %s (DD %d) : %d  (D%d : %d%s) — %s",
+    local texte = string.format("Récolte : %s (DD %d) : %d  (D%d : %d%s) — %s%s",
         definition.label, r.dd, r.total, r.max, r.jet,
         metier and string.format(", %s : %+d", metier.label, r.bonus) or "",
-        r.reussi and "réussi" or "raté")
+        r.reussi and "réussi" or "raté",
+        (r.fatigue or 0) > 0 and string.format(" (-%d PF)", r.fatigue) or "")
     if LCM.Actions and LCM.Actions.Annoncer then LCM.Actions.Annoncer(texte)
     else LCM.Info(texte) end
 end
 
 -- Recevoir sa part : ranger, sinon rendre le point au MJ. Un filon vide pour
 -- un sac plein serait une ressource perdue pour tout le monde.
+-- ===== L'XP de recolte =====================================================
+-- C'est ce qu'on RECOLTE qui fait l'XP (le MJ, 2 novembre 2026) : chaque
+-- ressource porte son « XP de récolte » au compendium. Une recolte rapporte
+-- la somme des XP des ressources RECUES (une fois par ressource, pas par
+-- unite), multipliee par le coefficient de la grille couleur du metier x
+-- couleur de la difficulte (Core/Difficultes.lua). Le metier qui gagne est
+-- celui qui a servi au jet ; sans jet (point sans metier requis), personne.
+-- Un DD hors de la liste des difficultes compte x1 : on ne sait pas sa
+-- couleur, on ne devine pas une penalite.
+Recolte.jets = {}
+
+function Recolte.XPBase(lots)
+    local total = 0
+    for _, lot in ipairs(lots or {}) do
+        local element = LCM.Compendium and LCM.Compendium.Resoudre and LCM.Compendium.Resoudre(lot.entree)
+        total = total + math.max(0, tonumber(element and element.xpRecolte) or 0)
+    end
+    return total
+end
+
+function Recolte.XPGagnee(entity, jet, lots)
+    if not (jet and jet.metier and LCM.Metiers.Get(jet.metier)) then return 0, nil end
+    local base = Recolte.XPBase(lots)
+    if base <= 0 then return 0, jet.metier end
+    local coefficient = 1
+    local D = LCM.Difficultes
+    if D and D.Get(jet.dd) then
+        coefficient = D.CoefficientPour(entity, jet.metier, jet.dd) or 1
+    end
+    return math.floor(base * coefficient + 0.5), jet.metier, base, coefficient
+end
+
+local function VerserXP(entity, pointId, lots)
+    local jet = Recolte.jets[pointId]
+    Recolte.jets[pointId] = nil
+    local xp, metierId, base, coefficient = Recolte.XPGagnee(entity, jet, lots)
+    if not metierId or xp <= 0 then return 0 end
+    local avant = LCM.Metiers.Palier(entity, metierId)
+    LCM.Metiers.Gagner(entity, metierId, xp)
+    local apres = LCM.Metiers.Palier(entity, metierId)
+    local metier = LCM.Metiers.Get(metierId)
+    LCM.Ok(string.format("+%d XP de %s (%s × %s).", xp, metier.label, tostring(base), tostring(coefficient)))
+    if apres.rang > avant.rang then
+        LCM.Ok(string.format("Félicitations ! Le métier de %s passe : %s.", metier.label, apres.libelle))
+    end
+    return xp
+end
+
 function Recolte.Recevoir(pointId, quantite, entree, defId)
     Recolte.enAttente[pointId] = nil
     local definition = Recolte.definitions[defId or ""]
@@ -644,6 +825,9 @@ function Recolte.Recevoir(pointId, quantite, entree, defId)
             tonumber(lot.quantite)))
     end
     if #lots == 0 then LCM.Info("Cette récolte ne donne aucune ressource.") end
+    -- Ici, et seulement ici : la recolte est faite et rangee. Une demande
+    -- refusee (point deja pris, sac plein) n'arrive pas jusque-la.
+    VerserXP(entity, pointId, lots)
     if LCM.Entities.Changed then LCM.Entities.Changed(entity) end
     return true
 end
@@ -701,6 +885,13 @@ function Recolte.Tenter(pointId)
         return false, "récolte déjà en cours."
     end
     Recolte.enAttente[pointId] = nil
+    -- Un clic, un jet (le MJ, 2 novembre 2026 : « un seul clic a provoqué
+    -- quatre tentatives », deux jets a la meme seconde). Un second appel sur
+    -- le meme point dans la seconde est ignore sans bruit, et un clic pendant
+    -- la mesure GPS ne relance rien : la reponse fera le jet.
+    if Recolte.attenteGPS == pointId then return false end
+    local dernier = Recolte.dernierEssai[pointId]
+    if dernier and maintenant - dernier < Recolte.ANTI_REBOND then return false end
     if Recolte.Proche() ~= p then
         local D = LCM.DeplacementForce
         if D and not D.Position("gps", 1) and Recolte.ProcheHorizontal() == p
@@ -713,7 +904,9 @@ function Recolte.Tenter(pointId)
     local entity = LCM.Entities.Self()
     if not entity then return false, "aucun personnage." end
 
-    if (definition.metiers and #definition.metiers > 0) or definition.metier or definition.dd > 0 then
+    if (definition.metiers and #definition.metiers > 0) or definition.metier or (tonumber(definition.dd) or 0) > 0
+        or (definition.outils and definition.outils[1]) then
+        Recolte.dernierEssai[pointId] = maintenant
         local r, raison = Recolte.Jet(entity, definition)
         if not r then return false, raison end
         Annoncer(definition, r)
@@ -731,6 +924,11 @@ function Recolte.Tenter(pointId)
             end
             return false, "jet raté : une récolte a été consommée."
         end
+        -- Le jet reussi : on retient le metier et le DD pour l'XP, versee
+        -- quand la recolte sera recue (Recolte.Recevoir).
+        Recolte.jets[pointId] = { metier = r.metier, dd = r.dd }
+    else
+        Recolte.jets[pointId] = nil
     end
 
     -- Le MJ lui-meme : il est son propre arbitre, et un message a soi-meme ne

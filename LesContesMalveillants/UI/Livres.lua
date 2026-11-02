@@ -286,8 +286,8 @@ local function Construire()
                     return
                 end
                 a.phase, a.temps = "sortie", 0
-                if PlaySound and SOUNDKIT and SOUNDKIT.IG_SPELLBOOK_TURNPAGE then
-                    PlaySound(SOUNDKIT.IG_SPELLBOOK_TURNPAGE, "SFX")
+                if SOUNDKIT and SOUNDKIT.IG_SPELLBOOK_TURNPAGE then
+                    LCM.Son(SOUNDKIT.IG_SPELLBOOK_TURNPAGE, "SFX")
                 end
             end
             -- A faible FPS, prolonger le mouvement au lieu de sauter des poses.

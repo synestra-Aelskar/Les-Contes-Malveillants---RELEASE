@@ -78,13 +78,20 @@ local function CoteACote(fiche, equipement, gardee)
     end
 end
 
+-- Le son de la fenetre du personnage de WoW, a l'ouverture et a la
+-- fermeture, comme la touche C (le MJ, 2 novembre 2026). Par LCM.Son : la
+-- case « Couper le son » le tait aussi.
+local SON_OUVRIR, SON_FERMER = 839, 840
+
 function LCM_TogglePersonnage()
     local fiche, equipement = UI.Fiche.Fenetre(), UI.Vues.Fenetre("equipement")
     if fiche:IsShown() and equipement:IsShown() then
         fiche:Hide()
         equipement:Hide()
+        LCM.Son(SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_CLOSE or SON_FERMER, "SFX")
         return
     end
+    LCM.Son(SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_OPEN or SON_OUVRIR, "SFX")
     local gardee = (fiche:IsShown() and fiche) or (equipement:IsShown() and equipement) or nil
     if not fiche:IsShown() then fiche:Montrer(LCM.Entities.Self()) end
     if not equipement:IsShown() then equipement:Montrer() end

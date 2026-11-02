@@ -165,6 +165,14 @@ Combat.invitation = nil
 Combat.invitationRecue = nil
 Combat.invitationTardive = nil
 
+-- Le son de l'invitation : celui de l'APPEL de raid (le ready check), pour
+-- que chacun sache qu'un combat l'attend (le MJ, 2 novembre 2026). Canal
+-- Master, comme Blizzard le joue : il passe meme les effets sonores coupes.
+Combat.SON_INVITATION = 8960
+local function SonInvitation()
+    LCM.Son(SOUNDKIT and SOUNDKIT.READY_CHECK or Combat.SON_INVITATION, "Master")
+end
+
 function Combat.Etat() return Combat.etat end
 
 function Combat.EnCours() return Combat.etat ~= nil end
@@ -525,7 +533,17 @@ function Combat.Inviter(options)
     for _, id in ipairs(options.pnj or {}) do
         if LCM.Incarnation.Instance(id) then invitation.pnj[#invitation.pnj + 1] = id end
     end
-    for _, joueur in ipairs(Combat.Membres()) do invitation.cibles[joueur] = true end
+    -- `options.joueurs` : qui du groupe est invite (le MJ, 2 novembre 2026 :
+    -- « choisir qui est invite ou non, pas uniquement les PNJ »). Absent :
+    -- tout le groupe, comme avant. Un nom hors du groupe n'est pas invite.
+    local voulus
+    if type(options.joueurs) == "table" then
+        voulus = {}
+        for _, joueur in ipairs(options.joueurs) do voulus[tostring(joueur)] = true end
+    end
+    for _, joueur in ipairs(Combat.Membres()) do
+        if not voulus or voulus[joueur] then invitation.cibles[joueur] = true end
+    end
     Combat.invitation = invitation
 
     if not next(invitation.cibles) then
@@ -533,6 +551,7 @@ function Combat.Inviter(options)
         return Combat.Lancer()
     end
     Envoyer("combat?", { s = invitation.s }, Combat.CanalGroupe())
+    SonInvitation()
     if Combat.onInvitation then Combat.onInvitation(invitation) end
     return invitation
 end
@@ -698,12 +717,26 @@ local function Compteurs(etat, sens)
     end
 end
 
+-- Le tout premier passage du combat : tour 1, round 1, premier joueur. Rien
+-- n'existe avant lui — reculer depuis la renvoyait au round 3 du tour 1 (le
+-- MJ, 2 novembre 2026). « Precedent » s'y bloque.
+function Combat.AuDebut(etat)
+    etat = etat or Combat.etat
+    return etat ~= nil and (tonumber(etat.c) or 1) <= 1 and (tonumber(etat.t) or 1) <= 1
+        and (tonumber(etat.r) or 1) <= 1
+end
+
 function Combat.Avancer(sens)
     if not Combat.EstMJ() then return nil, "reserve au maitre du jeu qui mene le combat." end
     sens = (tonumber(sens) or 1) >= 0 and 1 or -1
     local etat = Combat.etat
+    if sens < 0 and Combat.AuDebut(etat) then
+        return nil, "c'est le tout premier passage du combat : rien avant lui."
+    end
     local nombre = #etat.entrees
     local function PasSuivant()
+        -- En sautant des joueurs KO a rebours, on s'arrete aussi au debut.
+        if sens < 0 and Combat.AuDebut() then return nil end
         local suivant = LCM.Copie(Combat.etat)
         suivant.c = suivant.c + sens
         if suivant.c > nombre then
@@ -722,7 +755,9 @@ function Combat.Avancer(sens)
     -- le MJ garde la main sur les tours des PNJ. La borne evite une boucle si
     -- tous les joueurs du combat sont KO.
     for _ = 1, math.max(1, nombre) do
-        etat = PasSuivant()
+        local pas = PasSuivant()
+        if not pas then break end
+        etat = pas
         local courant = etat.entrees[etat.c]
         if not (courant and not courant.pnj and courant.ko) then break end
     end
@@ -783,6 +818,7 @@ LCM.WhenReady(function()
         if not LCM.Fiches.DansLeGroupe(expediteur) then return end
         if Combat.etat and Combat.etat.s ~= tostring(d.s or "") then return end
         Combat.invitationRecue = { s = tostring(d.s or ""), mj = IdJoueur(expediteur) }
+        SonInvitation()
         if Combat.onInvitationRecue then Combat.onInvitationRecue(Combat.invitationRecue) end
     end)
 

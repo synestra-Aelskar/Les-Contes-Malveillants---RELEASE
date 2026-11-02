@@ -2825,13 +2825,9 @@ local function ResolveSoundValue(value)
     if value == "" then return end
 
     local asId = tonumber(value)
-    if asId and PlaySound then
-        local ok, played = pcall(PlaySound, asId, "Master")
-        if ok and played then return end
-    end
-    if PlaySoundFile then
-        pcall(PlaySoundFile, value, "Master")
-    end
+    -- Par LCM.Son : la case « Couper le son » des parametres les tait aussi.
+    if asId and LCM.Son(asId, "Master") then return end
+    LCM.SonFichier(value, "Master")
 end
 
 -- direction = "forward" (arrivée : son d'entrée) | "backward" (départ : son de sortie).

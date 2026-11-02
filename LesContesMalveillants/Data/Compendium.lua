@@ -344,8 +344,13 @@ C.Categorie({
     },
 })
 
+-- « XP de récolte » (le MJ, 2 novembre 2026) : ce qu'une ressource rapporte
+-- au metier qui la recolte. C'est CE QU'ON RECOLTE qui fait l'XP, pas le
+-- metier employe : de l'argent rapporte 3 XP, quel que soit le metier.
 Generique({ id = "ressources", label = "Ressources", liste = "ressources",
-    registre = "Ressources", famille = "ressources", avantage = false })
+    registre = "Ressources", famille = "ressources", avantage = false,
+    extras = { { cle = "xpRecolte", label = "XP de récolte", type = "nombre", emplacement = "meta",
+                 min = 0, carte = true } } })
 -- Ajout de l'addon (23 octobre 2026, le MJ) : bandages, baumes et boissons
 -- sortent des ressources. Leur Type se choisit dans la « Liste consommable »,
 -- et un jeu d'equilibrage qui vise cette categorie les dose a la forge.

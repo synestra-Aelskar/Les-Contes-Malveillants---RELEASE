@@ -59,10 +59,10 @@ local function Peindre(fs, c) fs:SetTextColor(c[1], c[2], c[3]) end
 -- n'a alors rien ouvert, et ne doit pas sonner l'ouverture apres la fermeture.
 local function Sonner(f)
     f:HookScript("OnShow", function()
-        if f:IsShown() and PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_BACKPACK_OPEN, "SFX") end
+        if f:IsShown() and SOUNDKIT then LCM.Son(SOUNDKIT.IG_BACKPACK_OPEN, "SFX") end
     end)
     f:HookScript("OnHide", function()
-        if PlaySound and SOUNDKIT then PlaySound(SOUNDKIT.IG_BACKPACK_CLOSE, "SFX") end
+        if SOUNDKIT then LCM.Son(SOUNDKIT.IG_BACKPACK_CLOSE, "SFX") end
     end)
 end
 

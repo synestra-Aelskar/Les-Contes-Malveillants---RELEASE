@@ -108,6 +108,29 @@ end
 
 local enReception = false
 
+-- Les reglages en TEXTE (2 novembre 2026) : les Nommages, noms et couleurs
+-- des paliers de l'echelle (Core/Nommages.lua). Seuls ces chemins-la prennent
+-- du texte ; partout ailleurs un reglage reste un nombre, et le refus le dit.
+-- Le service de synchro les exporte comme les nombres (database/lcm_db.py).
+local function EnTexte(chemin)
+    chemin = tostring(chemin or "")
+    return chemin:match("^nommages%.[^%.]+%.nom$") ~= nil
+        or chemin:match("^nommages%.[^%.]+%.couleur$") ~= nil
+end
+Reglages.EnTexte = EnTexte
+
+-- La valeur propre d'un reglage, ou nil et la raison.
+local function Propre(chemin, valeur)
+    if EnTexte(chemin) then
+        valeur = tostring(valeur or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        if valeur == "" then return nil, "un nom ou une couleur ne peut pas être vide." end
+        return valeur
+    end
+    valeur = tonumber(valeur)
+    if valeur == nil then return nil, "un réglage d'équilibrage est un nombre." end
+    return valeur
+end
+
 -- Rend true, ou false et la raison. `valeur` nil retire la surcharge.
 function Reglages.Definir(chemin, valeur, silencieux)
     chemin = tostring(chemin or "")
@@ -115,11 +138,14 @@ function Reglages.Definir(chemin, valeur, silencieux)
     if not t then return false, "ce réglage n'existe pas : " .. chemin end
 
     if valeur ~= nil then
-        valeur = tonumber(valeur)
-        if valeur == nil then return false, "un réglage d'équilibrage est un nombre." end
+        local raison
+        valeur, raison = Propre(chemin, valeur)
+        if valeur == nil then return false, raison end
         local avant = t[cle]
-        if avant ~= nil and type(avant) ~= "number" then
-            return false, "ce réglage n'est pas un nombre : " .. chemin
+        local attendu = EnTexte(chemin) and "string" or "number"
+        if avant ~= nil and type(avant) ~= attendu then
+            return false, (attendu == "number" and "ce réglage n'est pas un nombre : "
+                or "ce réglage n'est pas un texte : ") .. chemin
         end
         if defauts[chemin] == nil then defauts[chemin] = { v = avant } end
         t[cle] = valeur
@@ -169,7 +195,7 @@ end
 -- sauvegarde et ne diffuse rien. Sans cette distinction, un reglage publie
 -- serait eternellement reannonce comme « a exporter ».
 function Reglages.Publier(chemin, valeur)
-    valeur = tonumber(valeur)
+    valeur = Propre(chemin, valeur)
     if valeur == nil then return false end
     local t, cle = Ou(LCM.Equilibrage, chemin, true)
     if not t then return false end
@@ -253,6 +279,9 @@ end)
 local IGNORES = {
     types = true, groupesTypes = true, mecaniques = true, primaires = true,
     statsDeDegats = true, viesParRarete = true,
+    -- L'echelle des paliers a son editeur (Nommages, Panel MJ) ; son seul
+    -- nombre, `nombre`, ne se regle pas seul dans le tableau.
+    nommages = true,
 }
 
 local function Parcourir(table_, prefixe, out, profondeur)

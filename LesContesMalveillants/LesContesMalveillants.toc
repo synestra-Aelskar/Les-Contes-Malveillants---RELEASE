@@ -2,7 +2,7 @@
 ## Title: Les Contes Malveillants
 ## Notes: Systeme de jeu des Contes Malveillants
 ## Author: Syn'estra
-## Version: 0.3.3
+## Version: 0.3.4
 ## SavedVariables: LCM_DB, LCM_Journal, LCM_Crossings
 ## SavedVariablesPerCharacter: LCM_CharDB, LCM_CrossingsChar
 
@@ -35,7 +35,9 @@ Core\Bourse.lua
 Core\Prix.lua
 Core\Consommation.lua
 Core\Contenants.lua
+Core\Nommages.lua
 Core\Metiers.lua
+Core\Difficultes.lua
 Core\Formules.lua
 Core\Roll.lua
 Core\Canal.lua
@@ -69,6 +71,7 @@ Core\Lanternes.lua
 Core\Raccourcis.lua
 Core\PuitsTonnerre.lua
 Core\Crossings.lua
+Core\OutilsRequis.lua
 Core\Recolte.lua
 Core\Marchands.lua
 Core\Affichages.lua

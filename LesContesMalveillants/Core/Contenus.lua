@@ -264,6 +264,11 @@ LCM.LISTES = {
     -- Ajout de l'addon (23 octobre 2026, le MJ) : les types de consommables
     -- (bandage, baume, boisson) quittent la liste des ressources pour la leur.
     { id = "consommables", label = "Liste consommable" },
+    -- ANCIENNE liste des paliers (« Nommages », 2 novembre 2026). Les paliers
+    -- sont devenus des reglages d'equilibrage (Core/Nommages.lua) ; la liste
+    -- reste connue pour qu'une vieille entree encore en base se charge, au
+    -- lieu de faire echouer le chargement, le temps d'etre reprise et effacee.
+    { id = "paliers",      label = "Liste paliers" },
 }
 local LISTE_CONNUE = {}
 for _, l in ipairs(LCM.LISTES) do LISTE_CONNUE[l.id] = l end
@@ -276,6 +281,20 @@ LCM.Listes = LCM.Registre({
             Erreur(element.id .. " : liste inconnue « " .. liste .. " »")
         end
         element.liste = liste
+        if liste == "paliers" then
+            -- Un palier : son numero (l'ordre de l'echelle, entier, 1 en bas)
+            -- et sa couleur, en hexadecimal.
+            local rang = tonumber(definition.rang)
+            if not rang or rang < 1 or rang ~= math.floor(rang) then
+                Erreur(element.id .. " : le numéro d'un palier est un entier, au moins 1")
+            end
+            element.rang = rang
+            local couleur = Texte(definition.couleur):gsub("^#", ""):upper()
+            if not couleur:match("^%x%x%x%x%x%x$") then
+                Erreur(element.id .. " : la couleur d'un palier s'écrit en six chiffres hexadécimaux (FF8CBF)")
+            end
+            element.couleur = couleur
+        end
         if liste == "type_etats" then
             local destination = Texte(definition.conteneur)
             if destination ~= "etat" and destination ~= "maladie" and destination ~= "intangible" then
@@ -321,6 +340,14 @@ LCM.Ressources = LCM.Registre({
     construire = function(definition, element, Erreur)
         element.bonus, element.avantage, element.desavantage, element.pourcent =
             LCM.Effets.Lire(element.id, definition, Erreur, true)
+        -- L'XP qu'elle rapporte au metier qui la recolte (Core/Recolte.lua).
+        -- Vide : rien. Un nombre negatif est refuse, et le dit.
+        local xp = definition.xpRecolte
+        if xp ~= nil and tostring(xp) ~= "" then
+            xp = tonumber(xp)
+            if not xp or xp < 0 then Erreur(element.id .. " : XP de récolte invalide") end
+            element.xpRecolte = xp > 0 and xp or nil
+        end
     end,
 })
 LCM.Effets.Source("ressource", function() return {} end, function() return LCM.Ressources.list end)

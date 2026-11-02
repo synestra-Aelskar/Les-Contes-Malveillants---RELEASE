@@ -111,7 +111,8 @@ end
 
 -- Un jet d'expertise compare le resultat a un DD. En cas d'echec ou de
 -- reussite partielle, le NF saisi est retire de la fatigue ; une reussite
--- totale (DD + 10 ou maximum possible du jet) ne coute rien.
+-- totale (plus que la difficulte suivante, ou maximum possible du jet) ne
+-- coute rien. Sans liste de difficultes, la totale reste a DD + 10.
 function Roll.ResoudreExpertise(entity, fieldId, dd, nf, options)
     local field = LCM.Schema.Field(fieldId)
     if not field or field.jetExpertise ~= true then return nil, "expertise inconnue" end
@@ -151,8 +152,26 @@ function Roll.ResoudreExpertise(entity, fieldId, dd, nf, options)
     local stat = resultat.valeur + resultat.apport + resultat.bonus + resultat.modificateur
     local maximum = resultat.des.max + stat
     local critique = resultat.total >= maximum
+    -- Le seuil du NF (« No Fatigue ») : ATTEINDRE la difficulte DEUX paliers
+    -- au-dessus du DD dans la liste (le MJ, 2 novembre 2026 : « un jet Rose
+    -- Facile, DD 9 ; si tu fais 15, tu reussis le Rose Difficile, tu ne paies
+    -- pas de fatigue » — avec 9, 11, 15 dans la liste). Sans deux paliers au-
+    -- dessus, seul le critique epargne. Sans liste du tout, la regle d'avant
+    -- tient (DD + 10), pour que rien ne change tant que le MJ n'a rien pose.
+    local D = LCM.Difficultes
+    local seuilNF
+    local totale
+    if D and D.Actives() then
+        local premiere = D.Suivante(dd)
+        local seconde = premiere and D.Suivante(premiere.valeur)
+        seuilNF = seconde and seconde.valeur or nil
+        totale = seuilNF ~= nil and resultat.total >= seuilNF
+    else
+        seuilNF = dd + 10
+        totale = resultat.total >= seuilNF
+    end
     local issue
-    if critique or resultat.total >= dd + 10 then
+    if critique or totale then
         issue = "Réussite totale"
     elseif resultat.total >= dd then
         issue = "Réussite partielle"
@@ -170,7 +189,7 @@ function Roll.ResoudreExpertise(entity, fieldId, dd, nf, options)
         end
     end
     return { jet = resultat, dd = dd, nf = nf, stat = stat, issue = issue,
-        critique = critique, perteFatigue = perte }
+        critique = critique, perteFatigue = perte, seuilNF = seuilNF }
 end
 
 -- Une ligne lisible, pour le chat.

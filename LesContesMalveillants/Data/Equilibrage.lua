@@ -227,47 +227,103 @@ E.experience = {
 
 -- ===== Metiers ============================================================
 -- Table « XP METIER » : chaque couleur comporte cinq niveaux. `xp` est le
--- cout incremental pour ACHEVER le niveau courant ; `cumul` permet de relire
--- directement le seuil total correspondant. Le cinquieme niveau Violet est
--- donc maitrise apres 6 300 XP, pas des son entree a 5 760 XP.
+-- cout incremental pour ACHEVER le niveau courant. Le seuil total de chaque
+-- niveau (`cumul`) n'est plus ecrit ici : Core/Metiers.lua le CALCULE, somme
+-- des couts jusqu'a lui (2 novembre 2026). Le cinquieme niveau Violet est donc
+-- maitrise apres 6 300 XP, pas des son entree a 5 760 XP.
 E.metiers = {
     paliers = {
-        { nom = "Rose", niveau = 1, rangCouleur = 1, xp = 40,  cumul = 40,   couleur = { 1.00, 0.55, 0.75 } },
-        { nom = "Rose", niveau = 2, rangCouleur = 1, xp = 60,  cumul = 100,  couleur = { 1.00, 0.55, 0.75 } },
-        { nom = "Rose", niveau = 3, rangCouleur = 1, xp = 80,  cumul = 180,  couleur = { 1.00, 0.55, 0.75 } },
-        { nom = "Rose", niveau = 4, rangCouleur = 1, xp = 100, cumul = 280,  couleur = { 1.00, 0.55, 0.75 } },
-        { nom = "Rose", niveau = 5, rangCouleur = 1, xp = 120, cumul = 400,  couleur = { 1.00, 0.55, 0.75 } },
+        { nom = "Rose", niveau = 1, rangCouleur = 1, xp = 40,     couleur = { 1.00, 0.55, 0.75 } },
+        { nom = "Rose", niveau = 2, rangCouleur = 1, xp = 60,    couleur = { 1.00, 0.55, 0.75 } },
+        { nom = "Rose", niveau = 3, rangCouleur = 1, xp = 80,    couleur = { 1.00, 0.55, 0.75 } },
+        { nom = "Rose", niveau = 4, rangCouleur = 1, xp = 100,   couleur = { 1.00, 0.55, 0.75 } },
+        { nom = "Rose", niveau = 5, rangCouleur = 1, xp = 120,   couleur = { 1.00, 0.55, 0.75 } },
 
-        { nom = "Vert", niveau = 1, rangCouleur = 2, xp = 125, cumul = 525,  couleur = { 0.40, 0.85, 0.40 } },
-        { nom = "Vert", niveau = 2, rangCouleur = 2, xp = 135, cumul = 660,  couleur = { 0.40, 0.85, 0.40 } },
-        { nom = "Vert", niveau = 3, rangCouleur = 2, xp = 145, cumul = 805,  couleur = { 0.40, 0.85, 0.40 } },
-        { nom = "Vert", niveau = 4, rangCouleur = 2, xp = 155, cumul = 960,  couleur = { 0.40, 0.85, 0.40 } },
-        { nom = "Vert", niveau = 5, rangCouleur = 2, xp = 165, cumul = 1125, couleur = { 0.40, 0.85, 0.40 } },
+        { nom = "Vert", niveau = 1, rangCouleur = 2, xp = 125,   couleur = { 0.40, 0.85, 0.40 } },
+        { nom = "Vert", niveau = 2, rangCouleur = 2, xp = 135,   couleur = { 0.40, 0.85, 0.40 } },
+        { nom = "Vert", niveau = 3, rangCouleur = 2, xp = 145,   couleur = { 0.40, 0.85, 0.40 } },
+        { nom = "Vert", niveau = 4, rangCouleur = 2, xp = 155,   couleur = { 0.40, 0.85, 0.40 } },
+        { nom = "Vert", niveau = 5, rangCouleur = 2, xp = 165,  couleur = { 0.40, 0.85, 0.40 } },
 
-        { nom = "Bleu", niveau = 1, rangCouleur = 3, xp = 185, cumul = 1310, couleur = { 0.40, 0.65, 1.00 } },
-        { nom = "Bleu", niveau = 2, rangCouleur = 3, xp = 190, cumul = 1500, couleur = { 0.40, 0.65, 1.00 } },
-        { nom = "Bleu", niveau = 3, rangCouleur = 3, xp = 195, cumul = 1695, couleur = { 0.40, 0.65, 1.00 } },
-        { nom = "Bleu", niveau = 4, rangCouleur = 3, xp = 200, cumul = 1895, couleur = { 0.40, 0.65, 1.00 } },
-        { nom = "Bleu", niveau = 5, rangCouleur = 3, xp = 205, cumul = 2100, couleur = { 0.40, 0.65, 1.00 } },
+        { nom = "Bleu", niveau = 1, rangCouleur = 3, xp = 185,  couleur = { 0.40, 0.65, 1.00 } },
+        { nom = "Bleu", niveau = 2, rangCouleur = 3, xp = 190,  couleur = { 0.40, 0.65, 1.00 } },
+        { nom = "Bleu", niveau = 3, rangCouleur = 3, xp = 195,  couleur = { 0.40, 0.65, 1.00 } },
+        { nom = "Bleu", niveau = 4, rangCouleur = 3, xp = 200,  couleur = { 0.40, 0.65, 1.00 } },
+        { nom = "Bleu", niveau = 5, rangCouleur = 3, xp = 205,  couleur = { 0.40, 0.65, 1.00 } },
 
-        { nom = "Orange", niveau = 1, rangCouleur = 4, xp = 206, cumul = 2306, couleur = { 1.00, 0.60, 0.20 } },
-        { nom = "Orange", niveau = 2, rangCouleur = 4, xp = 207, cumul = 2513, couleur = { 1.00, 0.60, 0.20 } },
-        { nom = "Orange", niveau = 3, rangCouleur = 4, xp = 208, cumul = 2721, couleur = { 1.00, 0.60, 0.20 } },
-        { nom = "Orange", niveau = 4, rangCouleur = 4, xp = 209, cumul = 2930, couleur = { 1.00, 0.60, 0.20 } },
-        { nom = "Orange", niveau = 5, rangCouleur = 4, xp = 210, cumul = 3140, couleur = { 1.00, 0.60, 0.20 } },
+        { nom = "Orange", niveau = 1, rangCouleur = 4, xp = 206,  couleur = { 1.00, 0.60, 0.20 } },
+        { nom = "Orange", niveau = 2, rangCouleur = 4, xp = 207,  couleur = { 1.00, 0.60, 0.20 } },
+        { nom = "Orange", niveau = 3, rangCouleur = 4, xp = 208,  couleur = { 1.00, 0.60, 0.20 } },
+        { nom = "Orange", niveau = 4, rangCouleur = 4, xp = 209,  couleur = { 1.00, 0.60, 0.20 } },
+        { nom = "Orange", niveau = 5, rangCouleur = 4, xp = 210,  couleur = { 1.00, 0.60, 0.20 } },
 
-        { nom = "Rouge", niveau = 1, rangCouleur = 5, xp = 210, cumul = 3350, couleur = { 0.95, 0.30, 0.30 } },
-        { nom = "Rouge", niveau = 2, rangCouleur = 5, xp = 211, cumul = 3561, couleur = { 0.95, 0.30, 0.30 } },
-        { nom = "Rouge", niveau = 3, rangCouleur = 5, xp = 212, cumul = 3773, couleur = { 0.95, 0.30, 0.30 } },
-        { nom = "Rouge", niveau = 4, rangCouleur = 5, xp = 213, cumul = 3986, couleur = { 0.95, 0.30, 0.30 } },
-        { nom = "Rouge", niveau = 5, rangCouleur = 5, xp = 214, cumul = 4200, couleur = { 0.95, 0.30, 0.30 } },
+        { nom = "Rouge", niveau = 1, rangCouleur = 5, xp = 210,  couleur = { 0.95, 0.30, 0.30 } },
+        { nom = "Rouge", niveau = 2, rangCouleur = 5, xp = 211,  couleur = { 0.95, 0.30, 0.30 } },
+        { nom = "Rouge", niveau = 3, rangCouleur = 5, xp = 212,  couleur = { 0.95, 0.30, 0.30 } },
+        { nom = "Rouge", niveau = 4, rangCouleur = 5, xp = 213,  couleur = { 0.95, 0.30, 0.30 } },
+        { nom = "Rouge", niveau = 5, rangCouleur = 5, xp = 214,  couleur = { 0.95, 0.30, 0.30 } },
 
-        { nom = "Violet", niveau = 1, rangCouleur = 6, xp = 300, cumul = 4500, couleur = { 0.70, 0.45, 0.95 } },
-        { nom = "Violet", niveau = 2, rangCouleur = 6, xp = 360, cumul = 4860, couleur = { 0.70, 0.45, 0.95 } },
-        { nom = "Violet", niveau = 3, rangCouleur = 6, xp = 420, cumul = 5280, couleur = { 0.70, 0.45, 0.95 } },
-        { nom = "Violet", niveau = 4, rangCouleur = 6, xp = 480, cumul = 5760, couleur = { 0.70, 0.45, 0.95 } },
-        { nom = "Violet", niveau = 5, rangCouleur = 6, xp = 540, cumul = 6300, couleur = { 0.70, 0.45, 0.95 } },
+        { nom = "Violet", niveau = 1, rangCouleur = 6, xp = 300,  couleur = { 0.70, 0.45, 0.95 } },
+        { nom = "Violet", niveau = 2, rangCouleur = 6, xp = 360,  couleur = { 0.70, 0.45, 0.95 } },
+        { nom = "Violet", niveau = 3, rangCouleur = 6, xp = 420,  couleur = { 0.70, 0.45, 0.95 } },
+        { nom = "Violet", niveau = 4, rangCouleur = 6, xp = 480,  couleur = { 0.70, 0.45, 0.95 } },
+        { nom = "Violet", niveau = 5, rangCouleur = 6, xp = 540,  couleur = { 0.70, 0.45, 0.95 } },
     },
+}
+
+-- ===== Difficultes ========================================================
+-- Ajout de l'addon, absent du template (le MJ, 2 novembre 2026).
+--
+-- Une DIFFICULTE est un nombre (celui qu'on posera sur un filon) rangé dans
+-- une des six couleurs des metiers, Rose a Violet (`rangCouleur` de
+-- E.metiers.paliers). `niveaux` : difficulte -> rang de couleur. La liste part
+-- vide : le MJ ajoute ses difficultes en seance, dans l'ordre qu'il veut
+-- (onglet Equilibrage du Panel MJ), et elles s'exportent comme les autres
+-- reglages. Un rang 0 ecarte une difficulte publiee sans l'effacer.
+--
+-- `matrice` : le coefficient d'XP pour CHAQUE couple (couleur du metier,
+-- couleur de la difficulte). matrice[metier][difficulte]. L'XP gagnee vaut
+-- N x coefficient, N etant pose sur ce qu'on affronte : une ressource, une
+-- action de campement (a venir).
+--
+-- Remplie d'apres les exemples du MJ (2 novembre 2026), « a la louche » :
+-- sa couleur x1 ; au-dessus, +0,5 par couleur (Rose qui mine du Vert x1,5,
+-- du Bleu x2) ; en dessous, x0,5 pour une couleur, x0 au-dela (Rouge qui mine
+-- de l'Orange x0,5, du Bleu, du Vert ou du Rose x0). Le prolongement au-dela
+-- des exemples (Orange x2,5 pour un Rose...) suit le meme pas : a regler.
+-- Elle remplace les trois relations `couleurs` (dessous / egale / dessus) de
+-- la premiere version.
+E.difficultes = {
+    niveaux = {},
+    matrice = {
+        --          Rose  Vert  Bleu  Orange Rouge Violet Noir
+        [1] = { [1] = 1,   [2] = 1.5, [3] = 2,   [4] = 2.5, [5] = 3,   [6] = 3.5, [7] = 4 },   -- Rose
+        [2] = { [1] = 0.5, [2] = 1,   [3] = 1.5, [4] = 2,   [5] = 2.5, [6] = 3,   [7] = 3.5 }, -- Vert
+        [3] = { [1] = 0,   [2] = 0.5, [3] = 1,   [4] = 1.5, [5] = 2,   [6] = 2.5, [7] = 3 },   -- Bleu
+        [4] = { [1] = 0,   [2] = 0,   [3] = 0.5, [4] = 1,   [5] = 1.5, [6] = 2,   [7] = 2.5 }, -- Orange
+        [5] = { [1] = 0,   [2] = 0,   [3] = 0,   [4] = 0.5, [5] = 1,   [6] = 1.5, [7] = 2 },   -- Rouge
+        [6] = { [1] = 0,   [2] = 0,   [3] = 0,   [4] = 0,   [5] = 0.5, [6] = 1,   [7] = 1.5 }, -- Violet
+    },
+}
+
+-- ===== Nommages ===========================================================
+-- L'ECHELLE des paliers, de bas en haut (le MJ, 2 novembre 2026) : une seule
+-- pour tout le jeu — les difficultes, les couleurs des metiers (« Rose 1 »)
+-- et la grille d'XP la lisent. Ce sont les valeurs de depart : le MJ renomme,
+-- recolore, ajoute, retire et reordonne en seance (onglet Equilibrage ›
+-- Nommages), par des reglages en TEXTE (`nommages.<n>.nom`, `.couleur`, et
+-- `nommages.nombre`), diffuses et exportes comme les autres. Le Noir n'a pas
+-- de niveau de metier : une difficulte Noire est au-dessus de tout metier.
+-- Teintes : celles des paliers de metier, et pour le Noir celle de la rarete
+-- Unique (9999A6).
+E.nommages = {
+    { nom = "Rose",   couleur = "FF8CBF" },
+    { nom = "Vert",   couleur = "66D966" },
+    { nom = "Bleu",   couleur = "66A6FF" },
+    { nom = "Orange", couleur = "FF9933" },
+    { nom = "Rouge",  couleur = "F24D4D" },
+    { nom = "Violet", couleur = "B373F2" },
+    { nom = "Noir",   couleur = "9999A6" },
 }
 
 -- ===== Recolte ============================================================

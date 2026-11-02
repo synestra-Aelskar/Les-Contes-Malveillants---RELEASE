@@ -73,3 +73,30 @@ Metier("dresseur", "Dresseur", "ability_hunter_pet_assist",
     "Permet de capturer, apprivoiser et utiliser des créatures comme montures ou aides.")
 Metier("informaticien", "Informaticien", "inv_misc_punchcards_blue",
     "Interagit avec les systèmes numériques, la matrice et les technologies avancées.")
+
+-- Les CATEGORIES de la fenetre Metiers (le MJ, 2 novembre 2026). Un metier
+-- peut etre dans deux categories (le Traqueur : campement ET exploration) :
+-- ce n'est qu'un rangement, il garde UN seul niveau. Dans chaque categorie,
+-- l'ordre est alphabetique (Core/Metiers.lua les trie) : l'ordre ecrit ici ne
+-- compte pas. Un metier range nulle part apparait dans « À classer », pour
+-- ne jamais disparaitre de la fenetre.
+--
+-- Recolte vient du MJ ; Campement et Exploration suivent ses notes du
+-- 2 novembre 2026 (ce que chaque metier fera au camp ou en aventure : le
+-- Militaire optimise les actions du groupe, l'Eclaireur et le Traqueur
+-- renseignent sur l'embuscade, le Gardien la rend moins probable, le Medical
+-- soigne, l'Occultiste leve les maledictions, le Guide spirituel donne des
+-- effets bonus). Ces roles sont a developper ; le rangement, lui, est pose.
+-- Artisanat : les metiers qui fabriquent, d'apres leur description.
+Metiers.CATEGORIES = {
+    { id = "recolte", label = "Récolte",
+      metiers = { "depeceur", "mineur", "herboriste", "bucheron", "pecheur" } },
+    { id = "artisanat", label = "Artisanat",
+      metiers = { "forgeron", "artisan", "ingenieur", "batisseur", "tailleur", "tanneur", "joaillier",
+                  "cuisinier", "alchimiste", "artificier", "enchanteur", "runiste" } },
+    { id = "campement", label = "Campement",
+      metiers = { "militaire", "eclaireur", "traqueur", "gardien", "batisseur", "medical",
+                  "occultiste", "guide_spirituel", "cuisinier" } },
+    { id = "exploration", label = "Exploration",
+      metiers = { "eclaireur", "traqueur", "medical", "erudit", "historien", "dresseur" } },
+}

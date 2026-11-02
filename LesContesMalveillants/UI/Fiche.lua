@@ -578,8 +578,33 @@ local function OuvrirSaisieExpertise(ligne, field)
         panneau.nf:SetPoint("TOPRIGHT", panneau, "TOPRIGHT", -42, -32)
         UI.Bulle(panneau.dd, "DD — Dés de difficulté",
             "Valeur à égaler ou dépasser pour réussir votre action.")
-        UI.Bulle(panneau.nf, "PF — Perte de fatigue",
-            "Fatigue perdue en cas d'échec ou de réussite partielle. Dépasser le DD de 10 ou réaliser un critique ne fait pas perdre de fatigue.")
+        UI.Bulle(panneau.nf, "PF — Perte de fatigue", function()
+            if LCM.Difficultes and LCM.Difficultes.Actives() then
+                return "Fatigue perdue en cas d'échec ou de réussite partielle. Atteindre la difficulté "
+                    .. "DEUX paliers au-dessus du DD (NF) ou réaliser un critique ne fait pas perdre de fatigue."
+            end
+            return "Fatigue perdue en cas d'échec ou de réussite partielle. Dépasser le DD de 10 ou réaliser un critique ne fait pas perdre de fatigue."
+        end)
+
+        -- Le DD se CHOISIT dans les difficultes du MJ (le MJ, 2 novembre
+        -- 2026 : « ton épreuve, ce sera DD 23 »). Le menu remplit le champ DD,
+        -- que le jet lit comme avant ; sans difficulte posee, le champ libre
+        -- reste, et rien n'attend la liste.
+        panneau.choixDD = UI.Deroulant(panneau, 156, 26,
+            function() return LCM.Difficultes and LCM.Difficultes.Options() or {} end,
+            function(valeur)
+                panneau.dd:SetText(tostring(valeur))
+                panneau.dd.indication:Hide()
+            end)
+        panneau.choixDD:SetPoint("TOPLEFT", panneau, "TOPLEFT", 16, -32)
+        UI.Bulle(panneau.choixDD, "DD — difficulté de l'épreuve", function()
+            local dd = tonumber(panneau.dd:GetText())
+            local premiere = dd and LCM.Difficultes.Suivante(dd)
+            local seconde = premiere and LCM.Difficultes.Suivante(premiere.valeur)
+            return "La difficulté que le MJ a annoncée. Égaler ou dépasser le DD réussit."
+                .. (seconde and string.format("\nNF : atteindre %d (deux paliers au-dessus) pour ne pas perdre de fatigue.", seconde.valeur)
+                    or (dd and "\nNF : pas deux paliers au-dessus de ce DD, seul un critique épargne la fatigue." or ""))
+        end)
 
         local function HabillerMode(bouton)
             bouton.selection = UI.Aplat(bouton,
@@ -617,8 +642,12 @@ local function OuvrirSaisieExpertise(ligne, field)
             panneau.nf:ClearFocus()
             local ddTexte = tostring(panneau.dd:GetText() or "")
             if ddTexte == "" then
-                LCM.Alerte("Indique le DD pour lancer ce jet.")
-                panneau.dd:SetFocus()
+                if panneau.choixDD:IsShown() then
+                    LCM.Alerte("Choisis le DD annoncé pour lancer ce jet.")
+                else
+                    LCM.Alerte("Indique le DD pour lancer ce jet.")
+                    panneau.dd:SetFocus()
+                end
                 return
             end
             local resultat, raison = LCM.Roll.ResoudreExpertise(ligne.entity, field.id, ddTexte,
@@ -656,6 +685,10 @@ local function OuvrirSaisieExpertise(ligne, field)
     panneau.nf:SetText("")
     panneau.dd.indication:Show()
     panneau.nf.indication:Show()
+    local liste = LCM.Difficultes and LCM.Difficultes.Actives()
+    panneau.choixDD:SetShown(liste)
+    panneau.dd:SetShown(not liste)
+    panneau.choixDD:Definir(nil, "DD : choisir…")
     panneau.mode = nil
     panneau.avantage:Selectionner(false)
     panneau.desavantage:Selectionner(false)
@@ -667,7 +700,9 @@ local function OuvrirSaisieExpertise(ligne, field)
     panneau:ClearAllPoints()
     panneau:SetPoint("BOTTOM", ligne.lancer, "TOP", 0, 6)
     panneau:Show()
-    panneau.dd:SetFocus()
+    -- Un champ cache ne prend pas le focus : il capterait le clavier sans
+    -- qu'on le voie.
+    if panneau.dd:IsShown() then panneau.dd:SetFocus() end
 end
 
 function Lignes.roll(parent, field, c)
