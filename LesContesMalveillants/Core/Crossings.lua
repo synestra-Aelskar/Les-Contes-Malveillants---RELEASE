@@ -44,7 +44,7 @@ local TICK_INTERVAL = 0.25   -- cohérent avec les tickers de Survive (Lantern/T
 local WIDTH_MARGIN   = 1.0   -- yards de tolérance (pas de poll / bord de la région)
 local DEFAULT_WIDTH   = 6
 local MAX_WIDTH        = 500  -- yards — de quoi couvrir l'entrée d'un village entier
-local MAX_REGION_POINTS = 1500 -- grandes régions : jusqu'à ≈ 20 Ko par périmètre, envoyés au rythme toléré (voir PumpSend)
+local MAX_REGION_POINTS = 1500 -- grandes régions : jusqu'à ≈ 20 Ko par périmètre, envoyés par la file commune (voir QueueSend)
 
 -- ── Thèmes de bannière ──────────────────────────────────────────────────────
 -- Trois polices Blizzard natives ("classique", "abîmé/combat" Skurri,
@@ -209,15 +209,17 @@ local function BroadcastChannels()
     return channels
 end
 
+-- Une seule piste reseau pour tout l'addon (le MJ, 3 novembre 2026 : « faut
+-- pas avoir 20 pistes reseaux »). Crossings envoyait par SendAddonMessage
+-- directement, avec sa propre file a cinq paquets par seconde : deux files
+-- qui ne se voyaient pas consommaient le meme debit du jeu, et chacune se
+-- faisait refuser a cause de l'autre. Tout passe maintenant par la file de
+-- LCM (Core/Reseau.lua) : priorites, reprise des refus, compteurs. Le
+-- prefixe et le format ne changent pas — un client qui recoit n'a rien a
+-- changer, sa reception est la meme.
 local function SendAddon(payload, channel, target)
     if not payload or payload == "" or not channel then return false end
-    if C_ChatInfo and C_ChatInfo.SendAddonMessage then
-        return C_ChatInfo.SendAddonMessage(PREFIX, payload, channel, target)
-    end
-    if SendAddonMessage then
-        return SendAddonMessage(PREFIX, payload, channel, target)
-    end
-    return false
+    return LCM.Reseau.EnvoyerBrut(PREFIX, { payload }, channel, target, { priorite = "normal" })
 end
 
 -- Remplace les caractères qui serviraient de séparateurs dans le protocole.
@@ -232,6 +234,7 @@ local function EnsureDB()
     LCM_Crossings.zones = LCM_Crossings.zones or {}
     LCM_Crossings.themes = LCM_Crossings.themes or {}
     LCM_Crossings.countries = LCM_Crossings.countries or {}
+    LCM_Crossings.continents = LCM_Crossings.continents or {}
     for _, zone in pairs(LCM_Crossings.zones) do
         zone.subZones = zone.subZones or {}
         zone.places = zone.places or {}
@@ -271,10 +274,34 @@ end
 -- passage pose par une source se mesure avec l'autre. La position « carte »
 -- (fraction x taille de carte) n'est volontairement PAS utilisee : elle ne
 -- compte pas dans la meme unite.
+--
+-- L'ALTITUDE, elle, ne vient PAS de UnitPosition : son troisième retour vaut
+-- toujours zéro. C'est ce qui faisait que les tranches des bâtiments ne
+-- servaient à rien en jeu alors qu'elles marchaient au banc (3 novembre
+-- 2026) : le banc, lui, posait une vraie altitude, le jeu posait zéro
+-- partout, et tous les sols se retrouvaient au même étage. Elle vient donc
+-- du serveur, par le même chemin que la position d'instance. Introuvable,
+-- elle vaut nil — ce que DansLaTranche sait traiter, là où un faux zéro
+-- mentirait.
+local function AltitudeServeur()
+    local DF = LCM.DeplacementForce
+    if not DF then return nil end
+    if DF.Altitude then return DF.Altitude() end
+    if not DF.Position then return nil end
+    local _, _, gz = DF.Position("gps")
+    return gz
+end
+
 function ZG:GetPlayerPose()
     local facing = (GetPlayerFacing and GetPlayerFacing()) or 0
     local py, px, pz, instanceID = UnitPosition("player")
-    if px then return px, py, facing, instanceID, pz end
+    if px then
+        local gz = AltitudeServeur()
+        -- Un client qui renseignerait vraiment ce z garde raison : on ne
+        -- l'écarte que lorsqu'il vaut le zéro qui ne veut rien dire.
+        if gz == nil and pz and pz ~= 0 then gz = pz end
+        return px, py, facing, instanceID, gz
+    end
     local DF = LCM.DeplacementForce
     if not (DF and DF.Position) then return nil end
     local gx, gy, gz = DF.Position("gps")
@@ -289,12 +316,86 @@ end
 local function NewId(prefix) return prefix .. time() .. "_" .. math.random(1000, 9999) end
 local function Clean(s) return (tostring(s or ""):match("^%s*(.-)%s*$")) or "" end
 
-function ZG:CreateCountry(name)
+-- ── CRUD Continents (classeurs de classeurs) ─────────────────────────────
+-- Un continent range des PAYS comme un pays range des régions : c'est un
+-- cran de plus dans l'arbre, et rien d'autre. Il ne porte ni tracé, ni aura,
+-- ni bannière — il n'a pas de géographie à lui, seulement celle de ce qu'il
+-- contient.
+
+function ZG:CreateContinent(name)
+    name = Clean(name)
+    if name == "" then name = "Nouveau continent" end
+    local db = EnsureDB()
+    local id = NewId("ct_")
+    db.continents[id] = { id = id, name = name, creator = MyName() }
+    ZG:ScheduleBroadcast()
+    return db.continents[id]
+end
+
+function ZG:GetContinent(id)
+    return id and EnsureDB().continents[id] or nil
+end
+
+function ZG:GetContinentList()
+    local list = {}
+    for _, continent in pairs(EnsureDB().continents) do list[#list + 1] = continent end
+    table.sort(list, function(a, b) return (a.name or ""):lower() < (b.name or ""):lower() end)
+    return list
+end
+
+function ZG:RenameContinent(id, name)
+    local continent = ZG:GetContinent(id)
+    if not continent or continent.creator ~= MyName() then return end
+    continent.name = name or ""
+    ZG:ScheduleBroadcast()
+end
+
+-- Les pays du continent supprimé restent intacts, simplement sans continent —
+-- comme les régions d'un pays supprimé.
+function ZG:RemoveContinent(id)
+    local db = EnsureDB()
+    local continent = db.continents[id]
+    if not continent or continent.creator ~= MyName() then return end
+    db.continents[id] = nil
+    for _, country in pairs(db.countries) do
+        if country.continentId == id and country.creator == MyName() then
+            country.continentId = nil
+        end
+    end
+    ZG:ScheduleBroadcast()
+end
+
+-- Ranger un pays sous un continent, ou l'en sortir (continentId vide).
+function ZG:SetCountryContinent(countryId, continentId)
+    local country = ZG:GetCountry(countryId)
+    if not country or country.creator ~= MyName() then return end
+    local continent = ZG:GetContinent(continentId)
+    country.continentId = (continent and continent.creator == MyName()) and continentId or nil
+    ZG:ScheduleBroadcast()
+end
+
+-- Les pays d'un continent. `continentId` nil : tous ; "" : ceux qui n'en ont
+-- aucun — la même convention que les lieux rangés sous un lieu.
+function ZG:GetCountryList(continentId)
+    local list = {}
+    for _, country in pairs(EnsureDB().countries) do
+        if continentId == nil
+            or (continentId == "" and not country.continentId)
+            or country.continentId == continentId then
+            list[#list + 1] = country
+        end
+    end
+    table.sort(list, function(a, b) return (a.name or ""):lower() < (b.name or ""):lower() end)
+    return list
+end
+
+function ZG:CreateCountry(name, continentId)
     name = Clean(name)
     if name == "" then name = "Nouveau pays" end
     local db = EnsureDB()
     local id = NewId("c_")
-    db.countries[id] = { id = id, name = name, creator = MyName() }
+    db.countries[id] = { id = id, name = name, creator = MyName(),
+                         continentId = (continentId and continentId ~= "") and continentId or nil }
     ZG:ScheduleBroadcast()
     return db.countries[id]
 end
@@ -303,10 +404,13 @@ function ZG:GetCountry(id)
     return id and EnsureDB().countries[id] or nil
 end
 
-function ZG:GetCountryList()
+-- Les régions d'un pays, triées comme ZG:GetZoneList.
+function ZG:GetCountryZones(countryId)
     local list = {}
-    for _, country in pairs(EnsureDB().countries) do list[#list + 1] = country end
-    table.sort(list, function(a, b) return (a.name or ""):lower() < (b.name or ""):lower() end)
+    if not countryId then return list end
+    for _, zone in ipairs(ZG:GetZoneList()) do
+        if zone.countryId == countryId then list[#list + 1] = zone end
+    end
     return list
 end
 
@@ -752,6 +856,69 @@ function ZG:GetBatimentArea(batimentId)
     return entry and entry.sub or nil
 end
 
+-- Vrai pour l'EMPREINTE d'un bâtiment : la zone du bâtiment lui-même, celle
+-- qui tient ses pièces. Elle n'a rien à faire sur la carte de la région : son
+-- intérieur est souvent construit ailleurs sur la carte du monde — sous elle,
+-- le plus souvent, pour les images par seconde — et l'y dessiner poserait le
+-- temple à des lieues de son village. C'est l'EMPLACEMENT qui dit où le
+-- bâtiment se tient pour qui le regarde du dehors.
+function ZG:EstEmpreinteBatiment(sub)
+    local place = sub and sub.enterPlace and ZG:FindPlace(sub.enterPlace)
+    return place ~= nil and place.batiment == true
+end
+
+-- ── L'emplacement d'un bâtiment ─────────────────────────────────────────
+-- Où le bâtiment se tient DANS sa région : le carré qu'on pose sur la carte,
+-- sans rapport avec l'endroit du monde où son intérieur est bâti. Un lieu
+-- ordinaire n'en a pas — il EST son étendue.
+--
+-- Rend mapID, x, y, ou rien. Faute d'emplacement posé, l'empreinte fait foi
+-- (son centre, sinon son point de pose) : les bâtiments d'avant ce jour
+-- gardent ainsi la place qu'ils avaient.
+function ZG:GetEmplacement(place)
+    if type(place) == "string" then place = ZG:FindPlace(place) end
+    if not place then return nil end
+    local e = place.emplacement
+    if e and e.x and e.y then return e.mapID, e.x, e.y end
+    local sub = ZG:GetBatimentArea(place.id)
+    if not sub then return nil end
+    local n, sx, sy = 0, 0, 0
+    for _, p in ipairs(sub.points or {}) do n, sx, sy = n + 1, sx + p.x, sy + p.y end
+    if n > 0 then return sub.mapID, sx / n, sy / n end
+    if sub.x then return sub.mapID, sub.x, sub.y end
+    return nil
+end
+
+-- Pose l'emplacement à la main (le glissement du carré sur la carte).
+-- `silencieux` : pendant le glissement, on ne diffuse pas à chaque pixel.
+function ZG:SetEmplacement(placeId, mapID, x, y, silencieux)
+    local place = MyPlace(placeId)
+    if not place or not tonumber(x) or not tonumber(y) then return false end
+    place.emplacement = { mapID = tonumber(mapID), x = tonumber(x), y = tonumber(y) }
+    if not silencieux then ZG:ScheduleBroadcast() end
+    return true
+end
+
+-- Pose l'emplacement là où je me tiens : le geste courant, puisqu'on marche
+-- jusqu'à la porte du temple avant de la marquer.
+function ZG:PoserEmplacementIci(placeId)
+    local px, py, _, instanceID = ZG:GetPlayerPose()
+    if not px then
+        LCM.Info("Crossings : position introuvable.")
+        return false
+    end
+    return ZG:SetEmplacement(placeId, instanceID, px, py)
+end
+
+-- L'oublier : l'empreinte redevient le repère, comme avant qu'on en pose un.
+function ZG:ClearEmplacement(placeId)
+    local place = MyPlace(placeId)
+    if not place then return false end
+    place.emplacement = nil
+    ZG:ScheduleBroadcast()
+    return true
+end
+
 -- parentPlaceId (facultatif) : le lieu — ou le bâtiment — sous lequel le
 -- ranger. `bas`/`haut` : la tranche de départ, en yards.
 function ZG:CreateBuildingPlace(zoneId, parentPlaceId, name, bas, haut)
@@ -765,6 +932,10 @@ function ZG:CreateBuildingPlace(zoneId, parentPlaceId, name, bas, haut)
     place.batiment = true
     place.parent = (parentPlaceId and parentPlaceId ~= "") and parentPlaceId or nil
     zone.places[id] = place
+    -- Son emplacement naît là où l'on se tient : on pose le bâtiment en se
+    -- plaçant devant, et son intérieur se construira où l'on voudra.
+    local px, py, _, instanceID = ZG:GetPlayerPose()
+    if px then place.emplacement = { mapID = instanceID, x = px, y = py } end
     -- Son empreinte naît avec lui, vide : on en pose les sommets en marchant,
     -- puis on dit de combien elle monte et descend.
     local sub = ZG:CreateSubZone(zoneId, name, id, "polygon")
@@ -773,10 +944,60 @@ function ZG:CreateBuildingPlace(zoneId, parentPlaceId, name, bas, haut)
     return place
 end
 
+-- ── Les étages ──────────────────────────────────────────────────────────
+-- Une pièce porte son NIVEAU : le rez-de-chaussée vaut 0, les caves comptent
+-- en négatif. Il ne sert qu'à l'affichage — on ne montre d'un bâtiment que
+-- l'étage où l'on se tient, sans quoi ses cloisons se superposeraient toutes
+-- sur le même plan et ne se liraient plus. C'est la TRANCHE d'altitude, elle,
+-- qui décide où l'on est vraiment (voir DansLaTranche) : un étage mal numéroté
+-- se lit de travers, il n'enferme personne.
+local NIVEAU_MAX = 8000
+
+function ZG:GetNiveau(place)
+    if type(place) == "string" then place = ZG:FindPlace(place) end
+    return place and tonumber(place.niveau) or 0
+end
+
+function ZG:SetNiveau(placeId, niveau)
+    local place = MyPlace(placeId)
+    if not place then return false end
+    niveau = math.floor(tonumber(niveau) or 0)
+    niveau = math.max(-NIVEAU_MAX, math.min(NIVEAU_MAX, niveau))
+    -- Zéro ne s'écrit pas : c'est le rez-de-chaussée, et une pièce reçue d'un
+    -- auteur plus ancien y est déjà.
+    place.niveau = niveau ~= 0 and niveau or nil
+    ZG:ScheduleBroadcast()
+    return true
+end
+
+-- Les étages d'un bâtiment : ceux de ses pièces, du plus bas au plus haut.
+-- Toujours au moins le rez-de-chaussée — un bâtiment vide a un sol.
+function ZG:GetNiveauxBatiment(batimentId)
+    local vus, list = {}, {}
+    for _, piece in ipairs(ZG:GetPieceList(batimentId)) do
+        local n = ZG:GetNiveau(piece)
+        if not vus[n] then vus[n] = true; list[#list + 1] = n end
+    end
+    if #list == 0 then list[1] = 0 end
+    table.sort(list)
+    return list
+end
+
+-- L'étage où se tient le joueur, s'il est dans une pièce. nil autrement :
+-- l'appelant choisit alors ce qu'il montre.
+function ZG:NiveauDuJoueur()
+    for placeId in pairs(ZG.here or {}) do
+        local place = ZG:FindPlace(placeId)
+        if place and place.parent and ZG:BatimentDe(place) then return ZG:GetNiveau(place) end
+    end
+    return nil
+end
+
 -- Une PIÈCE : un lieu rangé dans un bâtiment, qui hérite de sa tranche —
 -- même sol, même plafond — tant qu'on ne la règle pas autrement. Un étage se
--- fait en reprenant la hauteur de la pièce là où l'on se tient.
-function ZG:CreateRoomPlace(batimentId, name)
+-- fait en reprenant la hauteur de la pièce là où l'on se tient, puis en
+-- disant son NIVEAU, qui range le plan parmi les autres.
+function ZG:CreateRoomPlace(batimentId, name, niveau)
     local batiment, zone = ZG:FindPlace(batimentId)
     if not batiment or not zone or zone.creator ~= MyName() then return nil end
     name = Clean(name)
@@ -785,6 +1006,8 @@ function ZG:CreateRoomPlace(batimentId, name)
     local place = ZG:CreatePlace(zone.id, name)
     if not place then return nil end
     place.parent = batimentId
+    local n = math.floor(tonumber(niveau) or 0)
+    place.niveau = (n ~= 0) and math.max(-NIVEAU_MAX, math.min(NIVEAU_MAX, n)) or nil
     local empreinte = ZG:GetBatimentArea(batimentId)
     local sienne = ZG:GetPlaceAreas(place.id)[1]
     if sienne and empreinte then
@@ -1169,10 +1392,16 @@ function ZG:SetSubZoneHeights(id, bas, haut)
     bas, haut = tonumber(bas), tonumber(haut)
     sub.bas = (bas and bas > 0) and bas or nil
     sub.haut = (haut and haut > 0) and haut or nil
-    -- Une tranche sans repère ne veut rien dire : on prend celui d'ici.
+    -- Une tranche sans repère ne veut rien dire : on prend celui d'ici. Et
+    -- si l'altitude est introuvable, on le DIT : une tranche posée sur rien
+    -- se laisse régler sans jamais rien refermer, ce qui ressemble à s'y
+    -- méprendre à un réglage qui ne marche pas.
     if (sub.bas or sub.haut) and not sub.z then
         local _, _, _, _, pz = ZG:GetPlayerPose()
         sub.z = pz
+        if not pz then
+            LCM.Info("Crossings : altitude introuvable ici — la tranche est enregistrée, mais elle ne se refermera qu'une fois le sol relevé.")
+        end
     end
     ZG:ScheduleBroadcast()
     return true
@@ -1184,7 +1413,10 @@ function ZG:RecaptureSubZoneHeight(id)
     local sub = MyPassage(id)
     if not sub then return false end
     local _, _, _, _, pz = ZG:GetPlayerPose()
-    if not pz then return false end
+    if not pz then
+        LCM.Info("Crossings : altitude introuvable ici — le sol ne peut pas être relevé.")
+        return false
+    end
     sub.z = pz
     ZG:ScheduleBroadcast()
     return true
@@ -2331,6 +2563,19 @@ function ZG:MarkLearnedCountryName(countryId,grant)
     ApprendreNom("learnedCountries",countryId,grant)
 end
 
+-- Connaissance du NOM DU CONTINENT, un cran au-dessus et tout aussi
+-- indépendante : on peut avoir parcouru un royaume sans savoir sur quelle
+-- terre il repose.
+function ZG:HasLearnedContinentName(continentId)
+    if continentId == nil or continentId == "" then return false end
+    if MJVoitTout() then return true end
+    return Sait("learnedContinents", continentId)
+end
+
+function ZG:MarkLearnedContinentName(continentId,grant)
+    ApprendreNom("learnedContinents",continentId,grant)
+end
+
 -- Vrai quand on voit tout sans rien avoir appris : le MJ, hors mode joueur.
 -- Exposé parce que les cartes s'en servent pour décider ce qu'elles DESSINENT,
 -- et plus seulement ce qu'elles nomment.
@@ -2374,7 +2619,34 @@ function ZG:ResolveBannerText(place, zone)
     -- en titre et en sous-titre, n'apprend rien.
     if place.pourRegion then return title, nil end
     local subtitle = placeKnown and place.name or ZG:MaskText(place.name)
+    -- DANS un bâtiment, la région n'apprend plus rien : on sait bien dans quel
+    -- bois se tient la tour, c'est la pièce qu'on vient d'atteindre qui
+    -- compte, et le bâtiment qui la situe (3 novembre 2026).
+    local batiment = ZG:BatimentDe(place)
+    if batiment and batiment.id ~= place.id then
+        return subtitle, (ZG:KnowsPlaceName(batiment) and batiment.name
+            or ZG:MaskText(batiment.name))
+    end
     return title, subtitle
+end
+
+-- Le même couple, mais dans l'ordre de la CARTE : ce qu'on vise d'abord, ce
+-- qui le situe ensuite. Sur un plan, c'est le lieu qu'on cherche et la région
+-- qui le replace ; la bannière, elle, annonce d'abord qu'on entre quelque
+-- part. Deux lectures d'une même chose, et c'est voulu.
+function ZG:ResolveMapText(place, zone)
+    if not place or not zone then return nil end
+    if place.pourRegion then
+        return ZG:HasLearnedZoneName(zone.id) and zone.name or ZG:MaskText(zone.name), nil
+    end
+    local batiment = ZG:BatimentDe(place)
+    if batiment and batiment.id ~= place.id then
+        -- Dans un bâtiment, les deux ordres se rejoignent : la pièce, puis le
+        -- bâtiment.
+        return ZG:ResolveBannerText(place, zone)
+    end
+    local titre, sous = ZG:ResolveBannerText(place, zone)
+    return sous, titre
 end
 
 -- ── Détection de franchissement ───────────────────────────────────────────
@@ -2903,15 +3175,51 @@ end
 -- touchent par le côté se passent la main toutes seules (deux franchissements
 -- dans la même seconde, voir ZG:Tick) ; deux zones emboîtées, non — on sort
 -- de la petite sans entrer nulle part. Cette fonction comble ce trou.
+-- ── Dedans, le dehors ne compte plus ────────────────────────────────────
+-- Le bâtiment où se tient un point, ou nil. Un intérieur est bâti où l'on
+-- veut sur la carte du monde — SOUS sa région, le plus souvent, pour les
+-- images par seconde — et ses cloisons croisent alors des frontières de plein
+-- air qui n'ont rien à voir avec lui : on traversait des lieux de la forêt en
+-- marchant dans une cave (3 novembre 2026).
+--
+-- Dès qu'on est dans un bâtiment, les zones du dehors et le contour de la
+-- région sont donc ignorés, ici comme dans ZG:Tick.
+function ZG:BatimentContenant(px, py, mapID, pz)
+    local trouve, aireMin
+    for _, zone in pairs(EnsureDB().zones) do
+        for _, sub in pairs(zone.subZones) do
+            if sub.enabled and sub.mapID == mapID and sub.enterPlace
+                and IsClosed(sub) and ZG.DansLaTranche(sub, pz)
+                and PointInPolygon(sub.points, px, py) then
+                local batiment = ZG:BatimentDe(zone.places[sub.enterPlace])
+                if batiment then
+                    local aire = AirePolygone(sub.points)
+                    if not aireMin or aire < aireMin then trouve, aireMin = batiment, aire end
+                end
+            end
+        end
+    end
+    return trouve
+end
+
 function ZG:LieuContenant(px, py, mapID, exclure, pz)
+    local batiment = ZG:BatimentContenant(px, py, mapID, pz)
     local lieu, laZone, aireMin
     for _, zone in pairs(EnsureDB().zones) do
         for id, sub in pairs(zone.subZones) do
             if id ~= exclure and sub.enabled and sub.mapID == mapID and sub.enterPlace
                 and IsClosed(sub) and ZG.DansLaTranche(sub, pz)
                 and PointInPolygon(sub.points, px, py) then
-                local aire = AirePolygone(sub.points)
-                if not aireMin or aire < aireMin then lieu, laZone, aireMin = sub.enterPlace, id, aire end
+                -- Dans un bâtiment, seules ses pièces répondent.
+                local sien = batiment == nil
+                if batiment then
+                    local bat = ZG:BatimentDe(zone.places[sub.enterPlace])
+                    sien = bat ~= nil and bat.id == batiment.id
+                end
+                if sien then
+                    local aire = AirePolygone(sub.points)
+                    if not aireMin or aire < aireMin then lieu, laZone, aireMin = sub.enterPlace, id, aire end
+                end
             end
         end
     end
@@ -3048,10 +3356,27 @@ function ZG:Tick()
     -- La découverte dépend uniquement de la position et de la portée visuelle.
     ZG:MarquerVu(instanceID, px, py, rayon)
 
+    -- Dans un bâtiment, le dehors ne compte plus : son intérieur est bâti
+    -- ailleurs sur la carte du monde, et ses cloisons croisent des frontières
+    -- de plein air qui n'ont rien à voir avec lui. On GÈLE ces zones-là
+    -- plutôt que de les oublier : en ressortant on retrouve l'état qu'on
+    -- avait en entrant, sans bannière en double.
+    local batimentIci = ZG:BatimentContenant(px, py, instanceID, pz)
+
     local live, crossings = {}, {}
     for _, zone in pairs(EnsureDB().zones) do
         for id, sub in pairs(zone.subZones) do
-            if sub.enabled and sub.mapID == instanceID then
+            -- Gelée : vivante, mais on ne la regarde pas tant qu'on est
+            -- ailleurs qu'elle — dans un bâtiment pour le dehors, dehors pour
+            -- les cloisons d'un bâtiment.
+            local sienne = true
+            if batimentIci then
+                local bat = sub.enterPlace and ZG:BatimentDe(zone.places[sub.enterPlace])
+                sienne = bat ~= nil and bat.id == batimentIci.id
+            end
+            if sub.enabled and sub.mapID == instanceID and not sienne then
+                live[id] = true
+            elseif sub.enabled and sub.mapID == instanceID then
                 live[id] = true
                 local side, ecart = ClassifySide(sub, px, py, pz)
                 -- Voir ou traverser un lieu dévoile son terrain, pas son nom.
@@ -3290,6 +3615,19 @@ end
 -- sinon une l'oublie — ce qui est arrivé avec la soudure.
 ZG.PackPoints, ZG.UnpackPoints = PackPoints, UnpackPoints
 
+-- L'emplacement d'un bâtiment, encodé "carte,x,y" — mêmes chiffres, même
+-- absence de Enc().
+local function PackEmplacement(e)
+    if not (e and e.x and e.y) then return "" end
+    return string.format("%d,%.2f,%.2f", tonumber(e.mapID) or 0, e.x, e.y)
+end
+
+local function UnpackEmplacement(str)
+    local m, x, y = (str or ""):match("^([%-%d]+),([%-%d.]+),([%-%d.]+)$")
+    if not x then return nil end
+    return { mapID = tonumber(m), x = tonumber(x), y = tonumber(y) }
+end
+
 -- Une couleur, encodée "r,g,b" (ou "r,g,b,a" si withAlpha) — mêmes chiffres
 -- que PackPoints, pas de Enc() nécessaire non plus.
 local function PackColor(c, withAlpha)
@@ -3340,9 +3678,19 @@ local function PackState()
         end
     end
 
+    -- Les continents avant les pays : un pays s'y range.
+    for ctid, continent in pairs(db.continents) do
+        if continent.creator == me then
+            table.insert(lines, table.concat({ "CONTINENT", Enc(ctid), Enc(continent.name) }, SEP))
+        end
+    end
+
     for cid, country in pairs(db.countries) do
         if country.creator == me then
-            table.insert(lines, table.concat({ "COUNTRY", Enc(cid), Enc(country.name) }, SEP))
+            -- Le continent en queue : un auteur plus ancien ne l'envoie pas,
+            -- et son pays revient sans continent, ce qu'il était.
+            table.insert(lines, table.concat({ "COUNTRY", Enc(cid), Enc(country.name),
+                Enc(country.continentId or "") }, SEP))
         end
     end
 
@@ -3372,6 +3720,12 @@ local function PackState()
                     place.porte and 1 or 0, Enc(place.parent or ""),
                     place.pourRegion and 1 or 0, place.batiment and 1 or 0,
                     place.couleur and PackColor(place.couleur) or "",
+                    -- L'emplacement du bâtiment, en queue à son tour : reçu
+                    -- d'un auteur plus ancien, il n'y en a pas, et c'est
+                    -- l'empreinte qui dit où le point se pose. Puis l'étage
+                    -- d'une pièce, même règle : absent, c'est le rez.
+                    PackEmplacement(place.emplacement),
+                    place.niveau or "",
                 }, SEP))
             end
             for sid, sub in pairs(zone.subZones) do
@@ -3422,11 +3776,18 @@ local function ApplyStateLine(line, sender)
                 bannerWidth = math.max(400,math.min(900,tonumber(fields[27]) or 600)),
             }
         end
+    elseif tag == "CONTINENT" then
+        local id, name = fields[2], fields[3]
+        if id and id ~= "" then
+            LCM_Crossings.continents = LCM_Crossings.continents or {}
+            LCM_Crossings.continents[id] = { id = id, name = name or "", creator = sender }
+        end
     elseif tag == "COUNTRY" then
         local id, name = fields[2], fields[3]
         if id and id ~= "" then
             LCM_Crossings.countries = LCM_Crossings.countries or {}
-            LCM_Crossings.countries[id] = { id = id, name = name or "", creator = sender }
+            LCM_Crossings.countries[id] = { id = id, name = name or "", creator = sender,
+                continentId = (fields[4] and fields[4] ~= "") and fields[4] or nil }
         end
     elseif tag == "ZONE" then
         local id, name, themeId, countryId = fields[2], fields[3], fields[4], fields[5]
@@ -3460,6 +3821,9 @@ local function ApplyStateLine(line, sender)
             place.pourRegion = fields[17] == "1" or nil
             place.batiment = fields[18] == "1" or nil
             place.couleur = (fields[19] and fields[19] ~= "") and UnpackColor(fields[19]) or nil
+            place.emplacement = UnpackEmplacement(fields[20])
+            local niveau = tonumber(fields[21])
+            place.niveau = (niveau and niveau ~= 0) and math.floor(niveau) or nil
             zone.places[id] = place
         end
     elseif tag == "PASS" then
@@ -3537,6 +3901,9 @@ local function ApplyState(payload, sender)
     for cid, country in pairs(db.countries) do
         if country.creator == sender then db.countries[cid] = nil end
     end
+    for ctid, continent in pairs(db.continents) do
+        if continent.creator == sender then db.continents[ctid] = nil end
+    end
     for line in payload:gmatch("[^\n]+") do
         ApplyStateLine(line, sender)
     end
@@ -3553,43 +3920,16 @@ ZG.ApplyStateLine = ApplyStateLine
 
 local stateMsgSeq = 0
 
--- File d'envoi : le jeu limite le débit des messages d'extension (une
--- dizaine d'un coup, puis environ un par seconde). Un grand périmètre fait
--- une centaine de morceaux : on les expédie un par un, on réessaie un
--- morceau refusé, et un nouvel état remplace celui encore en attente pour
--- le même destinataire (inutile d'envoyer une version déjà dépassée).
-local SEND_INTERVAL = 0.2
-local SEND_RETRY    = 1.0
-local sendQueue = {}   -- { key, channel, target, packets, part, failures }
-local sendFrame, sendWait = nil, 0
-
-local function Sent(result)
-    if result == true or result == 0 then return true end
-    return Enum and Enum.SendAddonMessageResult and result == Enum.SendAddonMessageResult.Success or false
-end
-
-local function PumpSend(_, elapsed)
-    sendWait = sendWait - elapsed
-    if sendWait > 0 then return end
-    local job = sendQueue[1]
-    if not job then sendFrame:SetScript("OnUpdate", nil); return end
-    if Sent(SendAddon(job.packets[job.part], job.channel, job.target)) then
-        job.part, job.failures, sendWait = job.part + 1, 0, SEND_INTERVAL
-        if job.part > #job.packets then table.remove(sendQueue, 1) end
-    else
-        job.failures, sendWait = job.failures + 1, SEND_RETRY
-        if job.failures >= 20 then table.remove(sendQueue, 1) end
-    end
-end
-
+-- Les etats decoupes (un grand perimetre fait une centaine de morceaux)
+-- passent par la file commune, en fond : ils ne retardent ni le combat ni
+-- le reste. Un nouvel etat pour le meme destinataire INTERROMPT celui qui
+-- partait encore — inutile de finir une version deja depassee ; la
+-- reception, qui recolle par numero de message, oublie le morceau orphelin.
 local function QueueSend(channel, target, packets)
-    local key = channel .. ":" .. tostring(target or "")
-    for i, job in ipairs(sendQueue) do
-        if job.key == key then table.remove(sendQueue, i); break end
-    end
-    sendQueue[#sendQueue + 1] = { key = key, channel = channel, target = target, packets = packets, part = 1, failures = 0 }
-    sendFrame = sendFrame or CreateFrame("Frame")
-    sendFrame:SetScript("OnUpdate", PumpSend)
+    LCM.Reseau.EnvoyerBrut(PREFIX, packets, channel, target, {
+        priorite = "fond", cle = "crossings:" .. channel .. ":" .. tostring(target or ""),
+        interrompre = true,
+    })
 end
 
 local function SendChunkedState(channel, target)
@@ -3858,6 +4198,20 @@ function ZG:RegisterNetwork()
     elseif RegisterAddonMessagePrefix then
         RegisterAddonMessagePrefix(PREFIX)
     end
+    -- Le terminal reseau du Panel MJ nomme ce qui passe sous ce prefixe. Un
+    -- etat de zones part en dizaines de morceaux : il ne fait qu'UNE ligne,
+    -- a son premier morceau envoye et a son dernier recu.
+    LCM.Reseau.SuivrePrefixe(PREFIX, function(paquet, sens)
+        if paquet == "SYNC" then return "Crossings : demande de rattrapage" end
+        local i, n = paquet:match("^Z|%d+|(%d+)|(%d+)|")
+        if i then
+            if (sens == "reception" and i ~= n) or (sens == "envoi" and i ~= "1") then return nil end
+            return "Crossings : état des zones"
+        end
+        local genre = paquet:match("^([^|]+)") or "?"
+        if genre == "G" then return "Crossings : nom de zone débloqué" end
+        return "Crossings : " .. genre
+    end)
     netFrame:RegisterEvent("CHAT_MSG_ADDON")
     -- Rejoint le canal global tout de suite (pas d'attente d'un premier
     -- broadcast) pour qu'il ait le temps d'être prêt côté serveur avant le

@@ -186,6 +186,16 @@ function DeplacementForce.CarteGPS(ageMax)
     return gps.carteMonde
 end
 
+-- L'ALTITUDE seule, pour qui mesure des hauteurs (les interieurs des
+-- Crossings). UnitPosition ne la donne pas : son troisieme retour vaut
+-- toujours zero. Celle-ci vient du serveur — C_Epsilon.GetPosition, sinon la
+-- derniere reponse a `.gps` — et vaut nil quand on ne la sait pas, ce qui
+-- vaut mieux qu'un zero qui mettrait toutes les caves au niveau du sol.
+function DeplacementForce.Altitude(ageMax)
+    local _, _, z = PositionGPS(ageMax)
+    return z
+end
+
 -- `source` : « monde », « carte » ou « gps » pour rester sur celle d'une course
 -- en cours ; rien pour prendre la meilleure disponible. Rend x, y, z, source.
 local function Position(source, ageMax)

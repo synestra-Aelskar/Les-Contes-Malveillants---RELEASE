@@ -9,7 +9,10 @@
 -- ============================================================
 local ZG=LCMCrossings
 local UI=ZG.EditorUI
-local W,H,HEAD=960,660,56
+-- Élargie le 3 novembre 2026 : quatre menus (continent, pays, région,
+-- bâtiment) et la rangée des étages ne tenaient plus dans 960 — et la carte
+-- y gagne autant.
+local W,H,HEAD=1100,660,56
 local M=16
 local CW,CH=W-2*M,H-HEAD-2*M-28
 local MIN_SCALE,MAX_SCALE=.02,40
@@ -186,6 +189,14 @@ local function CountryName(key)
     if ZG:HasLearnedCountryName(key) then return c.name or "" end
     return ZG:MaskText(c.name or "")
 end
+-- Le continent suit la même règle que le pays : son nom s'apprend, il ne se
+-- devine pas en marchant.
+local function ContinentName(key)
+    local c=key and key~=NONE and ZG:GetContinent(key)
+    if not c then return "Sans continent" end
+    if ZG:HasLearnedContinentName(key) then return c.name or "" end
+    return ZG:MaskText(c.name or "")
+end
 
 local win
 local function Build()
@@ -207,20 +218,55 @@ local function Build()
     fit:SetPoint("RIGHT",gameMap,"LEFT",-10,0)
     fit:SetScript("OnClick",function() win:Fit();win:Draw() end)
 
-    -- Deux niveaux : le pays (toutes ses régions) puis, d'un clic, une région
-    -- (tous ses lieux). M ouvre le pays où l'on se trouve et le suit ;
-    -- choisir un pays ou une région arrête de suivre le joueur.
-    local picker=UI.CreateSelect(head,190,24)
-    picker:SetPoint("RIGHT",fit,"LEFT",-10,0)
+    -- Quatre niveaux, quatre menus à gauche : le CONTINENT (tous ses pays),
+    -- le PAYS (toutes ses régions), la RÉGION (tous ses lieux), le BÂTIMENT
+    -- (ses pièces). On descendait jusqu'ici d'un clic sur la carte, ce qui
+    -- suppose de savoir où viser ; les menus disent ce qu'on connaît et y
+    -- mènent directement. M ouvre le pays où l'on se trouve et le suit ;
+    -- choisir quoi que ce soit arrête de suivre le joueur.
+    --
+    -- Les bâtiments ne se listent QUE dans une région : au niveau du pays ils
+    -- feraient une liste de tout ce qui a quatre murs, sans rapport avec ce
+    -- qu'on cherche.
+    local pickerContinent=UI.CreateSelect(head,150,24)
+    pickerContinent:SetPoint("LEFT",head,"LEFT",12,0)
+    win.pickerContinent=pickerContinent
+    -- Un continent ne se liste que si l'on connaît au moins un de ses pays :
+    -- sans cela il annoncerait des terres dont on n'a jamais entendu parler.
+    function win:ContinentsListables()
+        local list={}
+        for _,continent in ipairs(ZG:GetContinentList()) do
+            for _,country in ipairs(ZG:GetCountryList(continent.id)) do
+                if #self:RegionsDuPays(country.id)>0 then list[#list+1]=continent;break end
+            end
+        end
+        return list
+    end
+    pickerContinent.items=function()
+        local list={{value=NONE,text="Tout ce que je connais"}}
+        for _,continent in ipairs(win:ContinentsListables()) do
+            list[#list+1]={value=continent.id,text=ContinentName(continent.id)}
+        end
+        return list
+    end
+    pickerContinent.onSelect=function(key) win:ShowContinent(key~=NONE and key or nil) end
+
+    local picker=UI.CreateSelect(head,150,24)
+    picker:SetPoint("LEFT",pickerContinent,"RIGHT",8,0)
     win.picker=picker
     picker.items=function()
         local seen,list={},{}
         for _,zone in ipairs(ZG:GetZoneList()) do
             -- Un pays dont on ne connait aucune region ne se liste pas : son
             -- nom seul disait deja qu'il existe quelque part un ailleurs.
+            -- Et un continent choisi ne montre que les siens.
             if next(zone.subZones or {}) then
                 local key=zone.countryId or NONE
-                if not seen[key] then seen[key]=true;list[#list+1]={value=key,text=CountryName(key)} end
+                local pays=key~=NONE and ZG:GetCountry(key)
+                local dedans=win.continent==nil or (pays and pays.continentId==win.continent)
+                if dedans and not seen[key] then
+                    seen[key]=true;list[#list+1]={value=key,text=CountryName(key)}
+                end
             end
         end
         table.sort(list,function(a,b)
@@ -236,11 +282,196 @@ local function Build()
     end
     picker.onSelect=function(key) win:OpenCountry(key) end
 
+    local pickerRegion=UI.CreateSelect(head,150,24)
+    pickerRegion:SetPoint("LEFT",picker,"RIGHT",8,0)
+    win.pickerRegion=pickerRegion
+    -- Une région ne se liste que si l'on en a foulé quelque chose : la
+    -- découverte se fait en marchant (voir ZG:EstVu), et un menu qui nommerait
+    -- tout ce qui existe la rendrait vaine. On sonde les sommets d'un pas
+    -- assez large pour qu'un contour de mille points ne coûte pas mille
+    -- questions.
+    local function RegionApercue(zone,map)
+        -- Le brouillard fait seul autorité, y compris pour la région où l'on
+        -- se tient : après un oubli, on ne la retrouve qu'au pas suivant.
+        for _,sub in pairs(zone.subZones or {}) do
+            if sub.mapID==map and not ZG:EstInterieur(sub) and not ZG:EstEmpreinteBatiment(sub) then
+                local pts=sub.points or {}
+                if #pts>0 then
+                    local pas=math.max(1,math.floor(#pts/48))
+                    local cx,cy=0,0
+                    for i=1,#pts,pas do
+                        local a,b=pts[i],pts[(i%#pts)+1]
+                        -- Le sommet, puis le milieu de l'arête : longer un
+                        -- bord sans passer par ses angles devait compter.
+                        if ZG:EstVu(map,a.x,a.y) then return true end
+                        if ZG:EstVu(map,(a.x+b.x)/2,(a.y+b.y)/2) then return true end
+                    end
+                    for _,p in ipairs(pts) do cx,cy=cx+p.x,cy+p.y end
+                    if ZG:EstVu(map,cx/#pts,cy/#pts) then return true end
+                elseif sub.x and ZG:EstVu(map,sub.x,sub.y) then return true end
+            end
+        end
+        return false
+    end
+    -- Les régions d'un pays dont on a foulé quelque chose. Clé NONE : celles
+    -- qui n'ont pas de pays.
+    function win:RegionsDuPays(key)
+        local list={}
+        if key==nil then return list end
+        for _,zone in ipairs(ZG:GetZoneList()) do
+            if (zone.countryId or NONE)==key and next(zone.subZones or {}) then
+                local map=self:Map({zone})
+                if RegionApercue(zone,map) then list[#list+1]=zone end
+            end
+        end
+        table.sort(list,function(a,b) return (a.name or "")<(b.name or "") end)
+        return list
+    end
+    function win:RegionsListables() return self:RegionsDuPays(self.country) end
+    pickerRegion.items=function()
+        local list={}
+        for _,zone in ipairs(win:RegionsListables()) do
+            list[#list+1]={value=zone.id,
+                text=ZoneKnown(zone) and (zone.name or "") or ZG:MaskText(zone.name or "")}
+        end
+        return list
+    end
+    pickerRegion.onSelect=function(id) win:ShowRegion(ZG:GetZone(id)) end
+
+    local pickerBati=UI.CreateSelect(head,150,24)
+    pickerBati:SetPoint("LEFT",pickerRegion,"RIGHT",8,0)
+    win.pickerBati=pickerBati
+    function win:BatimentsListables()
+        local list={}
+        local zone=self.zone
+        if not zone then return list end
+        for _,place in ipairs(ZG:GetBatimentList(zone.id)) do
+            if PlaceKnown(place,zone) then list[#list+1]=place end
+        end
+        table.sort(list,function(a,b) return (a.name or "")<(b.name or "") end)
+        return list
+    end
+    pickerBati.items=function()
+        local list={}
+        for _,place in ipairs(win:BatimentsListables()) do
+            list[#list+1]={value=place.id,text=place.name or ""}
+        end
+        return list
+    end
+    pickerBati.onSelect=function(id) win:ShowBatiment(ZG:FindPlace(id)) end
+
+    -- ── Les étages, à côté du nom du bâtiment ────────────────────────────
+    -- Une rangée de petits boutons, un par étage où le bâtiment a des
+    -- pièces : « -1 0 1 2 ». Celui qu'on regarde est allumé. Au-delà de ce
+    -- que la rangée peut tenir, deux flèches font défiler — on autorise les
+    -- étages de -8000 à 8000, et une tour de mille niveaux ne doit pas
+    -- déborder sur les boutons de droite.
+    local ETAGES_VUS=7
+    local etages={frame=CreateFrame("Frame",nil,head),boutons={}}
+    etages.frame:SetPoint("LEFT",pickerBati,"RIGHT",8,0)
+    etages.frame:SetSize(ETAGES_VUS*30+36,24)
+    etages.frame:Hide()
+    win.etages=etages
+    etages.gauche=UI.CreatePanelButton(etages.frame,18,24,"‹")
+    etages.gauche:SetPoint("LEFT",etages.frame,"LEFT",0,0)
+    etages.droite=UI.CreatePanelButton(etages.frame,18,24,"›")
+    for i=1,ETAGES_VUS do
+        local b=UI.CreatePanelButton(etages.frame,28,24,"0")
+        b:SetPoint("LEFT",etages.frame,"LEFT",18+(i-1)*30,0)
+        b:SetScript("OnClick",function(self)
+            if self.niveau then win:ShowEtage(self.niveau) end
+        end)
+        etages.boutons[i]=b
+    end
+    etages.droite:SetPoint("LEFT",etages.frame,"LEFT",18+ETAGES_VUS*30,0)
+    etages.gauche:SetScript("OnClick",function()
+        etages.debut=math.max(1,(etages.debut or 1)-1);win:MajSelecteurs()
+    end)
+    etages.droite:SetScript("OnClick",function()
+        etages.debut=(etages.debut or 1)+1;win:MajSelecteurs()
+    end)
+
+    function win:ShowEtage(niveau)
+        self.etage=niveau
+        self:MajSelecteurs()
+        self:Fit();self:Draw()
+    end
+
+    -- Les quatre menus disent toujours où l'on est. Le menu des bâtiments se
+    -- cache hors d'une région, et s'éteint dans une région qui n'en a aucun
+    -- de connu : un menu vide qu'on peut ouvrir ne dit rien de bon.
+    function win:MajEtages()
+        local montrer=self.level=="batiment" and self.batiment~=nil
+        etages.frame:SetShown(montrer)
+        if not montrer then return end
+        local liste=ZG:GetNiveauxBatiment(self.batiment.id)
+        -- La fenêtre glisse pour garder l'étage courant en vue.
+        local ici=1
+        for i,n in ipairs(liste) do if n==self.etage then ici=i end end
+        local debut=math.max(1,math.min(etages.debut or 1,#liste-ETAGES_VUS+1))
+        if ici<debut then debut=ici elseif ici>debut+ETAGES_VUS-1 then debut=ici-ETAGES_VUS+1 end
+        debut=math.max(1,debut)
+        etages.debut=debut
+        for i,b in ipairs(etages.boutons) do
+            local n=liste[debut+i-1]
+            b.niveau=n
+            b:SetShown(n~=nil)
+            if n~=nil then
+                b:SetText(tostring(n))
+                -- Le soulignement d'or : la même marque que l'onglet ouvert.
+                b.accent:SetShown(n==self.etage)
+            end
+        end
+        local trop=#liste>ETAGES_VUS
+        etages.gauche:SetShown(trop);etages.droite:SetShown(trop)
+        etages.gauche:SetEnabled(debut>1)
+        etages.droite:SetEnabled(debut+ETAGES_VUS-1<#liste)
+    end
+
+    function win:MajSelecteurs()
+        pickerContinent:SetText(self.continent and ContinentName(self.continent)
+            or "Tout ce que je connais")
+        pickerContinent:SetEnabled(#self:ContinentsListables()>0)
+        picker:SetText(self.level=="continent" and "Tous ses pays"
+            or (self.country and CountryName(self.country) or "Aucun pays"))
+        local zone=self.zone
+        pickerRegion:SetText(zone
+            and (ZoneKnown(zone) and (zone.name or "") or ZG:MaskText(zone.name or ""))
+            or "Toutes les régions")
+        pickerRegion:SetEnabled(#self:RegionsListables()>0)
+        local montrer=self.level=="region" or self.level=="batiment"
+        pickerBati:SetShown(montrer)
+        if montrer then
+            local liste=self:BatimentsListables()
+            pickerBati:SetText(self.batiment and (self.batiment.name or "") or "Aucun bâtiment")
+            pickerBati:SetEnabled(#liste>0)
+        end
+        self:MajEtages()
+    end
+
+    -- Un CONTINENT : toutes les régions de tous ses pays d'un coup. C'est la
+    -- carte du monde — un cran au-dessus du pays, et le seul endroit d'où
+    -- l'on voit deux royaumes se toucher. `key` nil : tout ce qu'on connaît,
+    -- continents ou non.
+    function win:ShowContinent(key)
+        self.level,self.continent,self.country,self.zone="continent",key,nil,nil
+        self.batiment,self.follow=nil,false
+        self:MajSelecteurs()
+        self:Fit();self:Draw()
+    end
+
+    -- Le continent d'un pays, pour que le menu du haut suive la descente.
+    local function ContinentDe(key)
+        local pays=key and key~=NONE and ZG:GetCountry(key)
+        return pays and pays.continentId or nil
+    end
+
     -- Pays (clé du pays, ou NONE pour les régions sans pays).
     function win:ShowCountry(key,follow,garderVue)
         self.level,self.country,self.zone,self.follow="country",key,nil,follow and true or false
         self.batiment=nil
-        picker:SetText(CountryName(key))
+        self.continent=ContinentDe(key)
+        self:MajSelecteurs()
         if not garderVue or not self.cx or not self.cy or not self.scale then self:Fit() end
         self:Draw()
     end
@@ -248,7 +479,8 @@ local function Build()
         if not zone then return end
         self.level,self.country,self.zone,self.follow="region",zone.countryId or NONE,zone,false
         self.batiment=nil
-        picker:SetText(CountryName(self.country))
+        self.continent=ContinentDe(self.country)
+        self:MajSelecteurs()
         self:Fit();self:Draw()
     end
     -- La carte d'un bâtiment : son intérieur, à sa propre échelle. Elle
@@ -258,7 +490,20 @@ local function Build()
         local zone=ZG:GetZone(place.zoneId)
         self.level,self.batiment,self.zone,self.follow="batiment",place,zone,false
         self.country=zone and (zone.countryId or NONE) or NONE
-        picker:SetText(CountryName(self.country))
+        self.continent=ContinentDe(self.country)
+        -- On arrive à l'étage où l'on se tient ; de l'extérieur, au plus bas
+        -- de ce que le bâtiment a — le rez d'ordinaire, la cave si elle est
+        -- tout ce qu'il y a.
+        local liste=ZG:GetNiveauxBatiment(place.id)
+        local ici=ZG:NiveauDuJoueur()
+        self.etage=nil
+        for _,n in ipairs(liste) do if n==ici then self.etage=n end end
+        if self.etage==nil then
+            self.etage=liste[1] or 0
+            for _,n in ipairs(liste) do if n==0 then self.etage=0 end end
+        end
+        etages.debut=nil
+        self:MajSelecteurs()
         self:Fit();self:Draw()
     end
     function win:ShowCurrent(garderVue)
@@ -266,7 +511,10 @@ local function Build()
         self.here=zone
         self.batiment=nil
         if zone then self:ShowCountry(zone.countryId or NONE,true,garderVue)
-        else self.level,self.country,self.zone,self.follow="country",nil,nil,true;picker:SetText("Aucun pays");self:Draw() end
+        else
+            self.level,self.country,self.zone,self.follow="country",nil,nil,true
+            self:MajSelecteurs();self:Draw()
+        end
     end
 
     -- Fond dessiné : sombre, légèrement chaud, avec un quadrillage discret.
@@ -370,6 +618,17 @@ local function Build()
         end
         if self.level=="region" then return {self.zone} end
         local list={}
+        -- Un continent : toutes les régions de tous ses pays. Sans continent
+        -- choisi, tout ce qu'on connaît, d'où qu'il vienne.
+        if self.level=="continent" then
+            for _,zone in ipairs(ZG:GetZoneList()) do
+                local pays=zone.countryId and ZG:GetCountry(zone.countryId)
+                if self.continent==nil or (pays and pays.continentId==self.continent) then
+                    list[#list+1]=zone
+                end
+            end
+            return list
+        end
         if self.country==nil then return list end
         for _,zone in ipairs(ZG:GetZoneList()) do
             -- Une region inconnue ne se montre pas du tout, pas meme sa forme.
@@ -379,13 +638,20 @@ local function Build()
     end
     -- Carte (instance) affichée : celle du joueur si ces régions y ont des
     -- passages, sinon celle où elles en ont le plus.
+    -- Hors d'un bâtiment, les INTÉRIEURS n'y votent pas : un bâtiment bâti
+    -- sur une autre carte du jeu — ou une cave à vingt pièces — emporterait
+    -- le choix, et la région se viderait de tout ce qu'elle montre.
     function win:Map(zones)
         local _,_,_,map=ZG:GetPlayerPose()
+        local dedans=self.batiment~=nil
         local counts,best={},nil
         for _,zone in ipairs(zones) do
             for _,sub in pairs(zone.subZones or {}) do
-                if sub.mapID==map then return map end
-                if sub.mapID then counts[sub.mapID]=(counts[sub.mapID] or 0)+1 end
+                local compte=dedans or (not ZG:EstInterieur(sub) and not ZG:EstEmpreinteBatiment(sub))
+                if compte then
+                    if sub.mapID==map then return map end
+                    if sub.mapID then counts[sub.mapID]=(counts[sub.mapID] or 0)+1 end
+                end
             end
         end
         for id,n in pairs(counts) do if not best or n>counts[best] then best=id end end
@@ -405,10 +671,15 @@ local function Build()
                 if not dedans[p.id] and p.parent and dedans[p.parent] then dedans[p.id]=true;bouge=true end
             end
         end
+        -- Un seul ÉTAGE à la fois : les cloisons de trois niveaux posées sur
+        -- le même plan ne se lisent plus. L'empreinte du bâtiment, elle,
+        -- reste toujours — c'est le contour, il vaut pour tous les étages.
+        local etage=self.etage or 0
         local list={}
         for _,sub in pairs(zone.subZones or {}) do
             local lieu=sub.enterPlace and zone.places[sub.enterPlace]
-            if lieu and dedans[lieu.id] and sub.enabled~=false then
+            if lieu and dedans[lieu.id] and sub.enabled~=false
+                and (lieu.id==b.id or ZG:GetNiveau(lieu)==etage) then
                 local vide=sub.shape=="polygon" and #(sub.points or {})<2
                 if not vide then list[#list+1]={sub=sub,zone=zone} end
             end
@@ -438,7 +709,13 @@ local function Build()
                 -- c'est le MJ qui a choisi ce qu'elle revele, et les lieux non
                 -- devoiles y donnent sa forme a la region. Ailleurs, on ne
                 -- voit que ce qu'on a foule.
-                if sub.mapID==map and sub.enabled~=false and not vide and not ZG:EstInterieur(sub) then
+                -- L'EMPREINTE d'un bâtiment non plus : elle est bâtie où l'on
+                -- veut sur la carte du monde — sous elle, le plus souvent,
+                -- pour les images par seconde — et la dessiner ici posait le
+                -- temple à des lieues de son village (3 novembre 2026). Le
+                -- bâtiment se marque à son EMPLACEMENT, voir win:Batiments.
+                if sub.mapID==map and sub.enabled~=false and not vide
+                    and not ZG:EstInterieur(sub) and not ZG:EstEmpreinteBatiment(sub) then
                     list[#list+1]={sub=sub,zone=zone}
                 end
             end
@@ -447,7 +724,9 @@ local function Build()
         return list
     end
 
-    -- Les bâtiments visibles sur la carte du dehors : un point et un nom.
+    -- Les bâtiments visibles sur la carte du dehors : un point et un nom,
+    -- posés à leur EMPLACEMENT — l'endroit de la région où le bâtiment se
+    -- tient, sans rapport avec celui du monde où son intérieur est bâti.
     function win:Batiments()
         if self.batiment then return {} end
         local zones=self:Zones()
@@ -457,12 +736,9 @@ local function Build()
             for _,place in pairs(zone.places or {}) do
                 -- Un batiment qu'on n'a jamais vu ne pose pas son point.
                 if place.batiment and (self.carte~=nil or PlaceKnown(place,zone)) then
-                    for _,sub in pairs(zone.subZones or {}) do
-                        if sub.enterPlace==place.id and sub.mapID==map and sub.enabled~=false
-                            and sub.points and #sub.points>=1 then
-                            list[#list+1]={place=place,sub=sub,zone=zone}
-                            break
-                        end
+                    local m,ex,ey=ZG:GetEmplacement(place)
+                    if ex and (m==nil or m==map) then
+                        list[#list+1]={place=place,zone=zone,x=ex,y=ey}
                     end
                 end
             end
@@ -525,6 +801,9 @@ local function Build()
             if sub.shape=="polygon" then for _,p in ipairs(sub.points or {}) do add(p) end
             else local a,b=LineEnds(sub);add(a);add(b) end
         end
+        -- Les emplacements des bâtiments comptent aussi : une région qui n'a
+        -- qu'un temple doit se cadrer dessus.
+        for _,b in ipairs(self:Batiments()) do add(b) end
         -- Les repères dessinés comptent ; ceux d'une autre carte du jeu, non.
         for _,r in ipairs(self.carte and self.carte.reperes or {}) do
             if not r.region or surCarte[r.region] then add(r) end
@@ -707,7 +986,10 @@ local function Build()
         self.batiment=nil
         self.level,self.zone,self.follow="region",vue.region and ZG:GetZone(vue.region) or nil,false
         self.country=self.zone and (self.zone.countryId or NONE) or NONE
-        picker:Hide()
+        -- Une carte LUE ne se parcourt pas : elle montre ce que le MJ y a mis,
+        -- et les trois menus n'y mèneraient qu'ailleurs.
+        pickerContinent:Hide();picker:Hide();pickerRegion:Hide();pickerBati:Hide()
+        etages.frame:Hide()
         self:Fit();self:Draw()
     end
 
@@ -790,9 +1072,11 @@ local function Build()
         local vueMot=string.format(" · vue : %d yd%s",math.floor(rayon),
             points and string.format(" (%d pt)",points) or "")
         if self.level=="batiment" then
-            self.help:SetText("Clic droit : ressortir · Molette : zoom"..vueMot)
+            self.help:SetText("Clic droit : ressortir · Les chiffres en haut : changer d'étage"..vueMot)
         elseif self.level=="region" then
             self.help:SetText("Clic droit : retour au pays · Clic sur un bâtiment : y entrer"..vueMot)
+        elseif self.level=="country" then
+            self.help:SetText("Clic : ouvrir une région · Clic droit : voir le continent · Molette : zoom"..vueMot)
         else
             self.help:SetText("Clic : ouvrir une région · Molette : zoom"..vueMot)
         end
@@ -809,18 +1093,26 @@ local function Build()
             end
         end
         table.sort(self.hoverAreas,function(a,b) return a.area<b.area end)
-        if self.country==nil or #subs==0 then
-            self.title:SetText(self.country and CountryName(self.country) or "Carte")
+        local surContinent=self.level=="continent"
+        if (self.country==nil and not surContinent) or #subs==0 then
+            local nom=surContinent and (self.continent and ContinentName(self.continent) or "Carte")
+                or (self.country and CountryName(self.country) or "Carte")
+            self.title:SetText(nom)
             self.subtitle:SetText("")
-            self.empty:SetText(self.country and "Rien à afficher sur cette carte." or "Aucune région Crossings ici.\nChoisissez un pays dans le menu, ou « Carte du jeu » pour la carte habituelle.")
+            self.empty:SetText((self.country or surContinent) and "Rien à afficher sur cette carte." or "Aucune région Crossings ici.\nChoisissez un pays dans le menu, ou « Carte du jeu » pour la carte habituelle.")
             self.empty:Show()
             return
         end
         self.empty:Hide()
 
-        if self.level=="country" then
-            self.title:SetText(CountryName(self.country))
-            self.subtitle:SetText("Pays · cliquez sur une région")
+        if self.level=="country" or surContinent then
+            if surContinent then
+                self.title:SetText(self.continent and ContinentName(self.continent) or "Le monde connu")
+                self.subtitle:SetText("Continent · cliquez sur une région")
+            else
+                self.title:SetText(CountryName(self.country))
+                self.subtitle:SetText("Pays · cliquez sur une région")
+            end
             -- Une couleur par région ; les lieux n'ont qu'un contour discret.
             local boxes={}
             for _,e in ipairs(subs) do
@@ -841,7 +1133,8 @@ local function Build()
             if self.batiment then
                 self.title:SetText(PlaceKnown(self.batiment,zone) and (self.batiment.name or "")
                     or ZG:MaskText(self.batiment.name or ""))
-                self.subtitle:SetText("Bâtiment · "..(ZoneKnown(zone) and (zone.name or "") or ZG:MaskText(zone.name or "")))
+                self.subtitle:SetText("Bâtiment · "..(ZoneKnown(zone) and (zone.name or "") or ZG:MaskText(zone.name or ""))
+                    .."  ·  étage "..tostring(self.etage or 0))
             else
                 self.title:SetText(ZoneKnown(zone) and (zone.name or "") or ZG:MaskText(zone.name or ""))
                 self.subtitle:SetText("Région · "..CountryName(self.country))
@@ -884,18 +1177,12 @@ local function Build()
             -- dessus ouvre leur carte à eux.
             self.batimentsVus={}
             for _,b in ipairs(self:Batiments()) do
-                local sx,sy,n=0,0,0
-                for _,p in ipairs(b.sub.points or {}) do
-                    local x,y=self:ToScreen(p.x,p.y);sx,sy,n=sx+x,sy+y,n+1
-                end
-                if n>0 then
-                    local x,y=sx/n,sy/n
-                    if x>-40 and x<CW+40 and y>-20 and y<CH+20 then
-                        Pin(x,y,"libre")
-                        local name=PlaceKnown(b.place,zone) and (b.place.name or "") or ZG:MaskText(b.place.name or "")
-                        Text(x,y-18,name,Light(COULEUR_BATIMENT),false,"place",b.place,zone)
-                        self.batimentsVus[#self.batimentsVus+1]={place=b.place,x=x,y=y}
-                    end
+                local x,y=self:ToScreen(b.x,b.y)
+                if x>-40 and x<CW+40 and y>-20 and y<CH+20 then
+                    Pin(x,y,"libre")
+                    local name=PlaceKnown(b.place,zone) and (b.place.name or "") or ZG:MaskText(b.place.name or "")
+                    Text(x,y-18,name,Light(COULEUR_BATIMENT),false,"place",b.place,zone)
+                    self.batimentsVus[#self.batimentsVus+1]={place=b.place,x=x,y=y}
                 end
             end
         end
@@ -931,7 +1218,11 @@ local function Build()
         end
         if not hit then return nil end
         local place=hit.sub.enterPlace and ZG:FindPlace(hit.sub.enterPlace)
-        if place and not place.pourRegion then return ZG:ResolveBannerText(place,hit.zone) end
+        -- Sur la carte, c'est le LIEU qu'on vise et son cadre qui le situe :
+        -- le gras va au lieu, le reste passe dessous en plus fin (voir
+        -- ZG:ResolveMapText). La bannière, elle, annonce d'abord qu'on entre
+        -- quelque part.
+        if place and not place.pourRegion then return ZG:ResolveMapText(place,hit.zone) end
         return ZoneKnown(hit.zone) and hit.zone.name or ZG:MaskText(hit.zone.name),CountryName(hit.zone.countryId or NONE)
     end
     function win:UpdateMapTooltip()
@@ -1028,7 +1319,10 @@ local function Build()
         if button=="RightButton" then
             -- Dans un bâtiment, on ressort d'abord vers sa région.
             if win.level=="batiment" and not win.carte then win:ShowRegion(win.zone)
-            elseif win.level=="region" and not win.carte then win:OpenCountry(win.country) end
+            elseif win.level=="region" and not win.carte then win:OpenCountry(win.country)
+            -- Et d'un pays, on remonte à son continent : la carte du monde
+            -- est au bout de la même touche.
+            elseif win.level=="country" and not win.carte then win:ShowContinent(win.continent) end
             return
         end
         local drag=win.drag;win.drag=nil
@@ -1043,7 +1337,7 @@ local function Build()
         for _,b in ipairs(win.batimentsVus or {}) do
             if math.abs(ox-b.x)<=14 and math.abs(oy-b.y)<=14 then win:ShowBatiment(b.place);return end
         end
-        if win.level~="country" then return end
+        if win.level~="country" and win.level~="continent" then return end
         local zone=win:RegionAt(ox,oy)
         if zone then win:ShowRegion(zone) end
     end)
@@ -1088,7 +1382,7 @@ local function Build()
         if labelCheck>=1 and not self.carte then
             labelCheck=0
             if self.country then
-                picker:SetText(CountryName(self.country))
+                self:MajSelecteurs()
                 if self.level=="country" then self.title:SetText(CountryName(self.country))
                 elseif self.zone then
                     local region=ZoneKnown(self.zone) and self.zone.name or ZG:MaskText(self.zone.name)
@@ -1115,7 +1409,7 @@ local function Build()
     -- Premier affichage ou changement de carte physique : choisir le contexte.
     win:SetScript("OnShow",function(self)
         if self.carte then return end
-        picker:Show()
+        pickerContinent:Show();picker:Show();pickerRegion:Show()
         local _,_,_,instance=ZG:GetPlayerPose()
         if self.openInstance==instance and self.cx and self.scale and self.hasBaseMap then
             self:DrawFog();self:Moi();return

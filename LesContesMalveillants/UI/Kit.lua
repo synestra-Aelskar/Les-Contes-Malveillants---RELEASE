@@ -67,6 +67,34 @@ function UI.Bordure(frame, couleur)
     return traits
 end
 
+-- Un carre a liseré d'UN PIXEL PHYSIQUE, pour les petites cases. UI.Bordure
+-- trace quatre traits d'une unite : a une echelle d'interface sous 1, une
+-- unite fait moins d'un pixel, et selon sa position un trait s'arrondit a
+-- zero — des cases a qui manquaient un ou deux cotes (capture du MJ,
+-- 3 novembre 2026). Ici, un aplat plein de la couleur du liseré, et le fond
+-- par-dessus en retrait d'un pixel reel : aucun cote ne peut disparaitre.
+function UI.CarrePixel(cadre, contour, fond)
+    local exterieur = UI.Aplat(cadre, contour, "BACKGROUND")
+    exterieur:SetAllPoints(cadre)
+    local interieur = UI.Aplat(cadre, fond, "BORDER")
+    for _, t in ipairs({ exterieur, interieur }) do
+        t:SetSnapToPixelGrid(false)
+        t:SetTexelSnappingBias(0)
+    end
+    local function Poser()
+        local _, hauteur = GetPhysicalScreenSize()
+        local echelle = cadre:GetEffectiveScale() or 1
+        local px = ((hauteur and hauteur > 0) and (768 / hauteur) or 1) / (echelle > 0 and echelle or 1)
+        interieur:ClearAllPoints()
+        interieur:SetPoint("TOPLEFT", cadre, "TOPLEFT", px, -px)
+        interieur:SetPoint("BOTTOMRIGHT", cadre, "BOTTOMRIGHT", -px, px)
+    end
+    Poser()
+    -- L'echelle n'est connue pour de bon qu'une fois le cadre montre.
+    cadre:HookScript("OnShow", Poser)
+    return exterieur, interieur
+end
+
 function UI.Texte(parent, texte, couleur, gabarit)
     local fs = parent:CreateFontString(nil, "OVERLAY", gabarit or "GameFontNormal")
     fs:SetText(texte or "")
@@ -1052,6 +1080,30 @@ end
 --   coches  = { [id] = true }   valider(ids) recoit la liste triee des cochees.
 -- Une option presente dans deux groupes est UNE case : cocher l'une coche
 -- l'autre (un metier range dans deux categories reste un seul metier).
+-- Un pli d'accordeon DESSINE : un carre au liseré d'un pixel, un trait pour
+-- « - », une croix pour « + ». Ne a la fenetre des tags (3 novembre 2026),
+-- partage depuis avec les listes de choix en accordeon. `b:Etat(ouvert)`.
+function UI.Pli(parent, taille)
+    local b = CreateFrame("Button", nil, parent)
+    b:SetSize(taille, taille)
+    b.contour, b.fond = UI.CarrePixel(b, { 0.82, 0.66, 0.20, 0.9 }, { 0.08, 0.07, 0.05, 1 })
+    b.horizontal = UI.Aplat(b, { 0.95, 0.80, 0.35, 1 }, "ARTWORK")
+    b.horizontal:SetSize(taille - 6, 2)
+    b.horizontal:SetPoint("CENTER", b, "CENTER", 0, 0)
+    b.vertical = UI.Aplat(b, { 0.95, 0.80, 0.35, 1 }, "ARTWORK")
+    b.vertical:SetSize(2, taille - 6)
+    b.vertical:SetPoint("CENTER", b, "CENTER", 0, 0)
+    b.survol = UI.Aplat(b, { 0.90, 0.78, 0.30, 0.25 }, "HIGHLIGHT")
+    b.survol:SetAllPoints(b)
+    -- `ouvert` : ce que montre le pli, lisible par le banc.
+    function b:Etat(ouvert)
+        self.ouvert = ouvert and true or false
+        self.vertical:SetShown(not self.ouvert)
+    end
+    b:Etat(false)
+    return b
+end
+
 function UI.ChoixCoches(cle, titre)
     local d = CreateFrame("Frame", "LCM_ChoixCoches_" .. tostring(cle), UIParent)
     d:SetSize(320, 420)
@@ -1107,6 +1159,340 @@ function UI.ChoixCoches(cle, titre)
         end
     end
 
+    -- ----- L'accordeon (`d.accordeon = true`) ---------------------------------
+    -- Cinq cents tags, ranges sous quatre origines, ce sont deux mille lignes
+    -- a faire defiler (le MJ, 3 novembre 2026 : « ca devient imbuvable »).
+    -- En accordeon, chaque groupe ET chaque option qui a des enfants se
+    -- replient ; tout part replie, sauf le chemin vers ce qui est deja coche —
+    -- on rouvre la fenetre sur son choix, pas sur une liste fermee qui le
+    -- cache. Ce qu'on ouvre a la main le reste d'une ouverture a l'autre, le
+    -- temps de la session : c'est un etat d'ecran, il ne va pas en sauvegarde.
+    -- Les enfants d'une option se lisent dans l'ordre de la liste : ceux qui
+    -- la suivent avec un `niveau` plus grand (un arbre deja deplie).
+    d.ouverts = {}
+    local function CleGroupe(groupe) return "g\031" .. tostring(groupe.id or groupe.label or "") end
+    local function CleOption(cleG, option) return cleG .. "\031" .. tostring(option.id) end
+    local function Niveau(option) return tonumber(option and option.niveau) or 0 end
+    -- La mise en page de l'accordeon (capture du MJ, 3 novembre 2026 : « plus
+    -- propre niveau coche, niveau - et + », des L pour montrer qui est enfant
+    -- de qui, de petits separateurs entre deux tags, un gros entre deux
+    -- origines). Une rangee de niveau n : le pli a x0(n), la case 20 plus
+    -- loin ; le trait qui la rattache part du CENTRE du pli de son parent.
+    local RETRAIT, RANGEE, PLI, CASE = 22, 24, 14, 14
+    local function X0(n) return 4 + RETRAIT * n end
+    local COULEUR_TRAIT = { 0.82, 0.66, 0.20, 0.45 }
+    local COULEUR_SEPARATEUR = { 1, 1, 1, 0.06 }
+
+    -- Un pli dessine, pas un bouton a texte : un carre au liseré dore, un
+    -- trait pour « - », une croix pour « + ». Un « - » ecrit dans un bouton de
+    -- 16 px se lisait mal (capture du MJ).
+    local function Pli(parent, taille) return UI.Pli(parent, taille) end
+
+    -- Les traits de l'arbre et les separateurs : des aplats d'une reserve,
+    -- reposes a chaque rendu (aucun cree pendant qu'on deplie, une fois la
+    -- reserve assez grande).
+    d.traits = {}
+    local function Trait(i, couleur)
+        local t = d.traits[i]
+        if not t then
+            t = d.zone.contenu:CreateTexture(nil, "BORDER")
+            d.traits[i] = t
+        end
+        t:SetColorTexture(couleur[1], couleur[2], couleur[3], couleur[4])
+        t:ClearAllPoints()
+        t:Show()
+        return t
+    end
+
+    -- Ouvrir le chemin vers chaque option cochee : son groupe, et chaque
+    -- ancetre de l'arbre (le dernier vu a chaque niveau au-dessus d'elle).
+    local function OuvrirVersCoches()
+        for _, groupe in ipairs(d.groupes or {}) do
+            local cleG = CleGroupe(groupe)
+            local pile = {}
+            for _, option in ipairs(groupe.options or {}) do
+                local n = Niveau(option)
+                for k = #pile, n + 1, -1 do pile[k] = nil end
+                if d.selection[option.id] then
+                    d.ouverts[cleG] = true
+                    for k = 0, n - 1 do
+                        if pile[k + 1] then d.ouverts[CleOption(cleG, pile[k + 1])] = true end
+                    end
+                end
+                pile[n + 1] = option
+            end
+        end
+    end
+
+    local function Entete(i)
+        local t = d.entetes[i]
+        if t then return t end
+        t = CreateFrame("Button", nil, d.zone.contenu)
+        t:SetHeight(20)
+        local accordeon = d.accordeon == true
+        if accordeon then
+            t.fond = UI.Aplat(t, { 0.82, 0.66, 0.20, 0.07 })
+            t.fond:SetAllPoints(t)
+            t.survol = UI.Aplat(t, { 0.90, 0.78, 0.30, 0.10 }, "HIGHLIGHT")
+            t.survol:SetAllPoints(t)
+            -- Le pli de l'origine : le meme dessin que celui des tags, un peu
+            -- plus grand, et c'est tout l'en-tete qui se clique.
+            t.signe = Pli(t, 14)
+            t.signe:SetPoint("LEFT", t, "LEFT", 4, 0)
+            t.signe:EnableMouse(false)
+            -- Le gros separateur, AU-DESSUS de chaque origine sauf la premiere.
+            t.filet = UI.Aplat(t, { 0.82, 0.66, 0.20, 0.55 }, "ARTWORK")
+            t.filet:SetHeight(2)
+            t.filet:SetPoint("BOTTOMLEFT", t, "TOPLEFT", 0, 6)
+            t.filet:SetPoint("BOTTOMRIGHT", t, "TOPRIGHT", 0, 6)
+            t.compte = UI.Texte(t, "", UI.C.discret, "GameFontNormalSmall")
+            t.compte:SetPoint("RIGHT", t, "RIGHT", -6, 0)
+            t.compte:SetJustifyH("RIGHT")
+        end
+        t.label = UI.Texte(t, "", UI.C.libelle, "GameFontNormalSmall")
+        t.label:SetPoint("LEFT", t, "LEFT", accordeon and 24 or 0, 0)
+        t.label:SetPoint("RIGHT", t, "RIGHT", accordeon and -80 or 0, 0)
+        t.label:SetJustifyH("LEFT")
+        t.label:SetWordWrap(false)
+        -- `t:GetText()` : l'entete se lisait comme un texte, avant d'etre un bouton.
+        function t:GetText() return self.label:GetText() end
+        t:SetScript("OnClick", function(self)
+            if not (d.accordeon and self.cle) then return end
+            d.ouverts[self.cle] = not d.ouverts[self.cle] or nil
+            d:Rendre(true)
+        end)
+        d.entetes[i] = t
+        return t
+    end
+
+    local function Case(i)
+        local c = d.cases[i]
+        if c then return c end
+        c = UI.Case(d.zone.contenu, "", function(coche)
+            d.selection[c.id] = coche and true or nil
+            Synchroniser()
+            -- Le compte d'un groupe replie dit ce qu'il cache de coche.
+            if d.accordeon then d:Rendre(true) end
+        end)
+        if d.accordeon then
+            -- Une case plus fine, cochee d'une vraie coche : le carre plein
+            -- de 18 px pesait plus lourd que le nom du tag.
+            c:SetSize(CASE, CASE)
+            c.coche:ClearAllPoints()
+            c.coche:SetPoint("TOPLEFT", c, "TOPLEFT", 3, -3)
+            c.coche:SetPoint("BOTTOMRIGHT", c, "BOTTOMRIGHT", -3, 3)
+            c.marque = c:CreateTexture(nil, "OVERLAY")
+            c.marque:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+            c.marque:SetSize(CASE + 8, CASE + 8)
+            c.marque:SetPoint("CENTER", c, "CENTER", 1, 1)
+            local cocher = c.Cocher
+            function c:Cocher(v)
+                cocher(self, v)
+                self.coche:Hide()
+                self.marque:SetShown(self.cochee)
+                self.label:SetTextColor(unpack(self.cochee and UI.C.accent or UI.C.texte))
+            end
+            c:Cocher(false)
+            -- Le liseré d'un pixel reel, comme les plis : les traits d'une
+            -- unite de UI.Case perdaient un cote sur deux a petite echelle.
+            for _, t in ipairs(c.bordure or {}) do t:Hide() end
+            c.fond:Hide()
+            c.contour, c.interieur = UI.CarrePixel(c, { 0.82, 0.66, 0.20, 0.9 }, { 0.10, 0.10, 0.10, 1 })
+            -- Toute la rangee se clique, pas seulement les 14 px de la case.
+            c.ligne = CreateFrame("Button", nil, d.zone.contenu)
+            -- Sa largeur se regle au rendu : elle depend du niveau.
+            c.ligne:SetPoint("LEFT", c, "RIGHT", 0, 0)
+            c.ligne:SetHeight(RANGEE - 2)
+            c.ligne.survol = UI.Aplat(c.ligne, { 0.90, 0.78, 0.30, 0.08 }, "HIGHLIGHT")
+            c.ligne.survol:SetAllPoints(c.ligne)
+            c.ligne:SetScript("OnClick", function() c:Click() end)
+            c:HookScript("OnShow", function() c.ligne:Show() end)
+            c:HookScript("OnHide", function() c.ligne:Hide() end)
+        end
+        -- Le pli d'une option qui a des enfants, a gauche de sa case.
+        c.pli = Pli(d.zone.contenu, PLI)
+        c.pli:SetScript("OnClick", function(b)
+            if not b.cle then return end
+            d.ouverts[b.cle] = not d.ouverts[b.cle] or nil
+            d:Rendre(true)
+        end)
+        c.pli:SetPoint("RIGHT", c, "LEFT", -(20 - PLI), 0)
+        c.pli:Hide()
+        c:HookScript("OnHide", function() c.pli:Hide() end)
+        d.cases[i] = c
+        return c
+    end
+
+    -- Poser ce qui se voit. `garder` : garder le defilement (un pli qu'on
+    -- ouvre ne doit pas renvoyer en haut de la liste).
+    -- Les rangees visibles d'un groupe ouvert, avec ce qu'il faut pour dessiner
+    -- l'arbre : `dernier` (le dernier de ses freres : son trait s'arrete en
+    -- L) et `suite[m]` (a la colonne m, un ancetre a encore des freres plus
+    -- bas : le trait vertical continue a travers cette rangee).
+    local function Rangees(groupe, cleG)
+        local options, lignes, cache = groupe.options or {}, {}, nil
+        for i, option in ipairs(options) do
+            local n = Niveau(option)
+            if not (cache and n > cache) then
+                cache = nil
+                local enfants = Niveau(options[i + 1]) > n
+                local cleO = CleOption(cleG, option)
+                local deplie = d.ouverts[cleO] == true
+                if enfants and not deplie then cache = n end
+                lignes[#lignes + 1] = { option = option, n = n, enfants = enfants, deplie = deplie, cle = cleO }
+            end
+        end
+        -- A rebours : `vu[m]`, une rangee de niveau m plus bas, avant toute
+        -- rangee moins profonde qui fermerait la branche.
+        local vu = {}
+        for i = #lignes, 1, -1 do
+            local l = lignes[i]
+            l.dernier = not vu[l.n]
+            l.suite = {}
+            for m = 1, l.n - 1 do l.suite[m] = vu[m] == true end
+            vu[l.n] = true
+            for m in pairs(vu) do if m > l.n then vu[m] = nil end end
+        end
+        return lignes
+    end
+
+    local function RendreAccordeon(self)
+        local maj = UI.Majuscules or tostring
+        local largeur = math.max(120, (self:GetWidth() or 360) - 14 - 24 - 6)
+        local y, nc, ne, nt = 4, 0, 0, 0
+        local function Vertical(x, haut, bas)
+            nt = nt + 1
+            local t = Trait(nt, COULEUR_TRAIT)
+            t:SetSize(1, math.max(1, bas - haut))
+            t:SetPoint("TOPLEFT", self.zone.contenu, "TOPLEFT", x, -haut)
+        end
+        local function Horizontal(x1, x2, h, couleur, epaisseur)
+            nt = nt + 1
+            local t = Trait(nt, couleur or COULEUR_TRAIT)
+            t:SetSize(math.max(1, x2 - x1), epaisseur or 1)
+            t:SetPoint("TOPLEFT", self.zone.contenu, "TOPLEFT", x1, -h)
+        end
+        for gi, groupe in ipairs(self.groupes or {}) do
+            local options = groupe.options or {}
+            local cleG = CleGroupe(groupe)
+            local ouvert = self.ouverts[cleG] == true
+            -- La place du gros separateur, au-dessus de l'en-tete.
+            if gi > 1 then y = y + 14 end
+            ne = ne + 1
+            local t = Entete(ne)
+            t.cle, t.ouvert = cleG, ouvert
+            t.signe:Etat(ouvert)
+            t.filet:SetShown(gi > 1)
+            t.label:SetText(maj(groupe.label or ""))
+            local coches = 0
+            for _, option in ipairs(options) do if self.selection[option.id] then coches = coches + 1 end end
+            t.compte:SetText(coches > 0
+                and string.format("%d  ·  %d coché%s", #options, coches, coches > 1 and "s" or "")
+                or tostring(#options))
+            t.compte:SetTextColor(unpack(coches > 0 and UI.C.accent or UI.C.discret))
+            t:ClearAllPoints()
+            t:SetPoint("TOPLEFT", self.zone.contenu, "TOPLEFT", 0, -y)
+            t:SetWidth(largeur)
+            t:Show()
+            y = y + 22
+            if ouvert then
+                local lignes = Rangees(groupe, cleG)
+                y = y + 2
+                for i, l in ipairs(lignes) do
+                    local n, milieu = l.n, y + RANGEE / 2
+                    nc = nc + 1
+                    local c = Case(nc)
+                    c.id = l.option.id
+                    c.label:SetText(l.option.label or tostring(l.option.id))
+                    c:ClearAllPoints()
+                    c:SetPoint("TOPLEFT", self.zone.contenu, "TOPLEFT", X0(n) + 20, -(y + (RANGEE - CASE) / 2))
+                    c:Show()
+                    c.ligne:SetWidth(math.max(20, largeur - (X0(n) + 20 + CASE)))
+                    c.pli.cle = l.enfants and l.cle or nil
+                    c.pli:SetShown(l.enfants)
+                    c.pli:Etat(l.deplie)
+                    -- L'arbre. Les ancetres qui ont encore des freres plus bas :
+                    -- un trait qui traverse la rangee.
+                    for m = 1, n - 1 do
+                        if l.suite[m] then Vertical(X0(m - 1) + PLI / 2, y, y + RANGEE) end
+                    end
+                    if n >= 1 then
+                        -- Le L (ou le T, s'il reste des freres) qui rattache
+                        -- la rangee au pli de son parent.
+                        local x = X0(n - 1) + PLI / 2
+                        Vertical(x, y, l.dernier and milieu or y + RANGEE)
+                        Horizontal(x, X0(n) + (l.enfants and 0 or 18), milieu)
+                    end
+                    if l.enfants and l.deplie then
+                        -- Du pli ouvert vers ses enfants, juste dessous.
+                        Vertical(X0(n) + PLI / 2, milieu + PLI / 2, y + RANGEE)
+                    end
+                    -- Le petit separateur entre deux tags : sous le nom
+                    -- seulement, pour ne pas couper les traits de l'arbre.
+                    if i < #lignes then
+                        Horizontal(X0(n) + 20, largeur, y + RANGEE, COULEUR_SEPARATEUR)
+                    end
+                    y = y + RANGEE
+                end
+                y = y + 4
+            end
+        end
+        for i = nc + 1, #self.cases do self.cases[i]:Hide() end
+        for i = ne + 1, #self.entetes do self.entetes[i]:Hide() end
+        for i = nt + 1, #d.traits do d.traits[i]:Hide() end
+        Synchroniser()
+        return y + 6
+    end
+
+    function d:Rendre(garder)
+        if self.accordeon then
+            local y = RendreAccordeon(self)
+            local decalage = garder and self.zone.decalage or 0
+            self.zone:Regler(y)
+            self.zone:Aller(decalage or 0)
+            return
+        end
+        local maj = UI.Majuscules or tostring
+        local y, nc, ne = 2, 0, 0
+        for _, groupe in ipairs(self.groupes or {}) do
+            local options = groupe.options or {}
+            ne = ne + 1
+            local t = Entete(ne)
+            t.cle = nil
+            t.label:SetText(maj(groupe.label or ""))
+            t:ClearAllPoints()
+            t:SetPoint("TOPLEFT", self.zone.contenu, "TOPLEFT", 2, -y)
+            t:SetPoint("RIGHT", self.zone.contenu, "RIGHT", -2, 0)
+            t:Show()
+            y = y + 18
+            for _, option in ipairs(options) do
+                nc = nc + 1
+                local c = Case(nc)
+                c.id = option.id
+                c.label:SetText(option.label or tostring(option.id))
+                c:ClearAllPoints()
+                c:SetPoint("TOPLEFT", self.zone.contenu, "TOPLEFT", 12 + 16 * Niveau(option), -y)
+                c:Show()
+                c.pli.cle = nil
+                c.pli:Hide()
+                y = y + 22
+            end
+            y = y + 6
+        end
+        for i = nc + 1, #self.cases do self.cases[i]:Hide() end
+        for i = ne + 1, #self.entetes do self.entetes[i]:Hide() end
+        Synchroniser()
+        if self.compact and not garder then
+            -- Replier ne fait pas sauter la fenetre : sa taille ne se regle
+            -- qu'a l'ouverture.
+            self:SetHeight(math.min(420, math.max(190, y + (self.avecAction and 112 or 88)
+                + (self.avecAide and 24 or 0))))
+        end
+        local decalage = garder and self.zone.decalage or 0
+        self.zone:Regler(y)
+        self.zone:Aller(decalage or 0)
+    end
+
     -- `action` (facultatif) : { label, fn } — un bouton de plus sous la liste.
     -- Une option peut porter `niveau` : elle se decale d'autant (un arbre).
     function d:Proposer(texte, groupes, coches, valider, action)
@@ -1120,49 +1506,24 @@ function UI.ChoixCoches(cle, titre)
         self.surAction = action and action.fn or nil
         self.action:SetShown(action ~= nil)
         if action then self.action.label:SetText(action.label) end
+        self.avecAction, self.avecAide = action ~= nil, aide == true
         self.zone:ClearAllPoints()
         self.zone:SetPoint("TOPLEFT", self, "TOPLEFT", 14, aide and -64 or -40)
         self.zone:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -24, action and 74 or 50)
-        local y, nc, ne = 2, 0, 0
-        for _, groupe in ipairs(groupes or {}) do
-            ne = ne + 1
-            local t = self.entetes[ne]
-            if not t then
-                t = UI.Texte(self.zone.contenu, "", UI.C.libelle, "GameFontNormalSmall")
-                self.entetes[ne] = t
-            end
-            t:SetText(UI.Majuscules and UI.Majuscules(groupe.label or "") or tostring(groupe.label or ""))
-            t:ClearAllPoints()
-            t:SetPoint("TOPLEFT", self.zone.contenu, "TOPLEFT", 2, -y)
-            t:Show()
-            y = y + 18
-            for _, option in ipairs(groupe.options or {}) do
-                nc = nc + 1
-                local c = self.cases[nc]
-                if not c then
-                    c = UI.Case(self.zone.contenu, "", function(coche)
-                        d.selection[c.id] = coche and true or nil
-                        Synchroniser()
-                    end)
-                    self.cases[nc] = c
-                end
-                c.id = option.id
-                c.label:SetText(option.label or tostring(option.id))
-                c:ClearAllPoints()
-                c:SetPoint("TOPLEFT", self.zone.contenu, "TOPLEFT", 12 + 16 * (tonumber(option.niveau) or 0), -y)
-                c:Show()
-                y = y + 22
-            end
-            y = y + 6
+        self.groupes = groupes or {}
+        if self.accordeon then
+            -- Une fenetre HAUTE, et qui ne change pas de taille en se
+            -- repliant : celle qui se calait sur son contenu tombait a 190 px
+            -- toute repliee (capture du MJ, 3 novembre 2026 : « elle est toute
+            -- petite »). Plus large aussi, pour la place de l'arbre.
+            local haut = math.min(640, math.floor(((UIParent and UIParent:GetHeight()) or 768) * 0.85))
+            self:SetSize(380, math.max(420, haut))
+            self.action:SetWidth(380 - 28)
+            -- Un seul groupe : le replier ne cacherait que lui-meme.
+            if #self.groupes == 1 then self.ouverts[CleGroupe(self.groupes[1])] = true end
+            OuvrirVersCoches()
         end
-        for i = nc + 1, #self.cases do self.cases[i]:Hide() end
-        for i = ne + 1, #self.entetes do self.entetes[i]:Hide() end
-        Synchroniser()
-        if self.compact then
-            self:SetHeight(math.min(420, math.max(190, y + (action and 112 or 88) + (aide and 24 or 0))))
-        end
-        self.zone:Regler(y)
-        self.zone:Aller(0)
+        self:Rendre(false)
         self:Show()
         self:Raise()
     end
@@ -1179,7 +1540,8 @@ function UI.ChoixTags(cle)
     local E = LCM.Etiquettes
     local d = { coches = UI.ChoixCoches("tags_" .. tostring(cle), "Tags") }
     d.coches.compact = true
-    d.coches.aideTexte = "Coche un ou plusieurs tags. Les sous-tags sont inclus."
+    d.coches.accordeon = true
+    d.coches.aideTexte = "Coche un ou plusieurs tags. Les sous-tags sont inclus. Le + déplie."
     function d:Proposer(titre, coches, valider, creer)
         local fenetre = self.coches
         local function Ouvrir(selection)
@@ -2514,8 +2876,57 @@ function UI.Choix(cle, titre)
     d.tagsBouton:Hide()
 
     d.lignes, d.intertitres = {}, {}
+    -- L'accordeon (`d.accordeon = true`, le MJ, 3 novembre 2026, pour le
+    -- choix d'une epreuve) : chaque groupe est un en-tete qui se replie,
+    -- FERME a chaque ouverture ; un gros filet dore entre deux groupes, un
+    -- petit entre deux entrees. Une recherche ouvre tout ce qui correspond.
+    d.entetes, d.filets, d.ouverts = {}, {}, {}
 
     local HAUTEUR = 20
+
+    local function Entete(i)
+        local t = d.entetes[i]
+        if t then return t end
+        t = CreateFrame("Button", nil, d.zone.contenu)
+        t:SetHeight(HAUTEUR)
+        t.fond = UI.Aplat(t, { 0.82, 0.66, 0.20, 0.08 })
+        t.fond:SetAllPoints(t)
+        t.survol = UI.Aplat(t, { 0.90, 0.78, 0.30, 0.12 }, "HIGHLIGHT")
+        t.survol:SetAllPoints(t)
+        t.pli = UI.Pli(t, 12)
+        t.pli:SetPoint("LEFT", t, "LEFT", 4, 0)
+        t.pli:EnableMouse(false)
+        t.label = UI.Texte(t, "", UI.C.accent, "GameFontNormalSmall")
+        t.label:SetPoint("LEFT", t.pli, "RIGHT", 6, 0)
+        t.compte = UI.Texte(t, "", UI.C.discret, "GameFontNormalSmall")
+        t.compte:SetPoint("RIGHT", t, "RIGHT", -6, 0)
+        t:SetScript("OnClick", function(soi)
+            d.ouverts[soi.groupe] = not d.ouverts[soi.groupe] or nil
+            local decalage = d.zone.decalage
+            d:Rendre()
+            d.zone:Aller(decalage or 0)
+        end)
+        d.entetes[i] = t
+        return t
+    end
+
+    local function Filet(i, epais)
+        local f = d.filets[i]
+        if not f then
+            f = d.zone.contenu:CreateTexture(nil, "ARTWORK")
+            d.filets[i] = f
+        end
+        if epais then
+            f:SetColorTexture(0.82, 0.66, 0.20, 0.55)
+            f:SetHeight(2)
+        else
+            f:SetColorTexture(1, 1, 1, 0.07)
+            f:SetHeight(1)
+        end
+        f:ClearAllPoints()
+        f:Show()
+        return f
+    end
 
     local function Etiquettes(option)
         if option.etiquettes then return option.etiquettes end
@@ -2539,6 +2950,10 @@ function UI.Choix(cle, titre)
         local n = 0
         for _ in pairs(self.tags or {}) do n = n + 1 end
         self.tagsBouton.label:SetText(n > 0 and string.format("Tags (%d)", n) or "Tags")
+        if self.accordeon then
+            self:RendreAccordeon(visibles, aiguille ~= "")
+            return
+        end
         local y, nLignes, nIntertitres, groupe = 0, 0, 0, nil
         for _, option in ipairs(visibles) do
             if option.groupe and option.groupe ~= groupe then
@@ -2583,8 +2998,91 @@ function UI.Choix(cle, titre)
         self.zone:Regler(y)
     end
 
+    -- Une ligne de choix (pool) : un clic choisit et ferme.
+    local function Ligne(i)
+        local b = d.lignes[i]
+        if b then return b end
+        -- La valeur choisie est portee par la ligne : une fermeture qui
+        -- capturerait l'index de boucle renverrait toujours la derniere.
+        b = UI.Bouton(d.zone.contenu, "", 10, HAUTEUR - 2, function(ligne)
+            d:Hide()
+            if d.onChoix then d.onChoix(ligne.choix) end
+        end)
+        b.label:ClearAllPoints()
+        b.label:SetPoint("LEFT", b, "LEFT", 8, 0)
+        b.label:SetJustifyH("LEFT")
+        d.lignes[i] = b
+        return b
+    end
+
+    function d:RendreAccordeon(visibles, recherche)
+        -- Les groupes, dans l'ordre ou ils arrivent.
+        local groupes, parGroupe = {}, {}
+        for _, option in ipairs(visibles) do
+            local g = option.groupe or ""
+            if not parGroupe[g] then
+                parGroupe[g] = {}
+                groupes[#groupes + 1] = g
+            end
+            table.insert(parGroupe[g], option)
+        end
+        local y, nLignes, nEntetes, nFilets = 0, 0, 0, 0
+        for gi, g in ipairs(groupes) do
+            if gi > 1 then
+                -- Le gros filet, entre deux groupes.
+                nFilets = nFilets + 1
+                local f = Filet(nFilets, true)
+                f:SetPoint("TOPLEFT", self.zone.contenu, "TOPLEFT", 0, -(y + 4))
+                f:SetPoint("TOPRIGHT", self.zone.contenu, "TOPRIGHT", 0, -(y + 4))
+                y = y + 10
+            end
+            local ouvert = recherche or self.ouverts[g] == true
+            nEntetes = nEntetes + 1
+            local t = Entete(nEntetes)
+            t.groupe, t.ouvert = g, ouvert
+            t.pli:Etat(ouvert)
+            t.label:SetText(g ~= "" and g or "Autres")
+            t.compte:SetText(tostring(#parGroupe[g]))
+            t:ClearAllPoints()
+            t:SetPoint("TOPLEFT", self.zone.contenu, "TOPLEFT", 0, -y)
+            t:SetPoint("TOPRIGHT", self.zone.contenu, "TOPRIGHT", 0, -y)
+            t:Show()
+            y = y + HAUTEUR + 2
+            if ouvert then
+                for oi, option in ipairs(parGroupe[g]) do
+                    nLignes = nLignes + 1
+                    local b = Ligne(nLignes)
+                    b.choix = option.id
+                    b:ClearAllPoints()
+                    b:SetPoint("TOPLEFT", self.zone.contenu, "TOPLEFT", 8, -y)
+                    b:SetPoint("TOPRIGHT", self.zone.contenu, "TOPRIGHT", 0, -y)
+                    b.label:SetText(option.label or option.id)
+                    b:Show()
+                    y = y + HAUTEUR
+                    if oi < #parGroupe[g] then
+                        -- Le petit filet, entre deux entrees.
+                        nFilets = nFilets + 1
+                        local f = Filet(nFilets, false)
+                        f:SetPoint("TOPLEFT", self.zone.contenu, "TOPLEFT", 12, -(y + 1))
+                        f:SetPoint("TOPRIGHT", self.zone.contenu, "TOPRIGHT", -4, -(y + 1))
+                        y = y + 3
+                    end
+                end
+                y = y + 2
+            end
+        end
+        for index = nLignes + 1, #self.lignes do self.lignes[index]:Hide() end
+        for index = nEntetes + 1, #self.entetes do self.entetes[index]:Hide() end
+        for index = nFilets + 1, #self.filets do self.filets[index]:Hide() end
+        for _, t in ipairs(self.intertitres) do t:Hide() end
+        self.zone.decalage = 0
+        self.zone:Regler(y)
+    end
+
     function d:Proposer(ancre, options, onChoix)
         self.onChoix = onChoix
+        -- En accordeon, tout repart ferme a chaque ouverture.
+        if self.accordeon then self.ouverts = {} end
         self.options = options or {}
         -- Filtres : sur une liste longue, ou faite d'entrees du compendium.
         local entrees = false
@@ -2802,7 +3300,7 @@ function UI.Case(parent, libelle, onChange)
     b:SetSize(18, 18)
     b.fond = UI.Aplat(b, { 0.10, 0.10, 0.10, 1 })
     b.fond:SetAllPoints(b)
-    UI.Bordure(b, { 0.82, 0.66, 0.20, 1 })
+    b.bordure = UI.Bordure(b, { 0.82, 0.66, 0.20, 1 })
     b.coche = UI.Aplat(b, { 0.82, 0.66, 0.20, 1 }, "ARTWORK")
     b.coche:SetPoint("TOPLEFT", b, "TOPLEFT", 4, -4)
     b.coche:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -4, 4)

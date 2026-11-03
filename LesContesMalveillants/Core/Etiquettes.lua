@@ -137,7 +137,7 @@ function Etiquettes.GroupesCoches(vides)
         for _, t in ipairs(g.tags) do
             options[#options + 1] = { id = t.tag.id, label = tostring(t.tag.label), niveau = t.niveau }
         end
-        if options[1] or vides then out[#out + 1] = { label = g.label, options = options } end
+        if options[1] or vides then out[#out + 1] = { id = g.id, label = g.label, options = options } end
     end
     return out
 end

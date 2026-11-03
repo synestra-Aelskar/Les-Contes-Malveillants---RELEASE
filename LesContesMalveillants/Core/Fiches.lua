@@ -341,7 +341,10 @@ LCM.WhenReady(function()
             return
         end
         abonnements[tostring(expediteur)] = true
-        local ok, morceaux = LCM.Reseau.Envoyer("fiche", Fiches.Paquet(moi), "WHISPER", expediteur, { etale = true })
+        -- `cle` : une fiche qui attend encore dans la file est remplacee par
+        -- la plus recente — inutile d'envoyer deux fois un personnage entier.
+        local ok, morceaux = LCM.Reseau.Envoyer("fiche", Fiches.Paquet(moi), "WHISPER", expediteur,
+            { etale = true, cle = "fiche:" .. tostring(expediteur) })
         LCM.Trace(string.format("fiche envoyée à %s : %s", tostring(expediteur),
             ok and (tostring(morceaux) .. " morceau(x)") or "échec de l'envoi"))
         LCM.Info(string.format("%s a consulte ta fiche.", tostring(expediteur)))
@@ -373,7 +376,8 @@ LCM.WhenReady(function()
             local paquet = Fiches.Paquet(entity)
             for joueur in pairs(abonnements) do
                 if DansLeGroupe(joueur) then
-                    LCM.Reseau.Envoyer("fiche", paquet, "WHISPER", joueur, { etale = true })
+                    LCM.Reseau.Envoyer("fiche", paquet, "WHISPER", joueur,
+                        { etale = true, cle = "fiche:" .. tostring(joueur) })
                 else
                     abonnements[joueur] = nil
                 end

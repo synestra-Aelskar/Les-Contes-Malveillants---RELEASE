@@ -752,6 +752,14 @@ local function Construire()
     -- d'equilibrage peut viser (MJ/Forge.lua).
     f.forger = UI.Bouton(d, "Forger", 90, 20, function() f:Forger() end)
     f.nouveauTag = UI.Bouton(d, "Nouveau Tag +", 122, 20, function() f:Nouvelle() end)
+    -- Forcer la synchronisation avec les joueurs (le MJ, 3 novembre 2026 :
+    -- « parfois les data mettent du temps a arriver »). Le meme geste que le
+    -- bouton du Panel MJ (Core/Synchro.lua), la ou le MJ regarde son contenu.
+    -- Pendant l'envoi, le bouton montre le flux et ne se reclique pas : un
+    -- second clic remettrait toute la base dans une file deja pleine.
+    f.synchroniser = UI.Bouton(d, "Synchroniser", 120, 20, function() f:Synchroniser() end)
+    UI.Bulle(f.synchroniser, "Synchroniser", "Renvoie la base publique et les réglages en cours à tous "
+        .. "ceux qui ont l'addon ; chacun reprend ce qui lui manque. Le bouton suit l'envoi jusqu'au bout.")
     f.lectureSeule = UI.Texte(d, "", UI.C.discret, "GameFontNormalSmall")
     f.lectureSeule:SetPoint("TOPLEFT", d, "TOPLEFT", 10, -36)
     f.lectureSeule:SetPoint("TOPRIGHT", d, "TOPRIGHT", -10, -36)
@@ -1110,6 +1118,51 @@ function Fenetre.Comportement(f)
     function f:Message(texte, couleur)
         self.message:SetText(texte or "")
         Peindre(self.message, couleur or UI.C.discret)
+    end
+
+    function f:Synchroniser()
+        local S = LCM.Synchro
+        if not (S and LCM.IsMaster()) or S.EnCours() then return end
+        -- Le Panel MJ sait dire le resume en clair ; sans lui, le geste nu.
+        local panneau = UI.PanneauMJ
+        local r = (panneau and panneau.Synchroniser or S.Forcer)()
+        if not (r and r.annonce) then
+            self:Message("Synchronisation : personne à joindre.", UI.C.plein)
+            return
+        end
+        self:SuivreSynchro()
+    end
+
+    -- Le flux, relu quatre fois par seconde tant qu'il coule. Le OnUpdate
+    -- n'est pose QUE pendant une synchro, et retire a la fin.
+    function f:SuivreSynchro()
+        local b, S = self.synchroniser, LCM.Synchro
+        local cumul = math.huge
+        local function Montrer()
+            local p = S.Progression()
+            if not p or p.fini then
+                b:SetScript("OnUpdate", nil)
+                b.label:SetText("Synchroniser")
+                b:SetEnabled(true)
+                Peindre(b.label, UI.C.accent)
+                if p then
+                    self:Message(string.format("Synchronisation terminée : %d message(s) envoyé(s).",
+                        p.envoyes), UI.C.accent)
+                end
+                return
+            end
+            b.label:SetText(string.format("Synchro %d/%d", p.envoyes, p.total))
+            b:SetEnabled(false)
+            Peindre(b.label, UI.C.discret)
+        end
+        b:SetScript("OnUpdate", function(_, dt)
+            cumul = cumul + (dt or 0)
+            if cumul < 0.25 then return end
+            cumul = 0
+            Montrer()
+        end)
+        Montrer()
+        self:Message("Synchronisation en cours : chaque joueur reprend ce qui lui manque.", UI.C.discret)
     end
 
     function f:Forger()
@@ -1611,9 +1664,14 @@ function Fenetre.Comportement(f)
             self.nouveauTag:SetPoint("TOPRIGHT", d, "TOPRIGHT", -10, -34)
             utile = utile - self.nouveauTag:GetWidth() - 10
         end
+        -- La synchro ne depend pas de la categorie : le MJ l'a partout, meme
+        -- sur une categorie en lecture seule.
+        boutons[#boutons + 1] = self.synchroniser
         for _, b in ipairs(boutons) do
-            b:SetShown(editable and (b ~= self.nouvelle or not estTag))
-            if editable and (b ~= self.nouvelle or not estTag) then
+            local visible = editable and (b ~= self.nouvelle or not estTag)
+            if b == self.synchroniser then visible = LCM.IsMaster() and LCM.Synchro ~= nil end
+            b:SetShown(visible)
+            if visible then
                 local w = b:GetWidth()
                 if x > 0 and x + w > utile then rang, x = rang + 1, 0 end
                 b:ClearAllPoints()
