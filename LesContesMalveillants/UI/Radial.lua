@@ -420,7 +420,11 @@ end
 local function ActualiserLivre(f, ecoule)
     local livre = f.livre
     -- La cible suffit : un clic rapide inverse le mouvement en cours sans saut.
-    local cible = f.ouvert and 1 or 0
+    -- Le panneau des raccourcis (Alt + clic) ouvre le livre lui aussi, comme
+    -- une couronne (le MJ, 3 novembre 2026). Lu a chaque image : le panneau
+    -- se ferme aussi tout seul, quand le sceau disparait.
+    local raccourcis = UI.PanneauRaccourcis and UI.PanneauRaccourcis.frame
+    local cible = (f.ouvert or (raccourcis and raccourcis:IsShown())) and 1 or 0
     local pas = ecoule / 0.85
     if livre.ouverture < cible then
         livre.ouverture = math.min(cible, livre.ouverture + pas)
@@ -576,12 +580,16 @@ local function Eclairer(bouton, choisi, survole)
     end
 end
 
-local function Bulle(bouton, titre, detail)
+-- `ancre` : ou poser l'infobulle (« ANCHOR_RIGHT » par defaut, a cote du
+-- bouton). Le sceau la veut sous la souris : a droite du cadre, elle
+-- recouvrait le panneau des raccourcis que l'Alt + clic ouvre au meme endroit
+-- (le MJ, 3 novembre 2026).
+local function Bulle(bouton, titre, detail, ancre)
     bouton:SetScript("OnEnter", function(self)
         Eclairer(self, self.choisi, true)
         if self.legende then self.legende:Show() end
         if not GameTooltip then return end
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, ancre or "ANCHOR_RIGHT")
         GameTooltip:SetText(titre, UI.C.titre[1], UI.C.titre[2], UI.C.titre[3])
         local texte = type(detail) == "function" and detail() or detail
         if texte then GameTooltip:AddLine(texte, 0.7, 0.68, 0.62, true) end
@@ -1402,7 +1410,7 @@ local function Construire()
         end
         return "Clic : les fenêtres\nClic droit : les actions\n"
             .. "Maj + clic : choisir ou créer un personnage\nAlt + clic : tes raccourcis\nGlisser : déplacer"
-    end)
+    end, "ANCHOR_CURSOR_RIGHT")
 
     Radial.frame = f
     return f

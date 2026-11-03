@@ -251,6 +251,12 @@ function Compendium.Options(champ)
         Ajouter(LCM.Listes.De(liste))
     elseif source == "metiers" then
         Ajouter(LCM.Metiers.list)
+    elseif source == "tags" then
+        -- Les tags, avec leur chemin (« Raptor › Électrique ») : deux
+        -- « Électrique » sous deux parents ne se confondent pas.
+        for _, tag in ipairs(LCM.Etiquettes and LCM.Etiquettes.Liste() or {}) do
+            out[#out + 1] = { id = tag.id, label = LCM.Etiquettes.Chemin(tag.id) }
+        end
     elseif source == "morphologies" then
         Ajouter(LCM.Morphologies.list)
     elseif source == "races" then

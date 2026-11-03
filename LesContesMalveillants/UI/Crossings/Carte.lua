@@ -4,8 +4,7 @@
 --  où l'on se trouve : toutes ses régions, une couleur chacune. Un
 --  clic sur une région l'ouvre : ses lieux remplis de couleur, leurs
 --  noms (« ????? » tant qu'on ne les connaît pas) et les passages
---  droits. Volontairement, rien n'indique où se trouve le joueur
---  sur la carte. Un bouton passe
+--  droits. Le curseur se déplace au-dessus du voile persistant. Un bouton passe
 --  à la carte du jeu, et un bouton sur la carte du jeu revient ici.
 -- ============================================================
 local ZG=LCMCrossings
@@ -16,19 +15,28 @@ local CW,CH=W-2*M,H-HEAD-2*M-28
 local MIN_SCALE,MAX_SCALE=.02,40
 local function Me() return UnitName("player") or "" end
 
--- Couleurs des lieux : sobres, distinctes, stables pour un même lieu.
-local PALETTE={
-    {.45,.70,.40},{.75,.55,.30},{.40,.60,.80},{.70,.45,.65},
-    {.80,.75,.40},{.40,.72,.68},{.78,.45,.40},{.55,.55,.80},
-}
+-- Couleurs des lieux : la région porte la sienne et chacun de ses lieux en
+-- reçoit une variante (voir ZG:PlaceColor dans Core). Sans rien de réglé, la
+-- teinte se tire de l'identifiant, comme avant. Par id : gardé pour l'éditeur,
+-- qui colore aussi des zones sans lieu.
 local function PlaceColor(id)
-    local h=0
-    for i=1,#(id or "") do h=(h*31+id:byte(i))%2147483647 end
-    return PALETTE[h%#PALETTE+1]
+    return ZG:TeinteDeDefaut(id)
 end
+-- La couleur d'une zone dessinée : celle de son lieu s'il en a un, sinon celle
+-- de sa région.
+local function SubColor(sub,zone)
+    local place=sub and sub.enterPlace and ZG:FindPlace(sub.enterPlace)
+    return ZG:PlaceColor(place,zone)
+end
+-- Plus de passe-droit pour l'AUTEUR : en mode joueur, le MJ ne doit pas voir
+-- ses propres regions sans les avoir apprises — c'est tout l'interet du mode.
+-- Hors mode joueur il voit tout, et HasLearnedZoneName le dit deja
+-- (MJVoitTout) : le test sur le createur ne faisait que court-circuiter la
+-- bascule.
+local function PlaceKnown(place,zone) return ZG:KnowsPlaceName(place) end
+local function ZoneKnown(zone) return zone~=nil and ZG:HasLearnedZoneName(zone.id) end
 
-local function PlaceKnown(place,zone) return zone.creator==Me() or ZG:KnowsPlaceName(place) end
-local function ZoneKnown(zone) return zone.creator==Me() or ZG:HasLearnedZoneName(zone.id) end
+
 
 -- ── Géométrie ────────────────────────────────────────────────────────────
 
@@ -109,11 +117,38 @@ local function LineEnds(sub)
     return {x=sub.x-math.cos(a)*r,y=sub.y+math.sin(a)*r},{x=sub.x+math.cos(a)*r,y=sub.y-math.sin(a)*r}
 end
 
+-- Interpoler les bords, pas les cases : la précision visuelle ne dépend
+-- plus du nombre de pixels qu'occupe un yard après zoom. Ne pas relier deux
+-- îlots distincts quand la topologie change entre deux lignes.
+local EMPTY_FOG_ROW={}
+local function SmoothFogRow(a,b,f)
+    a,b=a or EMPTY_FOG_ROW,b or EMPTY_FOG_ROW
+    if f==0 or a==b then return a end
+    if #a==0 and #b==0 then return EMPTY_FOG_ROW end
+    local out={}
+    if #a==0 or #b==0 then
+        local row,weight=#a>0 and a or b,#a>0 and (1-f) or f
+        for i=1,#row,2 do
+            local middle=(row[i]+row[i+1])/2
+            out[i]=middle+(row[i]-middle)*weight
+            out[i+1]=middle+(row[i+1]-middle)*weight
+        end
+        return out
+    end
+    if #a~=#b then return f<.5 and a or b end
+    for i=1,#a,2 do
+        if a[i]>b[i+1] or b[i]>a[i+1] then return f<.5 and a or b end
+    end
+    for i=1,#a do out[i]=a[i]+(b[i]-a[i])*f end
+    return out
+end
+
 -- La carte des zones du panneau MJ (Crossings/CarteZones.lua) dessine la même
 -- chose, en modifiable. Elle emprunte la géométrie d'ici plutôt que d'en tenir
 -- une seconde écriture : deux triangulations à maintenir, c'est une de trop.
 ZG.Geo = {
     Area = Area, Triangulate = Triangulate, IsClosed = IsClosed,
+    SmoothFogRow = SmoothFogRow,
     PointInPolygon = PointInPolygon, LineEnds = LineEnds, Color = PlaceColor,
 }
 
@@ -143,9 +178,13 @@ end
 
 -- Régions sans pays : regroupées sous « Sans pays ».
 local NONE="__none"
+-- Le nom du pays se masque comme les autres : on peut connaitre une vallee
+-- sans savoir de quelle couronne elle releve.
 local function CountryName(key)
     local c=key and key~=NONE and ZG:GetCountry(key)
-    return c and c.name or "Sans pays"
+    if not c then return "Sans pays" end
+    if ZG:HasLearnedCountryName(key) then return c.name or "" end
+    return ZG:MaskText(c.name or "")
 end
 
 local win
@@ -177,6 +216,8 @@ local function Build()
     picker.items=function()
         local seen,list={},{}
         for _,zone in ipairs(ZG:GetZoneList()) do
+            -- Un pays dont on ne connait aucune region ne se liste pas : son
+            -- nom seul disait deja qu'il existe quelque part un ailleurs.
             if next(zone.subZones or {}) then
                 local key=zone.countryId or NONE
                 if not seen[key] then seen[key]=true;list[#list+1]={value=key,text=CountryName(key)} end
@@ -196,11 +237,12 @@ local function Build()
     picker.onSelect=function(key) win:OpenCountry(key) end
 
     -- Pays (clé du pays, ou NONE pour les régions sans pays).
-    function win:ShowCountry(key,follow)
+    function win:ShowCountry(key,follow,garderVue)
         self.level,self.country,self.zone,self.follow="country",key,nil,follow and true or false
         self.batiment=nil
         picker:SetText(CountryName(key))
-        self:Fit();self:Draw()
+        if not garderVue or not self.cx or not self.cy or not self.scale then self:Fit() end
+        self:Draw()
     end
     function win:ShowRegion(zone)
         if not zone then return end
@@ -219,11 +261,11 @@ local function Build()
         picker:SetText(CountryName(self.country))
         self:Fit();self:Draw()
     end
-    function win:ShowCurrent()
+    function win:ShowCurrent(garderVue)
         local zone=ZG:CurrentRegion()
         self.here=zone
         self.batiment=nil
-        if zone then self:ShowCountry(zone.countryId or NONE,true)
+        if zone then self:ShowCountry(zone.countryId or NONE,true,garderVue)
         else self.level,self.country,self.zone,self.follow="country",nil,nil,true;picker:SetText("Aucun pays");self:Draw() end
     end
 
@@ -232,6 +274,15 @@ local function Build()
     canvas:SetPoint("TOPLEFT",M,-(HEAD+M));canvas:SetSize(CW,CH)
     local bg=canvas:CreateTexture(nil,"BACKGROUND");bg:SetAllPoints();bg:SetColorTexture(.055,.060,.058,1)
     if canvas.SetClipsChildren then canvas:SetClipsChildren(true) end
+    -- Les couches graphiques se transforment ensemble, dans un viewport fixe.
+    local scene=CreateFrame("Frame",nil,canvas);scene:SetSize(CW,CH)
+    local function TransformScene(scale,x,y)
+        scene:SetScale(scale);scene:ClearAllPoints()
+        scene:SetPoint("TOPLEFT",canvas,"TOPLEFT",x/scale,-y/scale)
+    end
+    local function ResetScene() TransformScene(1,0,0) end
+    ResetScene()
+    win.scene=scene
     local grid=CreateFrame("Frame",nil,canvas);grid:SetAllPoints()
     for i=1,math.floor(CW/60) do
         local t=grid:CreateTexture(nil,"BORDER");t:SetColorTexture(1,1,1,.025);t:SetWidth(1)
@@ -241,13 +292,17 @@ local function Build()
         local t=grid:CreateTexture(nil,"BORDER");t:SetColorTexture(1,1,1,.025);t:SetHeight(1)
         t:SetPoint("TOPLEFT",0,-i*60);t:SetPoint("TOPRIGHT",0,-i*60)
     end
-    local fills=CreateFrame("Frame",nil,canvas);fills:SetAllPoints();fills:SetFrameLevel(canvas:GetFrameLevel()+2)
-    local lines=CreateFrame("Frame",nil,canvas);lines:SetAllPoints();lines:SetFrameLevel(canvas:GetFrameLevel()+3)
-    local labels=CreateFrame("Frame",nil,canvas);labels:SetAllPoints();labels:SetFrameLevel(canvas:GetFrameLevel()+4)
+    -- Carte fixe, puis voile, puis curseur : trois couches indépendantes.
+    local fills=CreateFrame("Frame",nil,scene);fills:SetAllPoints();fills:SetFrameLevel(canvas:GetFrameLevel()+2)
+    local lines=CreateFrame("Frame",nil,scene);lines:SetAllPoints();lines:SetFrameLevel(canvas:GetFrameLevel()+3)
+    local labels=CreateFrame("Frame",nil,scene);labels:SetAllPoints();labels:SetFrameLevel(canvas:GetFrameLevel()+4)
+    local fog=CreateFrame("Frame",nil,scene);fog:SetAllPoints();fog:SetFrameLevel(canvas:GetFrameLevel()+5)
+    local marker=CreateFrame("Frame",nil,scene);marker:SetAllPoints();marker:SetFrameLevel(canvas:GetFrameLevel()+6)
     -- Remplissage possible seulement si le jeu sait déformer une texture.
     local probe=fills:CreateTexture(nil,"ARTWORK");probe:Hide()
     local CAN_FILL=probe.SetVertexOffset~=nil
     win.canvas=canvas
+    win.fog=fog
     win.empty=labels:CreateFontString(nil,"OVERLAY","GameFontNormal")
     win.empty:SetPoint("CENTER");win.empty:SetWidth(CW-80);UI.ApplyMutedText(win.empty)
     local help=win:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
@@ -257,15 +312,17 @@ local function Build()
     -- Réserves de textures et de textes, réutilisées d'un dessin à l'autre.
     local triPool,linePool,labelPool={}, {}, {}
     local usedTri,usedLine,usedLabel=0,0,0
-    local function Tri(a,b,c,color)
+    local function Tri(a,b,c,color,alpha)
+        if (a[1]<0 and b[1]<0 and c[1]<0) or (a[1]>CW and b[1]>CW and c[1]>CW)
+            or (a[2]<0 and b[2]<0 and c[2]<0) or (a[2]>CH and b[2]>CH and c[2]>CH) then return end
         usedTri=usedTri+1
         local t=triPool[usedTri]
         if not t then t=fills:CreateTexture(nil,"ARTWORK");triPool[usedTri]=t end
         local minx,maxx=math.min(a[1],b[1],c[1]),math.max(a[1],b[1],c[1])
         local miny,maxy=math.min(a[2],b[2],c[2]),math.max(a[2],b[2],c[2])
         local w,h=math.max(1,maxx-minx),math.max(1,maxy-miny)
-        t:ClearAllPoints();t:SetPoint("TOPLEFT",canvas,"TOPLEFT",minx,-miny);t:SetSize(w,h)
-        t:SetColorTexture(color[1],color[2],color[3],.28)
+        t:ClearAllPoints();t:SetPoint("TOPLEFT",scene,"TOPLEFT",minx,-miny);t:SetSize(w,h)
+        t:SetColorTexture(color[1],color[2],color[3],alpha or .28)
         -- Coins du carré déplacés sur le triangle : haut-gauche, bas-gauche, haut-droit, bas-droit.
         t:SetVertexOffset(1,a[1]-minx,-(a[2]-miny))
         t:SetVertexOffset(2,b[1]-minx,-(b[2]-(miny+h)))
@@ -280,16 +337,19 @@ local function Build()
         usedLine=usedLine+1
         local t=linePool[usedLine]
         if not t then t=lines:CreateTexture(nil,"ARTWORK");linePool[usedLine]=t end
-        t:ClearAllPoints();t:SetPoint("CENTER",canvas,"TOPLEFT",(x1+x2)/2,-(y1+y2)/2)
+        t:ClearAllPoints();t:SetPoint("CENTER",scene,"TOPLEFT",(x1+x2)/2,-(y1+y2)/2)
         t:SetSize(length,width or 2);t:SetRotation(math.atan2(-dy,dx))
         t:SetColorTexture(color[1],color[2],color[3],alpha or .95);t:Show()
     end
-    local function Text(x,y,text,color,big)
+    local function Text(x,y,text,color,big,kind,entry,region)
+        -- M : les noms sont dans l'infobulle. Les cartes-objets gardent leur texte.
+        if not win.carte then return end
         usedLabel=usedLabel+1
         local f=labelPool[usedLabel]
         if not f then f=labels:CreateFontString(nil,"OVERLAY","GameFontNormal");f:SetShadowColor(0,0,0,1);f:SetShadowOffset(1,-1);labelPool[usedLabel]=f end
         f:SetFontObject(big and "GameFontNormalLarge" or "GameFontNormal")
-        f:ClearAllPoints();f:SetPoint("CENTER",canvas,"TOPLEFT",x,-y)
+        f:ClearAllPoints();f:SetPoint("CENTER",scene,"TOPLEFT",x,-y)
+        f.knownKind,f.knownEntry,f.knownRegion=kind,entry,region
         f:SetText(text);f:SetTextColor(color[1],color[2],color[3],1);f:Show()
     end
 
@@ -312,6 +372,7 @@ local function Build()
         local list={}
         if self.country==nil then return list end
         for _,zone in ipairs(ZG:GetZoneList()) do
+            -- Une region inconnue ne se montre pas du tout, pas meme sa forme.
             if (zone.countryId or NONE)==self.country then list[#list+1]=zone end
         end
         return list
@@ -372,6 +433,11 @@ local function Build()
                 -- Un intérieur ne s'étale pas sur la carte du dehors : ses
                 -- cloisons noieraient le reste, et elles sont à une tout
                 -- autre échelle.
+                --
+                -- Une carte LUE dessine tout ce qu'elle montre, connu ou non :
+                -- c'est le MJ qui a choisi ce qu'elle revele, et les lieux non
+                -- devoiles y donnent sa forme a la region. Ailleurs, on ne
+                -- voit que ce qu'on a foule.
                 if sub.mapID==map and sub.enabled~=false and not vide and not ZG:EstInterieur(sub) then
                     list[#list+1]={sub=sub,zone=zone}
                 end
@@ -389,7 +455,8 @@ local function Build()
         local list={}
         for _,zone in ipairs(zones) do
             for _,place in pairs(zone.places or {}) do
-                if place.batiment then
+                -- Un batiment qu'on n'a jamais vu ne pose pas son point.
+                if place.batiment and (self.carte~=nil or PlaceKnown(place,zone)) then
                     for _,sub in pairs(zone.subZones or {}) do
                         if sub.enterPlace==place.id and sub.mapID==map and sub.enabled~=false
                             and sub.points and #sub.points>=1 then
@@ -402,6 +469,39 @@ local function Build()
         end
         table.sort(list,function(a,b) return a.place.id<b.place.id end)
         return list
+    end
+
+    -- ── Où je me tiens ───────────────────────────────────────────────────
+    -- La carte cachait volontairement la position : elle ne devait rien
+    -- révéler. Avec le brouillard, l'argument tombe — c'est SA carte, de SES
+    -- pas, et sans repère on ne sait plus quel bord on vient de longer.
+    local moi=marker:CreateTexture(nil,"OVERLAY")
+    moi:SetSize(13,13);moi:SetColorTexture(.35,.85,1,1);moi:SetRotation(math.pi/4)
+    local moiHalo=marker:CreateTexture(nil,"ARTWORK")
+    moiHalo:SetSize(21,21);moiHalo:SetColorTexture(.08,.20,.26,.85);moiHalo:SetRotation(math.pi/4)
+    local moiCap=marker:CreateTexture(nil,"OVERLAY")
+    moiCap:SetColorTexture(.35,.85,1,.9)
+    function win:Moi()
+        local px,py,facing,carteJoueur=ZG:GetPlayerPose()
+        local mapJeu=self.carte and nil or self.markerMap
+        if not px or not self.cx or not self.cy or not self.scale or (mapJeu and carteJoueur~=mapJeu) then
+            moi:Hide();moiHalo:Hide();moiCap:Hide()
+            return
+        end
+        local x,y=self:ToScreen(px,py)
+        if x<-20 or x>CW+20 or y<-20 or y>CH+20 then
+            moi:Hide();moiHalo:Hide();moiCap:Hide()
+            return
+        end
+        for _,t in ipairs({moi,moiHalo}) do
+            t:ClearAllPoints();t:SetPoint("CENTER",scene,"TOPLEFT",x,-y);t:Show()
+        end
+        -- Le regard : +y est le nord, et le nord est en haut.
+        facing=facing or 0
+        local dx,dy=-math.sin(facing)*13,-math.cos(facing)*13
+        moiCap:ClearAllPoints()
+        moiCap:SetPoint("CENTER",scene,"TOPLEFT",x+dx,-(y+dy))
+        moiCap:SetSize(4,4);moiCap:Show()
     end
 
     -- Le bâtiment où se tient le joueur, s'il y en a un.
@@ -444,8 +544,28 @@ local function Build()
         local place=sub.enterPlace and ZG:FindPlace(sub.enterPlace)
         return place~=nil and (place.pourRegion==true or place.batiment==true)
     end
-    -- Polygone fermé : rempli, contour, et boîte englobante (écran) pour l'étiquette.
-    local function DrawPolygon(self,sub,color,outlineAlpha,box,remplirQuandMeme)
+    -- Polygone fermé : rempli, contour, et boîte englobante (écran) pour
+    -- l'étiquette. `fogOff` : dessiner entier, sans tenir compte du brouillard
+    -- (une carte lue, que le MJ a composée pour être lue telle quelle).
+    -- Réutiliser la triangulation tant que les sommets restent identiques,
+    -- y compris quand l'éditeur modifie les coordonnées en place.
+    local trianglesCache=setmetatable({}, {__mode="k"})
+    local function Triangles(points)
+        local c=trianglesCache[points]
+        local identique=c and #c.coords==#points*2
+        if identique then
+            for i,p in ipairs(points) do
+                if c.coords[i*2-1]~=p.x or c.coords[i*2]~=p.y then identique=false;break end
+            end
+        end
+        if not identique then
+            c={coords={},triangles=Triangulate(points)}
+            for i,p in ipairs(points) do c.coords[i*2-1],c.coords[i*2]=p.x,p.y end
+            trianglesCache[points]=c
+        end
+        return c.triangles
+    end
+    local function DrawPolygon(self,sub,color,outlineAlpha,box,remplirQuandMeme,fogOff)
         local screen={}
         for i,p in ipairs(sub.points) do
             local x,y=self:ToScreen(p.x,p.y);screen[i]={x,y}
@@ -454,8 +574,11 @@ local function Build()
                 box.miny=math.min(box.miny or y,y);box.maxy=math.max(box.maxy or y,y)
             end
         end
-        if IsClosed(sub) and CAN_FILL and (remplirQuandMeme or not EstContourRegion(sub)) then
-            for _,t in ipairs(Triangulate(sub.points)) do Tri(screen[t[1]],screen[t[2]],screen[t[3]],color) end
+        local alpha=(not remplirQuandMeme and EstContourRegion(sub)) and .09 or .28
+        if IsClosed(sub) and CAN_FILL then
+            for _,t in ipairs(Triangles(sub.points)) do
+                Tri(screen[t[1]],screen[t[2]],screen[t[3]],color,alpha)
+            end
         end
         for i=2,#screen do Line(screen[i-1][1],screen[i-1][2],screen[i][1],screen[i][2],color,2,outlineAlpha) end
         if IsClosed(sub) then Line(screen[#screen][1],screen[#screen][2],screen[1][1],screen[1][2],color,2,outlineAlpha) end
@@ -483,7 +606,7 @@ local function Build()
         local t=pinPool[usedPin]
         if not t then t=labels:CreateTexture(nil,"ARTWORK");t:SetSize(22,22);pinPool[usedPin]=t end
         t:SetTexture(ICONES_REPERE[genre] or ICONES_REPERE.libre)
-        t:ClearAllPoints();t:SetPoint("CENTER",canvas,"TOPLEFT",x,-y);t:Show()
+        t:ClearAllPoints();t:SetPoint("CENTER",scene,"TOPLEFT",x,-y);t:Show()
     end
     function win:DrawCarte()
         local carte=self.carte
@@ -534,11 +657,11 @@ local function Build()
             local sub=e.sub
             local place=sub.enterPlace and ZG:FindPlace(sub.enterPlace)
             local devoile=place and carte.lieux[place.id]
-            local color=devoile and PlaceColor(place.id) or GRIS
+            local color=devoile and ZG:PlaceColor(place,e.zone) or GRIS
             local boite=boites[e.zone.id] or {zone=e.zone}
             boites[e.zone.id]=boite
             if sub.shape=="polygon" and sub.points and #sub.points>=2 then
-                local screen=DrawPolygon(self,sub,color,devoile and .95 or .55,boite)
+                local screen=DrawPolygon(self,sub,color,devoile and .95 or .55,boite,nil,true)
                 if devoile and IsClosed(sub) then
                     local area=math.abs(Area(sub.points))
                     if not placeLabel[place.id] or area>placeLabel[place.id].area then
@@ -588,7 +711,69 @@ local function Build()
         self:Fit();self:Draw()
     end
 
+    -- Projection de la surface persistante : aucun rejeu du trajet.
+    local fogRows={}
+    local cover=fog:CreateTexture(nil,"OVERLAY");cover:SetAllPoints();cover:SetColorTexture(.055,.060,.058,1)
+    local loading=fog:CreateFontString(nil,"OVERLAY","GameFontNormal")
+    loading:SetPoint("CENTER");loading:SetText("Préparation des découvertes enregistrées…")
+    function win:DrawFog()
+        if self.carte or (LCM.IsMaster and LCM.IsMaster()) or not self.cx or not self.scale then
+            fog:Hide();return
+        end
+        local state=ZG:PreparerBrouillard(self.markerMap)
+        if not state then fog:Hide();return end
+        fog:Show()
+        -- La migration n'est jamais affichée comme une nouvelle exploration.
+        if not state.ready then cover:Show();loading:Show();return end
+        cover:Hide();loading:Hide()
+        local view=self.fogView
+        local sameView=view and view.state==state and view.cx==self.cx and view.cy==self.cy and view.scale==self.scale
+        if sameView and view.revision==state.revision then return end
+        self.fogView={state=state,cx=self.cx,cy=self.cy,scale=self.scale,revision=state.revision}
+        for top=0,CH-1 do
+            local h=1
+            local worldY=self.cy-(top+.5-CH/2)/self.scale-.5
+            local y=math.floor(worldY)
+            local source,nextSource=state.rows[y],state.rows[y+1]
+            local row=fogRows[top]
+            if not row then row={textures={}};fogRows[top]=row end
+            local revision=source and source.revision or 0
+            local nextRevision=nextSource and nextSource.revision or 0
+            if not sameView or row.source~=source or row.revision~=revision
+                or row.nextSource~=nextSource or row.nextRevision~=nextRevision then
+                row.source,row.revision=source,revision
+                row.nextSource,row.nextRevision=nextSource,nextRevision
+                local visible=SmoothFogRow(source,nextSource,worldY-y)
+                local count,last=0,0
+                local function Paint(left,right)
+                    if right<=left then return end
+                    count=count+1
+                    local t=row.textures[count]
+                    if not t then t=fog:CreateTexture(nil,"ARTWORK");t:SetColorTexture(.055,.060,.058,1);row.textures[count]=t end
+                    if t.fogLeft~=left or t.fogRight~=right then
+                        t:ClearAllPoints();t:SetPoint("TOPLEFT",scene,"TOPLEFT",left,-top)
+                        t:SetSize(right-left,h);t.fogLeft,t.fogRight=left,right
+                    end
+                    t:Show()
+                end
+                for i=#visible-1,1,-2 do
+                    local left=math.max(0,CW/2+(self.cx-visible[i+1])*self.scale)
+                    local right=math.min(CW,CW/2+(self.cx-visible[i])*self.scale)
+                    if right>0 and left<CW then Paint(last,left);last=math.max(last,right) end
+                end
+                Paint(last,CW)
+                for i=count+1,#row.textures do row.textures[i]:Hide() end
+            end
+        end
+    end
     function win:Draw()
+        self.mapMaster=LCM.IsMaster and LCM.IsMaster() or false
+        self.hoverCandidate=nil;self.hoverX=nil;self.hoverAreas={}
+        self.zoomAnimation=nil;ResetScene()
+        self.pendingZoom=nil
+        self.hasBaseMap=not self.carte
+        self.markerMap=self:Map(self:Zones())
+        self:DrawFog()
         for i=1,usedPin do pinPool[i]:Hide() end
         usedPin=0
         for i=1,usedTri do triPool[i]:Hide() end
@@ -596,16 +781,34 @@ local function Build()
         for i=1,usedLabel do labelPool[i]:Hide() end
         usedTri,usedLine,usedLabel=0,0,0
         self.batimentsVus={}
+        self:Moi()
         if self.ailleurs then self.ailleurs:Hide() end
         if self.carte then return self:DrawCarte() end
+        -- La portee du regard se dit : sans elle, « je ne decouvre rien » ne
+        -- distingue pas un brouillard qui marche d'une Vue tombee a zero.
+        local rayon,points=ZG:RayonDeVue()
+        local vueMot=string.format(" · vue : %d yd%s",math.floor(rayon),
+            points and string.format(" (%d pt)",points) or "")
         if self.level=="batiment" then
-            self.help:SetText("Clic droit : ressortir · Molette : zoom · Glisser : déplacer")
+            self.help:SetText("Clic droit : ressortir · Molette : zoom"..vueMot)
         elseif self.level=="region" then
-            self.help:SetText("Clic droit : retour au pays · Clic sur un bâtiment : y entrer · Molette : zoom · Glisser : déplacer")
+            self.help:SetText("Clic droit : retour au pays · Clic sur un bâtiment : y entrer"..vueMot)
         else
-            self.help:SetText("Clic : ouvrir une région · Molette : zoom · Glisser : déplacer")
+            self.help:SetText("Clic : ouvrir une région · Molette : zoom"..vueMot)
         end
         local subs=self:Subs()
+        for _,e in ipairs(subs) do
+            if IsClosed(e.sub) then
+                local minx,miny,maxx,maxy=math.huge,math.huge,-math.huge,-math.huge
+                for _,pt in ipairs(e.sub.points) do
+                    minx,miny=math.min(minx,pt.x),math.min(miny,pt.y)
+                    maxx,maxy=math.max(maxx,pt.x),math.max(maxy,pt.y)
+                end
+                self.hoverAreas[#self.hoverAreas+1]={sub=e.sub,zone=e.zone,
+                    minx=minx,miny=miny,maxx=maxx,maxy=maxy,area=math.abs(Area(e.sub.points))}
+            end
+        end
+        table.sort(self.hoverAreas,function(a,b) return a.area<b.area end)
         if self.country==nil or #subs==0 then
             self.title:SetText(self.country and CountryName(self.country) or "Carte")
             self.subtitle:SetText("")
@@ -624,13 +827,13 @@ local function Build()
                 if IsClosed(e.sub) then
                     local box=boxes[e.zone.id] or {zone=e.zone}
                     boxes[e.zone.id]=box
-                    DrawPolygon(self,e.sub,PlaceColor(e.zone.id),.45,box,true)
+                    DrawPolygon(self,e.sub,ZG:ZoneColor(e.zone),.45,box,true)
                 end
             end
             for _,box in pairs(boxes) do
                 local x,y=(box.minx+box.maxx)/2,(box.miny+box.maxy)/2
                 if x>-60 and x<CW+60 and y>-20 and y<CH+20 then
-                    Text(x,y,ZoneKnown(box.zone) and (box.zone.name or "") or ZG:MaskText(box.zone.name or ""),Light(PlaceColor(box.zone.id)),true)
+                    Text(x,y,ZoneKnown(box.zone) and (box.zone.name or "") or ZG:MaskText(box.zone.name or ""),Light(ZG:ZoneColor(box.zone)),true,"zone",box.zone)
                 end
             end
         else
@@ -647,7 +850,7 @@ local function Build()
             for _,e in ipairs(subs) do
                 local sub=e.sub
                 local place=sub.enterPlace and ZG:FindPlace(sub.enterPlace)
-                local color=place and PlaceColor(place.id) or {.6,.6,.6}
+                local color=SubColor(sub,zone)
                 if sub.shape=="polygon" and sub.points and #sub.points>=2 then
                     local screen=DrawPolygon(self,sub,color,.95)
                     -- Le contour de la région — comme l'empreinte d'un
@@ -674,7 +877,7 @@ local function Build()
             for _,l in pairs(placeLabel) do
                 if l.x>-40 and l.x<CW+40 and l.y>-20 and l.y<CH+20 then
                     local name=PlaceKnown(l.place,zone) and (l.place.name or "") or ZG:MaskText(l.place.name or "")
-                    Text(l.x,l.y,name,Light(l.color),l.area>0)
+                    Text(l.x,l.y,name,Light(l.color),l.area>0,"place",l.place,zone)
                 end
             end
             -- Les bâtiments : un point et un nom, pas leurs cloisons. Un clic
@@ -690,7 +893,7 @@ local function Build()
                     if x>-40 and x<CW+40 and y>-20 and y<CH+20 then
                         Pin(x,y,"libre")
                         local name=PlaceKnown(b.place,zone) and (b.place.name or "") or ZG:MaskText(b.place.name or "")
-                        Text(x,y-18,name,Light(COULEUR_BATIMENT),false)
+                        Text(x,y-18,name,Light(COULEUR_BATIMENT),false,"place",b.place,zone)
                         self.batimentsVus[#self.batimentsVus+1]={place=b.place,x=x,y=y}
                     end
                 end
@@ -702,32 +905,120 @@ local function Build()
     function win:RegionAt(ox,oy)
         local wx=self.cx-(ox-CW/2)/self.scale
         local wy=self.cy-(oy-CH/2)/self.scale
+        if not ZG:EstVu(self.markerMap,wx,wy) then return nil end
         for _,e in ipairs(self:Subs()) do
             if IsClosed(e.sub) and PointInPolygon(e.sub.points,wx,wy) then return e.zone end
         end
     end
 
 
+    function win:HideMapTooltip()
+        if self.hoverTooltip then self.hoverTooltip:Hide();self.hoverTooltip=nil end
+        self.hoverTitle,self.hoverSubtitle=nil,nil
+    end
+    function win:HoverAt(ox,oy)
+        if self.carte or not self.cx or not self.scale then return nil end
+        local wx=self.cx-(ox-CW/2)/self.scale
+        local wy=self.cy-(oy-CH/2)/self.scale
+        if not ZG:EstVu(self.markerMap,wx,wy) then return nil end
+        local hit
+        if self.hoverX==ox and self.hoverY==oy then hit=self.hoverCandidate else
+            for _,a in ipairs(self.hoverAreas or {}) do
+                if wx>=a.minx and wx<=a.maxx and wy>=a.miny and wy<=a.maxy
+                    and PointInPolygon(a.sub.points,wx,wy) then hit=a;break end
+            end
+            self.hoverX,self.hoverY,self.hoverCandidate=ox,oy,hit
+        end
+        if not hit then return nil end
+        local place=hit.sub.enterPlace and ZG:FindPlace(hit.sub.enterPlace)
+        if place and not place.pourRegion then return ZG:ResolveBannerText(place,hit.zone) end
+        return ZoneKnown(hit.zone) and hit.zone.name or ZG:MaskText(hit.zone.name),CountryName(hit.zone.countryId or NONE)
+    end
+    function win:UpdateMapTooltip()
+        if self.carte or self.drag or self.zoomAnimation or self.pendingZoom or not canvas:IsMouseOver() then
+            self:HideMapTooltip();return
+        end
+        local mx,my=GetCursorPosition();local scale=canvas:GetEffectiveScale()
+        local left,top=canvas:GetLeft(),canvas:GetTop()
+        if not left or not top then self:HideMapTooltip();return end
+        local ox,oy=mx/scale-left,top-my/scale
+        if ox<0 or ox>CW or oy<0 or oy>CH then self:HideMapTooltip();return end
+        local title,subtitle=self:HoverAt(ox,oy)
+        if not title then self:HideMapTooltip();return end
+        local tooltip=self.hoverTooltip or LCM.UI.Infobulle()
+        if not self.hoverTooltip or title~=self.hoverTitle or subtitle~=self.hoverSubtitle then
+            tooltip:SetOwner(canvas,"ANCHOR_RIGHT");tooltip:SetText(title)
+            if subtitle and subtitle~="" then tooltip:AddLine(subtitle,.8,.77,.7) end
+            self.hoverTitle,self.hoverSubtitle=title,subtitle
+        end
+        self.hoverTooltip=tooltip
+        local es=UIParent:GetEffectiveScale()
+        tooltip:ClearAllPoints();tooltip:SetPoint("TOPLEFT",UIParent,"BOTTOMLEFT",mx/es+16,my/es-16)
+        tooltip:Show()
+    end
+    canvas:SetScript("OnLeave",function() win:HideMapTooltip() end)
+
     -- Molette : zoom autour du curseur ; glisser : déplacer la vue.
     canvas:EnableMouse(true);canvas:EnableMouseWheel(true)
+    local function FinishZoom()
+        local animation=win.zoomAnimation
+        if not animation then return end
+        local queued=win.pendingZoom
+        win.zoomAnimation=nil
+        ResetScene()
+        if not animation.drawn then
+            win.cx,win.cy,win.scale=animation.target.cx,animation.target.cy,animation.target.scale
+            win:Draw()
+        end
+        win.pendingZoom=queued
+    end
+    local function ApplyZoom(immediate)
+        local pending=win.pendingZoom
+        if not pending then return end
+        win.pendingZoom=nil
+        local old={cx=win.cx,cy=win.cy,scale=win.scale}
+        if immediate then
+            win.cx,win.cy,win.scale=pending.cx,pending.cy,pending.scale;win:Draw();return
+        end
+        local animation={target=pending,time=0,duration=.16}
+        if pending.scale<old.scale then
+            -- Au dézoom, dessiner la destination d'abord : aucune bande vide
+            -- ne rentre dans le viewport pendant que l'image se réduit.
+            win.cx,win.cy,win.scale=pending.cx,pending.cy,pending.scale;win:Draw()
+            local ratio=old.scale/pending.scale
+            animation.from={ratio,CW/2*(1-ratio)+(old.cx-pending.cx)*old.scale,
+                CH/2*(1-ratio)+(old.cy-pending.cy)*old.scale}
+            animation.to={1,0,0};animation.drawn=true
+        else
+            -- Au zoom, agrandir l'image existante ; affiner une fois à l'arrivée.
+            local ratio=pending.scale/old.scale
+            animation.from={1,0,0}
+            animation.to={ratio,CW/2*(1-ratio)+(pending.cx-old.cx)*pending.scale,
+                CH/2*(1-ratio)+(pending.cy-old.cy)*pending.scale}
+        end
+        win.zoomAnimation=animation
+        TransformScene(unpack(animation.from))
+    end
     canvas:SetScript("OnMouseWheel",function(_,delta)
-        local factor=delta>0 and 1.25 or 1/1.25
-        local s=math.max(MIN_SCALE,math.min(MAX_SCALE,win.scale*factor))
+        if not win.scale or not win.cx or not win.cy or delta==0 then return end
+        -- Accumuler les crans sans toucher à la caméra effectivement dessinée.
+        local target=win.zoomAnimation and win.zoomAnimation.target or win
+        local p=win.pendingZoom or {cx=target.cx,cy=target.cy,scale=target.scale,age=0}
+        local s=math.max(MIN_SCALE,math.min(MAX_SCALE,p.scale*(1.25^delta)))
+        if s==p.scale then return end
         local mx,my=GetCursorPosition();local es=canvas:GetEffectiveScale()
         local left,top=canvas:GetLeft(),canvas:GetTop()
         if left and top then
             local ox,oy=mx/es-left,top-my/es
-            -- Le point sous le curseur reste sous le curseur.
-            local wx=win.cx-(ox-CW/2)/win.scale;local wy=win.cy-(oy-CH/2)/win.scale
-            win.scale=s
-            win.cx=wx+(ox-CW/2)/s;win.cy=wy+(oy-CH/2)/s
-        else
-            win.scale=s
+            local wx=p.cx-(ox-CW/2)/p.scale;local wy=p.cy-(oy-CH/2)/p.scale
+            p.cx=wx+(ox-CW/2)/s;p.cy=wy+(oy-CH/2)/s
         end
-        win:Draw()
+        p.scale,p.quiet=s,0
+        win.pendingZoom=p
     end)
     canvas:SetScript("OnMouseDown",function(_,button)
         if button~="LeftButton" then return end
+        FinishZoom();ApplyZoom(true)
         local mx,my=GetCursorPosition()
         win.drag={mx=mx,my=my,cx=win.cx,cy=win.cy}
     end)
@@ -757,32 +1048,84 @@ local function Build()
         if zone then win:ShowRegion(zone) end
     end)
 
-    local regionCheck=0
+    local terrainCheck,labelCheck=0,0
     win:SetScript("OnUpdate",function(self,dt)
+        local master=LCM.IsMaster and LCM.IsMaster() or false
+        if self.mapMaster~=master then self:HideMapTooltip();self:Draw() end
+        local p=self.pendingZoom
+        if p then
+            p.quiet=p.quiet+dt;p.age=p.age+dt
+            -- Une rafale définit une destination ; la scène rejoint celle-ci
+            -- en animation, avec un seul calcul géométrique par transition.
+            if not self.zoomAnimation and (p.quiet>=.05 or p.age>=.14) then ApplyZoom() end
+        end
+        local animation=self.zoomAnimation
+        if animation then
+            animation.time=math.min(animation.duration,animation.time+dt)
+            local t=animation.time/animation.duration
+            local eased=t*t*(3-2*t)
+            local a,b=animation.from,animation.to
+            TransformScene(a[1]+(b[1]-a[1])*eased,a[2]+(b[2]-a[2])*eased,a[3]+(b[3]-a[3])*eased)
+            if t>=1 then FinishZoom() end
+        end
+        -- Le marqueur reste actualisé, même pendant la transition.
+        self:Moi()
+        terrainCheck=terrainCheck+dt
+        if terrainCheck>=.1 then
+            terrainCheck=0
+            if not self.carte and not self.zoomAnimation then self:DrawFog() end
+            self:UpdateMapTooltip()
+        end
         if self.drag then
             local mx,my=GetCursorPosition();local es=canvas:GetEffectiveScale()
-            self.cx=self.drag.cx+(mx-self.drag.mx)/es/self.scale
-            self.cy=self.drag.cy-(my-self.drag.my)/es/self.scale
-            self:Draw();return
+            local cx=self.drag.cx+(mx-self.drag.mx)/es/self.scale
+            local cy=self.drag.cy-(my-self.drag.my)/es/self.scale
+            if cx~=self.cx or cy~=self.cy then self.cx,self.cy=cx,cy;self:Draw() end
+            return
         end
-        regionCheck=regionCheck+dt
-        -- Pays où se trouve le joueur : la carte le suit quand il en change.
-        if regionCheck>=1 and self.follow then
-            regionCheck=0
-            local zone=ZG:CurrentRegion()
-            if zone~=self.here then self:ShowCurrent() end
+        -- Les noms appris changent sans reconstruire les polygones.
+        labelCheck=labelCheck+dt
+        if labelCheck>=1 and not self.carte then
+            labelCheck=0
+            if self.country then
+                picker:SetText(CountryName(self.country))
+                if self.level=="country" then self.title:SetText(CountryName(self.country))
+                elseif self.zone then
+                    local region=ZoneKnown(self.zone) and self.zone.name or ZG:MaskText(self.zone.name)
+                    if self.batiment then
+                        self.title:SetText(PlaceKnown(self.batiment,self.zone) and self.batiment.name or ZG:MaskText(self.batiment.name))
+                        self.subtitle:SetText("Bâtiment · "..region)
+                    else self.title:SetText(region);self.subtitle:SetText("Région · "..CountryName(self.country)) end
+                end
+            end
+            for i=1,usedLabel do
+                local f=labelPool[i]
+                if f.knownEntry then
+                    local known=f.knownKind=="zone" and ZoneKnown(f.knownEntry)
+                        or f.knownKind=="place" and PlaceKnown(f.knownEntry,f.knownRegion)
+                    local name=f.knownEntry.name or ""
+                    local text=known and name or ZG:MaskText(name)
+                    if f:GetText()~=text then f:SetText(text) end
+                end
+            end
         end
+        -- Franchir une frontière ne change ni la carte affichée ni sa caméra.
     end)
-    -- M rouvre toujours le pays où l'on se trouve — ou, si l'on est dans un
-    -- bâtiment, l'intérieur de ce bâtiment : c'est ce qu'on a sous les pieds,
-    -- et la carte du dehors n'en montre qu'un point.
+    -- Une réouverture sur la même carte conserve le cadrage et le voile.
+    -- Premier affichage ou changement de carte physique : choisir le contexte.
     win:SetScript("OnShow",function(self)
         if self.carte then return end
         picker:Show()
+        local _,_,_,instance=ZG:GetPlayerPose()
+        if self.openInstance==instance and self.cx and self.scale and self.hasBaseMap then
+            self:DrawFog();self:Moi();return
+        end
+        self.openInstance=instance
         self:ShowCurrent()
         local b=self:BatimentIci()
         if b then self:ShowBatiment(b) end
     end)
+    win:HookScript("OnHide",function(self) FinishZoom();self.pendingZoom=nil;self:HideMapTooltip() end)
     UISpecialFrames=UISpecialFrames or {};table.insert(UISpecialFrames,"LCMCrossingsRegionMap")
 end
 

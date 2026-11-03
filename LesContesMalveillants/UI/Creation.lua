@@ -938,6 +938,299 @@ function Pages.metiers(page, f)
     page:Actualiser()
 end
 
+-- Le BUTIN d'un PNJ (le MJ, 3 novembre 2026), dernier onglet de sa creation :
+-- ce que portera son cadavre (Core/Cadavres.lua). Trois sections ; ce qu'il
+-- a d'equipe s'y ajoutera de lui-meme a sa mort. La Ressource naturelle ne
+-- propose que des ressources ; dans le ventre, le DD est propre au lot et
+-- facultatif.
+local SECTIONS_LOOT = {
+    { id = "sacs",    label = "Sacs",               texte = "Ce qu'il transporte : on le prend d'un clic." },
+    { id = "naturel", label = "Ressource naturelle", texte = "Ce qu'on prélève sur le corps (peau, crocs…) : un jet contre le DD de la ressource." },
+    { id = "ventre",  label = "Ventre",             texte = "Ce qu'il a avalé : prise directe, ou extraction si tu donnes un DD au lot." },
+}
+
+local FAMILLES_LOOT = { objets = true, livres = true, cartes = true, ressources = true,
+    sacs = true, accessoires_camping = true, lanternes = true, cristaux = true,
+    consommables = true, tentes = true }
+local function OptionsLoot(section)
+    local out, vus = {}, {}
+    for _, categorie in ipairs(LCM.Compendium.categories) do
+        if (section.id == "naturel" and categorie.id == "ressources")
+            or (section.id ~= "naturel" and FAMILLES_LOOT[categorie.famille]) then
+            for _, entree in ipairs(LCM.Compendium.Entrees(categorie)) do
+                local ref = LCM.Compendium.Reference(categorie, entree)
+                if not vus[ref] then
+                    vus[ref] = true
+                    out[#out + 1] = { id = ref, label = entree.label or entree.id,
+                        groupe = categorie.label, icone = entree.icone,
+                        etiquettes = entree.etiquettes }
+                end
+            end
+        end
+    end
+    return out
+end
+
+local function ChoixLoot()
+    local d = UI.Fenetre("creation_choix_loot", "Ajouter du butin", 430, 490, { x = 160, y = 30 })
+    local c = d.contenu
+    d.recherche = UI.Champ(c, 300, 22, function() d:Remplir() end)
+    d.recherche:SetMaxLetters(100)
+    d.recherche:SetPoint("TOPLEFT", c, "TOPLEFT", 14, -10)
+    d.tagsBouton = UI.Bouton(c, "Tags", 76, 22, function()
+        d.choixTags = d.choixTags or UI.ChoixTags("creation_loot")
+        d.choixTags:Proposer("Filtrer le butin par tags", d.tags, function(ids)
+            d.tags = ids[1] and LCM.Etiquettes.Ensemble(ids) or nil
+            d:Remplir()
+        end)
+    end)
+    d.tagsBouton:SetPoint("TOPRIGHT", c, "TOPRIGHT", -14, -10)
+    d.recherche:SetPoint("RIGHT", d.tagsBouton, "LEFT", -6, 0)
+    UI.Bulle(d.tagsBouton, "Filtrer par tags",
+        "N'affiche que les objets portant les tags choisis ou leurs sous-tags.")
+    d.aide = UI.Texte(c, "Coche plusieurs objets, puis valide.", UI.C.discret, "GameFontNormalSmall")
+    d.aide:SetPoint("TOPLEFT", d.recherche, "BOTTOMLEFT", 0, -7)
+    d.zone = UI.Defilement(c)
+    d.zone:SetPoint("TOPLEFT", c, "TOPLEFT", 14, -62)
+    d.zone:SetPoint("BOTTOMRIGHT", c, "BOTTOMRIGHT", -24, 68)
+    d.cases, d.entetes = {}, {}
+    d.info = UI.Texte(c, "", UI.C.discret, "GameFontNormalSmall")
+    d.info:SetPoint("BOTTOMLEFT", c, "BOTTOMLEFT", 14, 43)
+    d.valider = UI.Bouton(c, "Ajouter la sélection", 180, 24, function()
+        local refs = {}
+        for _, option in ipairs(d.options or {}) do
+            if d.selection[option.id] then refs[#refs + 1] = option.id end
+        end
+        d:Hide()
+        if d.surValider and refs[1] then d.surValider(refs) end
+    end)
+    d.valider:SetPoint("BOTTOMLEFT", c, "BOTTOMLEFT", 14, 7)
+    d.annuler = UI.Bouton(c, "Annuler", 120, 24, function() d:Hide() end)
+    d.annuler:SetPoint("BOTTOMRIGHT", c, "BOTTOMRIGHT", -14, 7)
+
+    function d:Compter()
+        local n = 0
+        for _ in pairs(self.selection or {}) do n = n + 1 end
+        self.valider:SetEnabled(n > 0)
+        self.info:SetText(n > 0 and string.format("%d objet(s) sélectionné(s)", n)
+            or "Sélectionne un ou plusieurs objets.")
+    end
+
+    function d:Remplir()
+        local recherche = tostring(self.recherche:GetText() or ""):lower()
+        local tags = self.tags and LCM.Etiquettes.Etendre(self.tags) or nil
+        local nombreTags = 0
+        for _ in pairs(self.tags or {}) do nombreTags = nombreTags + 1 end
+        self.tagsBouton.label:SetText(nombreTags > 0 and string.format("Tags (%d)", nombreTags) or "Tags")
+        self.tagsBouton:Selectionner(nombreTags > 0)
+        local y, nc, ne, trouves, dernier = 2, 0, 0, 0, nil
+        for _, option in ipairs(self.options or {}) do
+            local correspond = recherche == "" or tostring(option.label):lower():find(recherche, 1, true)
+                or tostring(option.groupe):lower():find(recherche, 1, true)
+            if correspond and (not tags or LCM.Etiquettes.Porte(option, tags, true)) then
+                trouves = trouves + 1
+                if nc < 100 then
+                    if option.groupe ~= dernier then
+                        dernier = option.groupe
+                        ne = ne + 1
+                        local entete = self.entetes[ne]
+                        if not entete then
+                            entete = UI.Texte(self.zone.contenu, "", UI.C.libelle, "GameFontNormalSmall")
+                            self.entetes[ne] = entete
+                        end
+                        entete:SetText(string.upper(tostring(dernier)))
+                        entete:ClearAllPoints()
+                        entete:SetPoint("TOPLEFT", self.zone.contenu, "TOPLEFT", 2, -y)
+                        entete:Show()
+                        y = y + 20
+                    end
+                    nc = nc + 1
+                    local case = self.cases[nc]
+                    if not case then
+                        local nouvelle
+                        nouvelle = UI.Case(self.zone.contenu, "", function(coche)
+                            d.selection[nouvelle.id] = coche and true or nil
+                            d:Compter()
+                        end)
+                        nouvelle.icone = self.zone.contenu:CreateTexture(nil, "ARTWORK")
+                        nouvelle.icone:SetSize(18, 18)
+                        nouvelle.icone:SetPoint("LEFT", nouvelle, "RIGHT", 6, 0)
+                        nouvelle.icone:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                        nouvelle.label:ClearAllPoints()
+                        nouvelle.label:SetPoint("LEFT", nouvelle.icone, "RIGHT", 7, 0)
+                        nouvelle.label:SetWidth(300)
+                        nouvelle.label:SetWordWrap(false)
+                        self.cases[nc] = nouvelle
+                        case = nouvelle
+                    end
+                    case.id = option.id
+                    case.label:SetText(option.label)
+                    case.icone:SetTexture(LCM.Icone(option.icone))
+                    case.icone:Show()
+                    case:Cocher(self.selection[option.id])
+                    case:ClearAllPoints()
+                    case:SetPoint("TOPLEFT", self.zone.contenu, "TOPLEFT", 8, -y)
+                    case:Show()
+                    y = y + 24
+                end
+            end
+        end
+        for i = nc + 1, #self.cases do
+            self.cases[i]:Hide()
+            self.cases[i].icone:Hide()
+        end
+        for i = ne + 1, #self.entetes do self.entetes[i]:Hide() end
+        self.zone:Regler(y + 4)
+        self.zone:Aller(0)
+        self:Compter()
+        if trouves > 100 then
+            self.aide:SetText(string.format("%d résultats : 100 affichés. Affine la recherche.", trouves))
+        elseif trouves == 0 then self.aide:SetText("Aucun objet trouvé.")
+        else self.aide:SetText("Coche plusieurs objets, puis valide.") end
+    end
+
+    function d:Proposer(section, valider)
+        self.options, self.surValider, self.selection, self.tags = OptionsLoot(section), valider, {}, nil
+        self:Titre("Butin · " .. section.label)
+        self.recherche:SetText("")
+        self:Remplir()
+        self:Show()
+        UI.Devant(self)
+    end
+    d:Hide()
+    return d
+end
+
+function Pages.loot(page, f)
+    page.sections = {}
+    local marge = UI.Fiche.MARGE_BLOC + 6
+    local HAUTEUR_LIGNE = 48
+    local largeur = LARGEUR_PAGE - 2 * marge
+    for _, section in ipairs(SECTIONS_LOOT) do
+        local s = section
+        local bloc = Bloc(page, s.label, s.texte)
+        bloc.lignes = {}
+        function bloc:Ajouter(refs)
+            local loot = C.LootPourEcrire(f.brouillon)
+            loot[s.id] = loot[s.id] or {}
+            for _, ref in ipairs(refs or {}) do
+                loot[s.id][#loot[s.id] + 1] = { entree = ref, quantite = 1 }
+            end
+            f:Afficher(f.etape)
+        end
+        function bloc:Choisir()
+            f.choixLoot = f.choixLoot or ChoixLoot()
+            f.choixLoot:Proposer(s, function(refs) self:Ajouter(refs) end)
+        end
+        local function Ligne(index)
+            local l = UI.Fiche.Ligne(bloc, UI.AelColonnes(largeur), "Button")
+            l:SetSize(largeur, HAUTEUR_LIGNE - 4)
+            l.reflet = UI.DegradeOr(l, "BACKGROUND", 0.12)
+            l.reflet:SetPoint("TOPRIGHT", l, "TOPRIGHT", -2, -2)
+            l.reflet:SetPoint("BOTTOMRIGHT", l, "BOTTOMRIGHT", -2, 2)
+            l.reflet:SetWidth(150)
+            l.icone = l:CreateTexture(nil, "ARTWORK")
+            l.icone:SetSize(34, 34)
+            l.icone:SetPoint("LEFT", l, "LEFT", 6, 0)
+            l.icone:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            l.nom = UI.Texte(l, "", UI.C.texte, "GameFontNormalSmall")
+            l.nom:SetPoint("LEFT", l.icone, "RIGHT", 8, 0)
+            l.nom:SetWidth(largeur - (s.id == "ventre" and 345 or 205))
+            l.nom:SetJustifyH("LEFT")
+            l.nom:SetWordWrap(false)
+            l.plus = UI.BoutonDegrade(l, function() bloc:Choisir() end)
+            l.plus:SetWidth(108)
+            l.plus:SetPoint("TOPRIGHT", l, "TOPRIGHT", 0, 0)
+            l.plus:SetPoint("BOTTOMRIGHT", l, "BOTTOMRIGHT", 0, 0)
+            l.plus:Signe("+", "Ajouter du butin", "Choisis plusieurs objets ou glisse une sélection du compendium.")
+            l.quantiteLabel = UI.Texte(l, "Combien", UI.C.discret, "GameFontNormalSmall")
+            l.quantiteLabel:SetPoint("RIGHT", l, "RIGHT", -92, 0)
+            l.quantite = UI.ChampCellule(l, function(texte)
+                local ligne = (C.Loot(f.brouillon)[s.id] or {})[l.index]
+                if ligne then ligne.quantite = tonumber(texte) or texte end
+            end)
+            l.quantite:SetSize(46, 22)
+            l.quantite:SetNumeric(true)
+            l.quantite:SetPoint("RIGHT", l, "RIGHT", -40, 0)
+            UI.Bulle(l.quantite, "Quantité", "Combien le cadavre en porte.")
+            if s.id == "ventre" then
+                l.dd = UI.Deroulant(l, 124, 22, function()
+                    return LCM.Difficultes.Options({ id = 0, label = "Sans DD" }, true)
+                end, function(valeur)
+                    local ligne = (C.Loot(f.brouillon)[s.id] or {})[l.index]
+                    if ligne then ligne.dd = tonumber(valeur) ~= 0 and tonumber(valeur) or nil end
+                end)
+                l.dd:SetPoint("RIGHT", l, "RIGHT", -164, 0)
+                UI.Bulle(l.dd, "DD d'extraction",
+                    "Choisi dans Équilibrage › Difficultés. Sans DD : prise directe.")
+            end
+            l.retirer = UI.BoutonDegrade(l, function()
+                local liste = C.LootPourEcrire(f.brouillon)[s.id] or {}
+                table.remove(liste, l.index)
+                f:Afficher(f.etape)
+            end)
+            l.retirer:SetSize(34, HAUTEUR_LIGNE - 4)
+            l.retirer:SetPoint("TOPRIGHT", l, "TOPRIGHT", 0, 0)
+            l.retirer:Signe("×", "Retirer du butin", "Retire cet objet de la liste.")
+            l:SetScript("OnClick", function(self) if self.vide then bloc:Choisir() end end)
+            UI.Glisser.Cible(l, function(objet)
+                local refs = objet.refs or { objet.ref }
+                for _, ref in ipairs(refs) do
+                    local famille = tostring(ref or ""):match("^([%w_]+)/")
+                    if not famille or (s.id == "naturel" and famille ~= "ressources")
+                        or (s.id ~= "naturel" and not FAMILLES_LOOT[famille]) then
+                        return false, s.id == "naturel" and "cette section accepte des ressources"
+                            or "cette entrée ne se range pas dans le butin"
+                    end
+                end
+                return refs[1] ~= nil
+            end, function(objet) bloc:Ajouter(objet.refs or { objet.ref }) end)
+            l.glisserMultiple = true
+            bloc.lignes[index] = l
+            return l
+        end
+        function bloc:Remplir()
+            local liste = C.Loot(f.brouillon)[s.id] or {}
+            local haut = Haut(self)
+            for index = 1, #liste + 1 do
+                local ligne = liste[index]
+                local l = self.lignes[index] or Ligne(index)
+                l.index = index
+                l.vide = ligne == nil
+                local element = ligne and LCM.Compendium.Resoudre(ligne.entree)
+                l.icone:SetTexture(ligne and LCM.Icone(element and element.icone) or VIDE)
+                l.nom:SetText(ligne and (element and (element.label or element.id)
+                    or ("|cffe86b6b? " .. tostring(ligne.entree) .. "|r")) or "Emplacement")
+                l.nom:SetTextColor(unpack(ligne and UI.C.texte or UI.C.discret))
+                l.plus:SetShown(l.vide)
+                l.quantiteLabel:SetShown(not l.vide)
+                l.quantite:SetShown(not l.vide)
+                l.retirer:SetShown(not l.vide)
+                if l.dd then
+                    l.dd:SetShown(not l.vide)
+                    if ligne then
+                        local dd = tonumber(ligne.dd) or 0
+                        l.dd:Definir(dd, dd == 0 and "Sans DD" or LCM.Difficultes.LibelleNomme(dd))
+                    end
+                end
+                if ligne and not l.quantite:HasFocus() then l.quantite:SetText(tostring(ligne.quantite or 1)) end
+                l:ClearAllPoints()
+                l:SetPoint("TOPLEFT", self, "TOPLEFT", marge, -(haut + (index - 1) * HAUTEUR_LIGNE))
+                l:SetPoint("TOPRIGHT", self, "TOPRIGHT", -marge, -(haut + (index - 1) * HAUTEUR_LIGNE))
+                l:Show()
+            end
+            for index = #liste + 2, #self.lignes do self.lignes[index]:Hide() end
+            self.hauteurContenu = (#liste + 1) * HAUTEUR_LIGNE + 4
+        end
+        page.sections[s.id] = bloc
+    end
+
+    function page:Actualiser()
+        for _, bloc in pairs(self.sections) do bloc:Remplir() end
+    end
+    page:Actualiser()
+end
+
 function Pages.mecaniques(page, f)
     page.domaines = {}
     for _, domaine in ipairs({ "Compétence", "Défense" }) do
@@ -1546,9 +1839,10 @@ local function Construire()
         if self.brouillon.mode ~= "niveau" then
             local out = {}
             for _, etape in ipairs(C.ETAPES) do
-                if etape.id ~= "metiers" or C.Total(self.brouillon, "metiers") > 0 then
-                    out[#out + 1] = etape
-                end
+                -- Le Loot n'existe que pour un PNJ (3 novembre 2026).
+                local visible = etape.id ~= "metiers" or C.Total(self.brouillon, "metiers") > 0
+                if etape.pnjSeulement and self.brouillon.mode ~= "pnj" then visible = false end
+                if visible then out[#out + 1] = etape end
             end
             return out
         end

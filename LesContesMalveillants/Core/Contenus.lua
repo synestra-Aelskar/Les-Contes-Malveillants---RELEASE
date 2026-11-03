@@ -82,6 +82,9 @@ function LCM.ChampsCommuns(definition, element, Erreur)
     local typ = Texte(definition.type)
     element.type = typ ~= "" and typ or nil
     element.metiers = ListeIds(id, "metiers", definition.metiers, Erreur)
+    -- Les tags de l'entree (Core/Etiquettes.lua) : des identifiants de la
+    -- liste « tags ». `tags`, lui, est le libelle de rarete — d'ou ce nom.
+    element.etiquettes = ListeIds(id, "etiquettes", definition.etiquettes, Erreur)
     -- Le jeu d'equilibrage et la rarete d'une entree forgee (« jeu/rarete »,
     -- Core/Forge.lua). Garde tel quel : c'est la forge qui juge, a
     -- l'enregistrement d'une entree, pas le chargement.
@@ -269,6 +272,11 @@ LCM.LISTES = {
     -- reste connue pour qu'une vieille entree encore en base se charge, au
     -- lieu de faire echouer le chargement, le temps d'etre reprise et effacee.
     { id = "paliers",      label = "Liste paliers" },
+    -- Les TAGS (le MJ, 3 novembre 2026) : de quoi retrouver vite une entree
+    -- parmi des milliers. Un tag porte une ORIGINE (« Liste origine ») ; sans
+    -- origine, c'est un tag general (« Aucun »). Crees a la volee depuis la
+    -- forge et l'editeur, ce sont des entrees comme les autres.
+    { id = "tags",         label = "Tags" },
 }
 local LISTE_CONNUE = {}
 for _, l in ipairs(LCM.LISTES) do LISTE_CONNUE[l.id] = l end
@@ -281,6 +289,27 @@ LCM.Listes = LCM.Registre({
             Erreur(element.id .. " : liste inconnue « " .. liste .. " »")
         end
         element.liste = liste
+        if liste == "tags" then
+            -- Plusieurs origines possibles ; un sous-tag peut n'en garder
+            -- qu'une partie. Les anciennes definitions `origine` restent lues.
+            local parent = Texte(definition.parent)
+            if parent == element.id then Erreur(element.id .. " : un tag ne peut pas être son propre parent") end
+            element.parent = parent ~= "" and parent or nil
+            local origines, vus = {}, {}
+            if type(definition.origines) == "table" then
+                for _, id in ipairs(definition.origines) do
+                    id = Texte(id)
+                    if id ~= "" and not vus[id] then
+                        origines[#origines + 1] = id
+                        vus[id] = true
+                    end
+                end
+            end
+            local ancienne = Texte(definition.origine)
+            if #origines == 0 and ancienne ~= "" then origines[1] = ancienne end
+            element.origines = origines[1] and origines or nil
+            element.origine = origines[1]
+        end
         if liste == "paliers" then
             -- Un palier : son numero (l'ordre de l'echelle, entier, 1 en bas)
             -- et sa couleur, en hexadecimal.
@@ -319,6 +348,17 @@ LCM.Listes = LCM.Registre({
             end
             element.maxEquipe = max > 0 and max or nil
         end
+        -- Les metiers d'un TYPE de ressource (« Minerais » : Mineur), le MJ,
+        -- 3 novembre 2026. Ce n'est qu'un DEFAUT : une ressource qui prend ce
+        -- type part avec ces metiers coches, et le MJ en ajoute ou en retire
+        -- ensuite dans la forge. Rien ne les impose a la recolte.
+        if type(definition.metiers) == "table" then
+            local metiers = {}
+            for _, id in ipairs(definition.metiers) do
+                if Texte(id) ~= "" then metiers[#metiers + 1] = Texte(id) end
+            end
+            element.metiers = metiers[1] and metiers or nil
+        end
     end,
 })
 
@@ -347,6 +387,39 @@ LCM.Ressources = LCM.Registre({
             xp = tonumber(xp)
             if not xp or xp < 0 then Erreur(element.id .. " : XP de récolte invalide") end
             element.xpRecolte = xp > 0 and xp or nil
+        end
+        -- Le DD de la ressource et les metiers qui la recoltent (le MJ,
+        -- 3 novembre 2026) : ils vivaient sur le point de recolte, ligne par
+        -- ligne ; une ressource se recolte maintenant contre SON DD, et
+        -- seulement par les metiers coches. Sans DD : pas de seuil. Sans
+        -- metier : tous ceux du point.
+        local dd = definition.dd
+        if dd ~= nil and tostring(dd) ~= "" then
+            dd = tonumber(dd)
+            if not dd or dd < 0 or dd ~= math.floor(dd) then
+                Erreur(element.id .. " : DD de récolte invalide")
+            else
+                element.dd = dd > 0 and dd or nil
+            end
+        end
+        if type(definition.metiers) == "table" then
+            local metiers = {}
+            for _, id in ipairs(definition.metiers) do
+                if tostring(id or "") ~= "" then metiers[#metiers + 1] = tostring(id) end
+            end
+            element.metiers = metiers[1] and metiers or nil
+        end
+        -- Combien d'essais RATES on a droit sur cette ressource (le MJ,
+        -- 3 novembre 2026). Vide : sans limite. Au dernier raté, elle se
+        -- DESACTIVE sur un point de recolte, et disparait du butin en cours
+        -- d'un cadavre — jamais du compendium.
+        local tentatives = definition.tentatives
+        if tentatives ~= nil and tostring(tentatives) ~= "" then
+            tentatives = tonumber(tentatives)
+            if not tentatives or tentatives < 1 or tentatives ~= math.floor(tentatives) then
+                Erreur(element.id .. " : tentatives invalides (un entier, au moins 1 ; vide : sans limite)")
+            end
+            element.tentatives = tentatives
         end
     end,
 })
@@ -540,8 +613,44 @@ LCM.PNJ = LCM.Registre({
                 element[cle][tostring(categorie)] = ListeIds(element.id, cle, ids, Erreur)
             end
         end
+        -- Le BUTIN (le MJ, 3 novembre 2026) : ce que le cadavre porte quand le
+        -- PNJ meurt, en trois sections — Sacs, Ressource naturelle, Ventre.
+        -- L'equipement s'y ajoute de lui-meme (Core/Cadavres.lua). Une ligne :
+        -- { entree = "ressources/peau", quantite = 2 }.
+        local loot = definition.loot
+        if loot ~= nil and type(loot) ~= "table" then Erreur(element.id .. " : butin illisible") end
+        local sections
+        for _, section in ipairs(LCM.SECTIONS_LOOT) do
+            local lignes = {}
+            for _, l in ipairs(type(loot) == "table" and type(loot[section]) == "table" and loot[section] or {}) do
+                local entree = type(l) == "table" and Texte(l.entree) or ""
+                local quantite = type(l) == "table" and tonumber(l.quantite) or nil
+                if entree == "" then Erreur(element.id .. " : butin, une ligne sans objet") end
+                if not quantite or quantite < 1 or quantite ~= math.floor(quantite) then
+                    Erreur(element.id .. " : butin, quantité invalide pour " .. entree)
+                end
+                local propre = { entree = entree, quantite = quantite }
+                if section == "ventre" and type(l) == "table" and l.dd ~= nil and l.dd ~= "" then
+                    local dd = tonumber(l.dd)
+                    if not dd or dd < 1 or dd ~= math.floor(dd) then
+                        Erreur(element.id .. " : butin, DD invalide pour " .. entree)
+                    end
+                    propre.dd = dd
+                end
+                lignes[#lignes + 1] = propre
+            end
+            if lignes[1] then
+                sections = sections or {}
+                sections[section] = lignes
+            end
+        end
+        element.loot = sections
     end,
 })
+
+-- Les sections du butin d'un PNJ, dans leur ordre d'affichage. L'equipement
+-- (« Équipé ») n'en est pas : il vient de ce que le PNJ porte.
+LCM.SECTIONS_LOOT = { "sacs", "naturel", "ventre" }
 
 -- « Grimoires » : des onglets de sorts (icone, description, deux champs
 -- libres, un jet). Repris de Necronicon en attendant la fenetre Grimoires ;

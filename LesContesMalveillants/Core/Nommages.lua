@@ -1,7 +1,7 @@
 -- Les NOMMAGES : l'echelle des paliers du jeu, de bas en haut (le MJ,
--- 2 novembre 2026). Une seule echelle : les difficultes, les couleurs des
--- metiers (« Rose 1 ») et la grille d'XP la lisent toutes. Renommer « Rose »
--- renomme partout.
+-- 2 novembre 2026). Elle nomme les DIFFICULTES et les lignes de la grille
+-- d'XP. Les couleurs des metiers n'en dependent plus (3 novembre 2026) : ce
+-- sont les sept couleurs de base de Equilibrage.metiers.paliers.
 --
 -- C'est de l'EQUILIBRAGE, pas du contenu : Data/Equilibrage.lua (E.nommages)
 -- donne l'echelle de depart, et le MJ la regle en seance par les reglages

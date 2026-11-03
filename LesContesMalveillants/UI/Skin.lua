@@ -166,12 +166,10 @@ local BANDES = {
 local function Texture(decor, V, r, etireeEnX, sousNiveau)
     local t = decor:CreateTexture(nil, "ARTWORK", nil, sousNiveau)
     t:SetTexture(DOSSIER .. V.fichier)
-    -- Les atlas d'origine portent certaines pieces sur une plaque presque
-    -- noire mais opaque. En BLEND, chaque morceau decoupe laisse donc voir son
-    -- rectangle noir sur le bandeau brun de la fenetre. Le decor est un
-    -- ornement lumineux : en ADD, le noir devient neutre/translucide et seuls
-    -- les metaux, flammes et filets dores se composent avec le fond.
-    t:SetBlendMode("ADD")
+    -- Le cadre est une matière, pas une lumière ajoutée au décor du jeu.
+    -- BLEND conserve les parties sombres opaques et les découpes alpha ; ADD
+    -- rendait les tours transparentes même avec l'opacité générale à 100 %.
+    t:SetBlendMode("BLEND")
     local x0, x1, y0, y1 = r[1], r[1] + r[3], r[2], r[2] + r[4]
     -- Une bande etiree n'echantillonne que son milieu, sinon ses voisines
     -- bavent dessus au moment de l'etirement.

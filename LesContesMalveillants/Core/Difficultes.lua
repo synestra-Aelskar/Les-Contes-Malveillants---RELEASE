@@ -29,21 +29,22 @@ function Difficultes.Couleurs()
     return out
 end
 
--- Le plus haut rang qu'un METIER atteint (Violet, 6, par defaut). Les paliers
--- au-dessus (le Noir) n'ont pas de niveau de metier.
-local function RangMetierMax()
-    local max = 0
-    local paliers = LCM.Equilibrage and LCM.Equilibrage.metiers and LCM.Equilibrage.metiers.paliers or {}
-    for _, palier in ipairs(paliers) do max = math.max(max, tonumber(palier.rangCouleur) or 0) end
-    return max
-end
-
--- Les couleurs que porte un METIER : celles qui ont une ligne de coefficients.
+-- Les couleurs que porte un METIER : les sept couleurs de base, Rose a Noir,
+-- telles que Equilibrage.metiers.paliers les nomme et les peint. Elles ne
+-- suivent PAS les Nommages (le MJ, 3 novembre 2026) : l'echelle decoupee en
+-- « Rose Facile, Rose, Rose Difficile… » nomme les difficultes ; un metier
+-- reste Rose, Vert… C'est le premier indice de la matrice des coefficients.
 function Difficultes.CouleursMetier()
-    local out, max = {}, RangMetierMax()
-    for _, c in ipairs(Difficultes.Couleurs()) do
-        if c.rang <= max then out[#out + 1] = c end
+    local out, vus = {}, {}
+    local paliers = LCM.Equilibrage and LCM.Equilibrage.metiers and LCM.Equilibrage.metiers.paliers or {}
+    for _, palier in ipairs(paliers) do
+        local rang = tonumber(palier.rangCouleur)
+        if rang and not vus[rang] then
+            vus[rang] = true
+            out[#out + 1] = { rang = rang, nom = palier.nom, couleur = palier.couleur, id = "metier_" .. rang }
+        end
     end
+    table.sort(out, function(a, b) return a.rang < b.rang end)
     return out
 end
 
@@ -146,6 +147,35 @@ function Difficultes.Coefficient(rangMetier, rangDifficulte)
     return tonumber(case) or 1, relation
 end
 
+-- La couleur de base d'un palier de l'echelle, d'apres son NOM : « Rose
+-- Facile », « Rose » et « Rose Difficile » sont du Rose (rang de metier 1).
+-- Un mot entier, pour qu'un « Rosace » ne passe pas pour du Rose. Nil quand
+-- le nom ne contient aucune des couleurs des metiers : on ne devine pas.
+function Difficultes.CouleurDeBase(nom)
+    local texte = " " .. tostring(nom or ""):lower() .. " "
+    for _, c in ipairs(Difficultes.CouleursMetier()) do
+        local motif = tostring(c.nom or ""):lower():gsub("%p", "%%%0")
+        if motif ~= "" and texte:find("[^%a]" .. motif .. "[^%a]") then return c.rang end
+    end
+end
+
+-- Le coefficient PAR DEFAUT d'un metier face a un palier (Equilibrage.
+-- difficultes.defaut, le MJ, 3 novembre 2026). Nil si le palier n'a pas de
+-- couleur reconnaissable ou si la regle manque : rien n'est invente.
+function Difficultes.CoefficientParDefaut(rangMetier, nomDifficulte)
+    local couleur = Difficultes.CouleurDeBase(nomDifficulte)
+    local r = Eq().defaut
+    if not couleur or type(r) ~= "table" then return nil end
+    local ecart = couleur - (tonumber(rangMetier) or 0)
+    if ecart >= 0 then
+        local egale, pas = tonumber(r.egale), tonumber(r.parCouleurAuDessus)
+        if not egale or not pas then return nil end
+        return egale + pas * ecart
+    end
+    if ecart == -1 then return tonumber(r.uneEnDessous) end
+    return tonumber(r.auDela)
+end
+
 -- Le chemin de reglage d'une case : « difficultes.matrice.3.5 ».
 function Difficultes.CheminCoefficient(rangMetier, rangDifficulte)
     return string.format("difficultes.matrice.%d.%d", tonumber(rangMetier) or 0, tonumber(rangDifficulte) or 0)
@@ -191,11 +221,24 @@ end
 
 -- Les choix d'un menu deroulant : { id = valeur, label = « DD 15 · Rose » }.
 -- `premier` : une entree a mettre en tete (« Sans jet », DD 0).
-function Difficultes.Options(premier)
+-- « DD 9 · Rose Facile », en couleur ET avec le nom du palier (le MJ,
+-- 3 novembre 2026 : dans la forge des ressources, la couleur seule ne disait
+-- pas QUEL palier — Rose Facile, Rose et Rose Difficile se ressemblent).
+function Difficultes.LibelleNomme(valeur)
+    valeur = tonumber(valeur)
+    if not valeur then return "" end
+    local d = Difficultes.Get(valeur)
+    if not d then return string.format("DD %d (hors liste)", valeur) end
+    return string.format("|cff%sDD %d · %s|r", Hex(d.couleur), d.valeur, tostring(d.nom))
+end
+
+-- `nomme` : le libelle porte le nom du palier (Difficultes.LibelleNomme).
+function Difficultes.Options(premier, nomme)
     local out = {}
     if premier then out[#out + 1] = premier end
     for _, d in ipairs(Difficultes.Liste()) do
-        out[#out + 1] = { id = d.valeur, label = Difficultes.Libelle(d.valeur) }
+        out[#out + 1] = { id = d.valeur,
+            label = nomme and Difficultes.LibelleNomme(d.valeur) or Difficultes.Libelle(d.valeur) }
     end
     return out
 end

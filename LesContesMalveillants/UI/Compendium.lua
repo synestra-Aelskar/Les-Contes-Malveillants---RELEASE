@@ -715,14 +715,34 @@ local function Construire()
     f.effacer:SetScript("OnClick", function()
         f.recherche = ""
         f.champRecherche:SetText("")
+        f.tagsChoisis = nil
         f:Rafraichir()
+    end)
+    -- « Tags » (le MJ, 3 novembre 2026) : n'afficher que ce qui porte l'un des
+    -- tags choisis (ou l'un de leurs sous-tags). Le choix vaut pour toutes les
+    -- categories, jusqu'a ce qu'on l'efface (X).
+    f.tagsBouton = UI.Bouton(d, "Tags", 76, 18, function()
+        f.choixTags = f.choixTags or UI.ChoixTags("filtre_compendium")
+        f.choixTags:Proposer("Filtrer par tags", f.tagsChoisis, function(ids)
+            f.tagsChoisis = ids[1] and LCM.Etiquettes.Ensemble(ids) or nil
+            f:Rafraichir()
+        end)
+    end)
+    f.tagsBouton:SetPoint("RIGHT", f.effacer, "LEFT", -6, 0)
+    UI.Bulle(f.tagsBouton, "Filtrer par tags", function()
+        local ids = {}
+        for id in pairs(f.tagsChoisis or {}) do ids[#ids + 1] = id end
+        local resume = LCM.Etiquettes.Resume(ids)
+        return resume ~= "" and ("Seulement ce qui porte : " .. resume .. " (ou leurs sous-tags). X efface.")
+            or "Choisis un ou plusieurs tags : le compendium n'affiche plus que ce qui les porte."
     end)
     f.champRecherche = UI.Champ(d, LARGEUR_RECHERCHE + 40, 18, function(texte)
         f.recherche = texte
         f:Rafraichir()
     end)
-    f.champRecherche:SetPoint("TOPLEFT", d, "TOPLEFT", 10, -10)
-    f.champRecherche:SetPoint("RIGHT", f.effacer, "LEFT", -4, 0)
+    -- Meme axe central que Tags, X et le bouton des colonnes.
+    f.champRecherche:SetPoint("TOPLEFT", d, "TOPLEFT", 10, -8)
+    f.champRecherche:SetPoint("RIGHT", f.tagsBouton, "LEFT", -4, 0)
 
     -- Rangee 2 : les actions du MJ. Elles n'existent que si l'editeur est la.
     f.nouvelle = UI.Bouton(d, "Nouvelle entree", 106, 20, function() f:Nouvelle() end)
@@ -731,6 +751,7 @@ local function Construire()
     -- A droite de la rangee : la forge, pour une categorie qu'un jeu
     -- d'equilibrage peut viser (MJ/Forge.lua).
     f.forger = UI.Bouton(d, "Forger", 90, 20, function() f:Forger() end)
+    f.nouveauTag = UI.Bouton(d, "Nouveau Tag +", 122, 20, function() f:Nouvelle() end)
     f.lectureSeule = UI.Texte(d, "", UI.C.discret, "GameFontNormalSmall")
     f.lectureSeule:SetPoint("TOPLEFT", d, "TOPLEFT", 10, -36)
     f.lectureSeule:SetPoint("TOPRIGHT", d, "TOPRIGHT", -10, -36)
@@ -891,14 +912,12 @@ function Fenetre.NouvelleLigne(f, index)
     r.reglages:SetScript("OnClick", function(_, bouton)
         f:Editer(r.element, bouton == "RightButton" and "creation" or nil)
     end)
-    -- Le clic droit n'a de sens que la ou il mene ailleurs : la bulle ne
-    -- l'annonce donc que pour les PNJ, et elle se relit a chaque survol
-    -- (la categorie affichee change, la ligne est reutilisee).
+    -- La bulle se relit a chaque survol : la categorie affichee change et la
+    -- ligne est reutilisee.
     UI.Bulle(r.reglages, "Modifier", function()
         local categorie = f:Categorie()
         if categorie and (categorie.id == "pnj" or categorie.famille == "pnj") then
-            return "Clic gauche : sa fiche.\n"
-                .. "Clic droit : rouvrir sa création — race, niveau, répartition des points."
+            return "Rouvre le builder PNJ avec ses données déjà remplies."
         end
         return "Ouvre cette entrée dans l'éditeur."
     end)
@@ -924,8 +943,17 @@ function Fenetre.NouvelleLigne(f, index)
         local e = self.element
         if not e then return end
         local categorie = f:Categorie()
-        UI.Glisser.Commencer({ icone = LCM.Icone(e.icone), nom = e.label, element = e,
-            categorie = categorie.id, ref = C.Reference(categorie, e) })
+        local refs = {}
+        if f:Selection()[e.id] then
+            for _, choisi in ipairs(f:Selectionnees()) do
+                refs[#refs + 1] = C.Reference(categorie, choisi)
+            end
+        end
+        if not refs[1] then refs[1] = C.Reference(categorie, e) end
+        UI.Glisser.Commencer({ icone = LCM.Icone(e.icone),
+            nom = #refs > 1 and string.format("%d entrées", #refs) or e.label,
+            element = e, categorie = categorie.id, ref = C.Reference(categorie, e),
+            refs = #refs > 1 and refs or nil })
     end)
     r:Hide()
     return r
@@ -1329,9 +1357,15 @@ function Fenetre.Comportement(f)
             if not existe then self.sousCategorie[categorie.id] = nil cle = nil end
         end
         local out = {}
+        local tags = self.tagsChoisis and LCM.Etiquettes.Etendre(self.tagsChoisis) or nil
+        local n = 0
+        for _ in pairs(self.tagsChoisis or {}) do n = n + 1 end
+        self.tagsBouton.label:SetText(n > 0 and string.format("Tags (%d)", n) or "Tags")
+        self.tagsBouton:Selectionner(n > 0)
         for _, e in ipairs(C.Entrees(categorie)) do
             if C.DansSousCategorie(categorie, e, cle)
-                and (aiguille == "" or C.Recherche(categorie, e):find(aiguille, 1, true)) then
+                and (aiguille == "" or C.Recherche(categorie, e):find(aiguille, 1, true))
+                and LCM.Etiquettes.Porte(e, tags, true) then
                 out[#out + 1] = e
             end
         end
@@ -1556,6 +1590,7 @@ function Fenetre.Comportement(f)
         self.reglages:SetShown(ed ~= nil)
         self.modeEdition:SetShown(ed ~= nil and self.edition)
         local d = self.droite
+        local estTag = categorie.id == "liste_tags"
         local boutons = { self.nouvelle, self.groupee, self.supprimer }
         local x, rang = 0, 0
         local utile = math.max(200, (d:GetWidth() or 400) - 20)
@@ -1566,14 +1601,19 @@ function Fenetre.Comportement(f)
         local forgeable = editable and LCM.IsMaster()
             and ((UI.Forge ~= nil and categorie.statistiques == "bonus") or categorie.constructeur == true)
         self.forger:SetShown(forgeable)
+        self.nouveauTag:SetShown(editable and estTag)
         if forgeable then
             self.forger:ClearAllPoints()
             self.forger:SetPoint("TOPRIGHT", d, "TOPRIGHT", -10, -34)
             utile = utile - self.forger:GetWidth() - 10
+        elseif editable and estTag then
+            self.nouveauTag:ClearAllPoints()
+            self.nouveauTag:SetPoint("TOPRIGHT", d, "TOPRIGHT", -10, -34)
+            utile = utile - self.nouveauTag:GetWidth() - 10
         end
         for _, b in ipairs(boutons) do
-            b:SetShown(editable)
-            if editable then
+            b:SetShown(editable and (b ~= self.nouvelle or not estTag))
+            if editable and (b ~= self.nouvelle or not estTag) then
                 local w = b:GetWidth()
                 if x > 0 and x + w > utile then rang, x = rang + 1, 0 end
                 b:ClearAllPoints()

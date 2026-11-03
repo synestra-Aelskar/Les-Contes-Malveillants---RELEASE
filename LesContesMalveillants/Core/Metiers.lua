@@ -84,11 +84,12 @@ local function Paliers()
     for _, palier in ipairs(paliers) do
         total = total + math.max(0, math.floor(tonumber(palier.xp) or 0))
         palier.cumul = total
-        -- Le nom et la teinte de la couleur viennent de l'ECHELLE (Nommages) :
-        -- renommer « Rose » fait d'un metier « Novice 1 » (le MJ, 2 novembre
-        -- 2026). Sans palier a ce rang, la table garde les siens.
-        local echelon = LCM.Nommages and LCM.Nommages.Get(palier.rangCouleur)
-        if echelon then palier.nom, palier.couleur = echelon.nom, echelon.couleur end
+        -- Le nom et la teinte restent ceux du FICHIER, les sept couleurs de
+        -- base (le MJ, 3 novembre 2026). Ils venaient des Nommages ; quand le
+        -- MJ a decoupe son echelle en « Rose Facile, Rose, Rose Difficile… »,
+        -- les metiers sont devenus « Rose Facile 1 » et les colonnes de la
+        -- grille d'XP ont suivi. L'echelle nomme les DIFFICULTES, pas les
+        -- metiers.
     end
     return paliers
 end

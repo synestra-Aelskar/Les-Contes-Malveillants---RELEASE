@@ -111,7 +111,8 @@ local Cartes = LCM.Registre({
                     z = tonumber(r.z) and math.floor(tonumber(r.z) * 10 + 0.5) / 10 or nil,
                     carte = tonumber(r.carte),
                     region = Court(r.region), regionNom = Court(r.regionNom),
-                    lieu = Court(r.lieu), lieuNom = Court(r.lieuNom), paysNom = Court(r.paysNom),
+                    lieu = Court(r.lieu), lieuNom = Court(r.lieuNom),
+                    pays = Court(r.pays), paysNom = Court(r.paysNom),
                     point = point ~= "" and #point <= 80 and point or nil }
             end
         end
@@ -205,7 +206,7 @@ function Cartes.Localiser(x, y, carteServeur)
                 local pays = zone.countryId and ZG:GetCountry(zone.countryId)
                 return { region = zone.id, regionNom = zone.name or "",
                     lieu = place and place.id or nil, lieuNom = place and place.name or nil,
-                    paysNom = pays and pays.name or nil }
+                    pays = pays and pays.id or nil, paysNom = pays and pays.name or nil }
             end
         end
     end
@@ -229,7 +230,12 @@ function Cartes.EmplacementVu(r, vue)
     local regionVue = r.region and vue.regions[r.region]
     local lieuVu = r.lieu and vue.lieux[r.lieu]
     local morceaux = {}
-    if regionVue and r.paysNom then morceaux[#morceaux + 1] = r.paysNom end
+    -- Le pays ne se dit que si la region se dit, ET que si on le connait : une
+    -- carte peut nommer une vallee sans livrer la couronne dont elle releve.
+    if regionVue and r.paysNom then
+        local su = ZG and ZG.HasLearnedCountryName and r.pays and ZG:HasLearnedCountryName(r.pays)
+        morceaux[#morceaux + 1] = su and r.paysNom or Masque(r.paysNom)
+    end
     if r.regionNom then morceaux[#morceaux + 1] = regionVue and r.regionNom or Masque(r.regionNom) end
     if r.lieuNom then morceaux[#morceaux + 1] = lieuVu and r.lieuNom or Masque(r.lieuNom) end
     return #morceaux > 0 and table.concat(morceaux, " › ") or "emplacement inconnu"

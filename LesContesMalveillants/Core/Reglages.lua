@@ -235,6 +235,28 @@ function Reglages.Diffuser(chemin, valeur)
     LCM.Reseau.Envoyer(SUJET, { c = chemin, v = valeur }, canal)
 end
 
+-- Toutes les surcharges en cours, d'un coup (synchronisation forcee, Core/
+-- Synchro.lua). Un reglage ne partait qu'au moment ou on le changeait : celui
+-- qui se connectait apres jouait avec l'ancien nombre jusqu'au prochain
+-- changement. Etale : une echelle de 19 paliers, c'est des dizaines de
+-- chemins. Rend le nombre de reglages renvoyes.
+function Reglages.DiffuserTout()
+    if not (LCM.Reseau and LCM.IsMaster and LCM.IsMaster()) then return 0 end
+    local canal = LCM.Combat and LCM.Combat.CanalGroupe and LCM.Combat.CanalGroupe()
+    if not canal then return 0 end
+    local chemins = {}
+    for chemin in pairs(Reglages.Surcharges()) do chemins[#chemins + 1] = chemin end
+    table.sort(chemins)
+    local n = 0
+    for _, chemin in ipairs(chemins) do
+        local valeur = Reglages.Surcharges()[chemin]
+        if LCM.Reseau.Envoyer(SUJET, { c = chemin, v = valeur }, canal, nil, { etale = true }) then
+            n = n + 1
+        end
+    end
+    return n
+end
+
 LCM.WhenReady(function()
     -- Le fichier genere s'est deja charge (il appelle Publier) : ce qui reste
     -- dans la sauvegarde et vaut deja la valeur du fichier est redondant.

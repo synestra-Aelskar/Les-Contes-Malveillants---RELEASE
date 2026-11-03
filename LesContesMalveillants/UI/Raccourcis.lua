@@ -66,6 +66,15 @@ local function CoteACote(fiche, equipement, gardee)
         equipement:ClearAllPoints()
         equipement:SetPoint("TOPLEFT", fiche, "TOPRIGHT", ecart, 0)
     elseif gardee == equipement then
+        -- L'equipement peut etre encore accroche a la fiche (une paire
+        -- precedente) : y accrocher la fiche ferait une boucle, que le jeu
+        -- refuse (« anchor family connection »). On le fige d'abord la ou il
+        -- est, a l'ecran (trouve par le banc, 3 novembre 2026).
+        local gauche, haut = equipement:GetLeft(), equipement:GetTop()
+        if gauche and haut then
+            equipement:ClearAllPoints()
+            equipement:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", gauche, haut)
+        end
         fiche:ClearAllPoints()
         fiche:SetPoint("TOPRIGHT", equipement, "TOPLEFT", -ecart, 0)
     else

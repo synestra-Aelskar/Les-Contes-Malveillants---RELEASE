@@ -122,11 +122,26 @@ function UI.Infobulle()
     bulle.filets = {}
     bulle.nombreLignes = 0
 
+    -- « ANCHOR_CURSOR_RIGHT » : en bas a droite de la souris, et elle la suit
+    -- tant qu'elle est montree (le MJ, 3 novembre 2026 : posee a droite du
+    -- sceau, elle couvrait le panneau des raccourcis qui s'ouvre au meme
+    -- endroit). Le decalage laisse la pointe de la souris a nu.
+    local function SousLaSouris(soi)
+        local x, y = GetCursorPosition()
+        local echelle = UIParent:GetEffectiveScale() or 1
+        soi:ClearAllPoints()
+        soi:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", (x or 0) / echelle + 18, (y or 0) / echelle - 22)
+    end
     function bulle:SetOwner(cible, ancre)
         self:Hide()
         self:ClearLines()
         self:ClearAllPoints()
-        if ancre == "ANCHOR_LEFT" then
+        self.ancre = ancre
+        self:SetScript("OnUpdate", nil)
+        if ancre == "ANCHOR_CURSOR_RIGHT" then
+            SousLaSouris(self)
+            self:SetScript("OnUpdate", SousLaSouris)
+        elseif ancre == "ANCHOR_LEFT" then
             self:SetPoint("TOPRIGHT", cible, "TOPLEFT", -10, 0)
         elseif ancre == "ANCHOR_BOTTOM" then
             self:SetPoint("TOP", cible, "BOTTOM", 0, -10)
@@ -312,7 +327,8 @@ function UI.Fenetre(cle, titre, largeur, hauteur, defaut, options)
                                       largeur = avant.largeur, hauteur = avant.hauteur }
     end)
 
-    f.fond = UI.Aplat(f, UI.C.fond)
+    -- Le réglage global porte l'alpha : le fond ne doit pas le réduire encore.
+    f.fond = UI.Aplat(f, { UI.C.fond[1], UI.C.fond[2], UI.C.fond[3], 1 })
     f.fond:SetAllPoints(f)
 
     -- Le fond remonte sous la couronne du cadre, qui deborde du bord haut.
@@ -522,7 +538,7 @@ function UI.Fenetre(cle, titre, largeur, hauteur, defaut, options)
     -- Le cadre ouvrage, s'il est charge. Sans lui, une simple bordure : la
     -- fenetre doit rester lisible meme si l'habillage manque.
     if options.sobre then
-        f.fond:SetColorTexture(0.035, 0.039, 0.045, 0.98)
+        f.fond:SetColorTexture(0.035, 0.039, 0.045, 1)
         UI.Bordure(f, { 0.48, 0.39, 0.23, 1 })
         f.titre:ClearAllPoints()
         f.titre:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -14)
@@ -1026,6 +1042,177 @@ function UI.BandeauOnglets(parent, onglets, onChange)
     return bandeau
 end
 
+-- Cases a cocher RANGEES PAR GROUPES, dans une petite fenetre a valider (le
+-- MJ, 3 novembre 2026 : « tous les metiers classes dans leurs categories, on
+-- coche ceux qui peuvent recolter la ressource et on valide »). Rien ne
+-- change tant qu'on n'a pas valide : Annuler rend la selection d'avant.
+--
+-- d:Proposer(titre, groupes, coches, valider)
+--   groupes = { { label = "Récolte", options = { { id, label } } } }
+--   coches  = { [id] = true }   valider(ids) recoit la liste triee des cochees.
+-- Une option presente dans deux groupes est UNE case : cocher l'une coche
+-- l'autre (un metier range dans deux categories reste un seul metier).
+function UI.ChoixCoches(cle, titre)
+    local d = CreateFrame("Frame", "LCM_ChoixCoches_" .. tostring(cle), UIParent)
+    d:SetSize(320, 420)
+    d:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
+    d:SetFrameStrata("FULLSCREEN_DIALOG")
+    d:SetClampedToScreen(true)
+    d:EnableMouse(true)
+    d:SetMovable(true)
+    d:RegisterForDrag("LeftButton")
+    d:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    d:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    d.fond = UI.Aplat(d, { UI.C.fond[1], UI.C.fond[2], UI.C.fond[3], 1 })
+    d.fond:SetAllPoints(d)
+    if UI.AelCadre then d.cadre = UI.AelCadre(d, "section") else UI.Bordure(d) end
+    d:Hide()
+
+    d.titre = UI.Texte(d, titre or "", UI.C.titre, "GameFontNormal")
+    d.titre:SetPoint("TOPLEFT", d, "TOPLEFT", 14, -12)
+    d.titre:SetPoint("TOPRIGHT", d, "TOPRIGHT", -34, -12)
+    d.titre:SetWordWrap(false)
+    d.aide = UI.Texte(d, "", UI.C.discret, "GameFontNormalSmall")
+    d.aide:SetPoint("TOPLEFT", d, "TOPLEFT", 14, -38)
+    d.aide:SetPoint("TOPRIGHT", d, "TOPRIGHT", -14, -38)
+    d.aide:Hide()
+    d.fermer = UI.Bouton(d, "x", 18, 18, function() d:Hide() end)
+    d.fermer:SetPoint("TOPRIGHT", d, "TOPRIGHT", -8, -8)
+
+    d.zone = UI.Defilement(d)
+    d.zone:SetPoint("TOPLEFT", d, "TOPLEFT", 14, -40)
+    d.zone:SetPoint("BOTTOMRIGHT", d, "BOTTOMRIGHT", -24, 50)
+    d.cases, d.entetes = {}, {}
+
+    d.valider = UI.Bouton(d, "Valider", 130, 24, function()
+        local ids = {}
+        for id, coche in pairs(d.selection or {}) do if coche then ids[#ids + 1] = id end end
+        table.sort(ids)
+        d:Hide()
+        if d.surValider then d.surValider(ids) end
+    end)
+    d.valider:SetPoint("BOTTOMLEFT", d, "BOTTOMLEFT", 14, 14)
+    d.annuler = UI.Bouton(d, "Annuler", 130, 24, function() d:Hide() end)
+    d.annuler:SetPoint("BOTTOMRIGHT", d, "BOTTOMRIGHT", -14, 14)
+    -- Un geste de plus, au-dessus des boutons (« + Créer un tag ») : il n'est
+    -- montre que si `Proposer` en recoit un.
+    d.action = UI.Bouton(d, "", 292, 22, function() if d.surAction then d.surAction() end end)
+    d.action:SetPoint("BOTTOMLEFT", d, "BOTTOMLEFT", 14, 44)
+    d.action:Hide()
+
+    -- Toutes les cases d'une meme option suivent la selection.
+    local function Synchroniser()
+        for _, c in ipairs(d.cases) do
+            if c:IsShown() then c:Cocher(d.selection[c.id] == true) end
+        end
+    end
+
+    -- `action` (facultatif) : { label, fn } — un bouton de plus sous la liste.
+    -- Une option peut porter `niveau` : elle se decale d'autant (un arbre).
+    function d:Proposer(texte, groupes, coches, valider, action)
+        self.titre:SetText(texte or titre or "")
+        local aide = self.aideTexte and self.aideTexte ~= ""
+        self.aide:SetShown(aide == true)
+        if aide then self.aide:SetText(self.aideTexte) end
+        self.selection = {}
+        for id, v in pairs(coches or {}) do if v then self.selection[id] = true end end
+        self.surValider = valider
+        self.surAction = action and action.fn or nil
+        self.action:SetShown(action ~= nil)
+        if action then self.action.label:SetText(action.label) end
+        self.zone:ClearAllPoints()
+        self.zone:SetPoint("TOPLEFT", self, "TOPLEFT", 14, aide and -64 or -40)
+        self.zone:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -24, action and 74 or 50)
+        local y, nc, ne = 2, 0, 0
+        for _, groupe in ipairs(groupes or {}) do
+            ne = ne + 1
+            local t = self.entetes[ne]
+            if not t then
+                t = UI.Texte(self.zone.contenu, "", UI.C.libelle, "GameFontNormalSmall")
+                self.entetes[ne] = t
+            end
+            t:SetText(UI.Majuscules and UI.Majuscules(groupe.label or "") or tostring(groupe.label or ""))
+            t:ClearAllPoints()
+            t:SetPoint("TOPLEFT", self.zone.contenu, "TOPLEFT", 2, -y)
+            t:Show()
+            y = y + 18
+            for _, option in ipairs(groupe.options or {}) do
+                nc = nc + 1
+                local c = self.cases[nc]
+                if not c then
+                    c = UI.Case(self.zone.contenu, "", function(coche)
+                        d.selection[c.id] = coche and true or nil
+                        Synchroniser()
+                    end)
+                    self.cases[nc] = c
+                end
+                c.id = option.id
+                c.label:SetText(option.label or tostring(option.id))
+                c:ClearAllPoints()
+                c:SetPoint("TOPLEFT", self.zone.contenu, "TOPLEFT", 12 + 16 * (tonumber(option.niveau) or 0), -y)
+                c:Show()
+                y = y + 22
+            end
+            y = y + 6
+        end
+        for i = nc + 1, #self.cases do self.cases[i]:Hide() end
+        for i = ne + 1, #self.entetes do self.entetes[i]:Hide() end
+        Synchroniser()
+        if self.compact then
+            self:SetHeight(math.min(420, math.max(190, y + (action and 112 or 88) + (aide and 24 or 0))))
+        end
+        self.zone:Regler(y)
+        self.zone:Aller(0)
+        self:Show()
+        self:Raise()
+    end
+    return d
+end
+
+-- Les TAGS a cocher (Core/Etiquettes.lua), ranges par origine et en arbre.
+-- `d:Proposer(titre, coches, valider, creer)` ; `creer(nom, emplacement)`
+-- (facultatif, le MJ) rend l'identifiant du tag cree, ou nil et la raison :
+-- « + Créer un tag » demande un nom, puis ou le ranger (une origine, ou sous
+-- un tag existant), et le coche aussitot. Sans `creer`, on ne fait que
+-- choisir (un filtre).
+function UI.ChoixTags(cle)
+    local E = LCM.Etiquettes
+    local d = { coches = UI.ChoixCoches("tags_" .. tostring(cle), "Tags") }
+    d.coches.compact = true
+    d.coches.aideTexte = "Coche un ou plusieurs tags. Les sous-tags sont inclus."
+    function d:Proposer(titre, coches, valider, creer)
+        local fenetre = self.coches
+        local function Ouvrir(selection)
+            local action = creer and { label = "+ Créer un tag", fn = function()
+                -- La selection en cours survit a la creation.
+                local garde = {}
+                for id, v in pairs(fenetre.selection or {}) do garde[id] = v end
+                UI.Demande():Demander("Nom du nouveau tag", "", function(nom)
+                    nom = tostring(nom or ""):gsub("^%s+", ""):gsub("%s+$", "")
+                    if nom == "" then return false, "donne-lui un nom." end
+                    self.emplacement = self.emplacement or UI.Choix("tags_emplacement_" .. tostring(cle), "Où le ranger ?")
+                    self.emplacement:Proposer(fenetre.action, E.Emplacements(), function(emplacement)
+                        local id, raison = creer(nom, emplacement)
+                        if not id then LCM.Alerte(tostring(raison)) return end
+                        garde[id] = true
+                        Ouvrir(garde)
+                    end)
+                    return true
+                end, "Suivant", 60)
+            end } or nil
+            local groupes = E.GroupesCoches(creer ~= nil)
+            for _, groupe in ipairs(groupes) do
+                groupe.label = groupe.label == E.AUCUN and "Sans origine" or ("Origine : " .. groupe.label)
+            end
+            fenetre:Proposer(titre or "Tags", groupes, selection, valider, action)
+        end
+        local selection = {}
+        for id, v in pairs(coches or {}) do if v then selection[id] = true end end
+        Ouvrir(selection)
+    end
+    return d
+end
+
 -- Navigation en colonne, par SECTIONS : un titre en capitales et son filet,
 -- puis des entrees habillees en onglets (le vocabulaire de la colonne des
 -- categories du Compendium). Une entree peut porter des `enfants`, poses en
@@ -1039,6 +1226,22 @@ end
 -- sections = { { titre = "En séance", entrees = { { id, label, enfants } } } }
 -- `nav.boutons` : toutes les entrees, enfants compris (b.ongletId, b.parentId).
 -- `nav:Selectionner(id)` allume l'entree, et son parent si c'est un enfant.
+-- Un bouton habille comme une entree de navigation : onglet dore, libelle a
+-- gauche en 12. Pour ce qui se pose au pied d'une colonne de navigation sans
+-- en etre une page (« Version compacte », « Synchroniser ») : un bouton simple
+-- y detonnait au milieu des onglets (capture du MJ, 3 novembre 2026).
+function UI.BoutonNavigation(parent, texte, largeur, hauteur, onClick)
+    local b = UI.Bouton(parent, texte, largeur, hauteur or 26, onClick)
+    b.label:ClearAllPoints()
+    b.label:SetPoint("LEFT", b, "LEFT", 10, 1)
+    b.label:SetPoint("RIGHT", b, "RIGHT", -6, 1)
+    b.label:SetJustifyH("LEFT")
+    b.label:SetWordWrap(false)
+    if UI.HabillerOnglet then UI.HabillerOnglet(b) end
+    UI.Police(b.label, 12)
+    return b
+end
+
 function UI.Navigation(parent, sections, onChange, options)
     options = options or {}
     local largeur = options.largeur or 150
@@ -1052,25 +1255,25 @@ function UI.Navigation(parent, sections, onChange, options)
 
     local function Entree(def, parentId)
         local enfant = parentId ~= nil
-        local b = UI.Bouton(nav, def.label, largeur - (enfant and retrait or 0),
-            enfant and hauteurEnfant or hauteur, function(bouton)
-                nav:Selectionner(bouton.ongletId)
-                if onChange then onChange(bouton.ongletId, bouton.parentId) end
-            end)
-        b.ongletId, b.parentId = def.id, parentId
-        b.label:ClearAllPoints()
-        b.label:SetPoint("LEFT", b, "LEFT", enfant and 8 or 10, 1)
-        b.label:SetPoint("RIGHT", b, "RIGHT", -6, 1)
-        b.label:SetJustifyH("LEFT")
-        b.label:SetWordWrap(false)
+        local function Choisir(bouton)
+            nav:Selectionner(bouton.ongletId)
+            if onChange then onChange(bouton.ongletId, bouton.parentId) end
+        end
+        local b
         if enfant then
             -- Un enfant reste un bouton simple : l'habillage d'onglet sur
             -- 20 px de haut faisait une pile de cadres dores illisible.
+            b = UI.Bouton(nav, def.label, largeur - retrait, hauteurEnfant, Choisir)
+            b.label:ClearAllPoints()
+            b.label:SetPoint("LEFT", b, "LEFT", 8, 1)
+            b.label:SetPoint("RIGHT", b, "RIGHT", -6, 1)
+            b.label:SetJustifyH("LEFT")
+            b.label:SetWordWrap(false)
             UI.Police(b.label, 11)
-        elseif UI.HabillerOnglet then
-            UI.HabillerOnglet(b)
-            UI.Police(b.label, 12)
+        else
+            b = UI.BoutonNavigation(nav, def.label, largeur, hauteur, Choisir)
         end
+        b.ongletId, b.parentId = def.id, parentId
         nav.boutons[#nav.boutons + 1] = b
         return b
     end
@@ -2289,14 +2492,55 @@ function UI.Choix(cle, titre)
     d.zone:SetPoint("TOPLEFT", d, "TOPLEFT", 8, -30)
     d.zone:SetPoint("BOTTOMRIGHT", d, "BOTTOMRIGHT", -8, 8)
 
+    -- La recherche et le filtre « Tags » (le MJ, 3 novembre 2026 : « si tu crees
+    -- 5 000 objets, ca va etre long de recuperer ceux que tu desires »). Ils
+    -- n'apparaissent que sur une liste longue ou une liste d'entrees du
+    -- compendium : une option « famille/id » se resout, et ses tags avec.
+    d.recherche = UI.Champ(d, 150, 18, function(texte)
+        d.texte = texte
+        d:Rendre()
+    end)
+    d.recherche:SetPoint("TOPLEFT", d, "TOPLEFT", 8, -28)
+    d.tagsBouton = UI.Bouton(d, "Tags", 60, 18, function()
+        d.choixTags = d.choixTags or UI.ChoixTags("choix_" .. tostring(cle))
+        d.choixTags:Proposer("Afficher ce qui porte ces tags", d.tags, function(ids)
+            d.tags = ids[1] and LCM.Etiquettes.Ensemble(ids) or nil
+            d:Rendre()
+        end)
+    end)
+    d.tagsBouton:SetPoint("TOPRIGHT", d, "TOPRIGHT", -8, -28)
+    d.recherche:SetPoint("RIGHT", d.tagsBouton, "LEFT", -4, 0)
+    d.recherche:Hide()
+    d.tagsBouton:Hide()
+
     d.lignes, d.intertitres = {}, {}
 
     local HAUTEUR = 20
 
-    function d:Proposer(ancre, options, onChoix)
-        self.onChoix = onChoix
+    local function Etiquettes(option)
+        if option.etiquettes then return option.etiquettes end
+        local ref = tostring(option.id or "")
+        if not ref:match("^[%w_]+/.+$") then return nil end
+        local element = LCM.Compendium and LCM.Compendium.Resoudre and LCM.Compendium.Resoudre(ref)
+        return element and element.etiquettes or nil
+    end
+
+    function d:Rendre()
+        local aiguille = tostring(self.texte or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+        local tags = self.tags and LCM.Etiquettes and LCM.Etiquettes.Etendre(self.tags) or nil
+        local visibles = {}
+        for _, option in ipairs(self.options or {}) do
+            local nom = tostring(option.label or option.id):lower()
+            if (aiguille == "" or nom:find(aiguille, 1, true))
+                and (not tags or LCM.Etiquettes.Porte({ etiquettes = Etiquettes(option) }, tags, true)) then
+                visibles[#visibles + 1] = option
+            end
+        end
+        local n = 0
+        for _ in pairs(self.tags or {}) do n = n + 1 end
+        self.tagsBouton.label:SetText(n > 0 and string.format("Tags (%d)", n) or "Tags")
         local y, nLignes, nIntertitres, groupe = 0, 0, 0, nil
-        for _, option in ipairs(options or {}) do
+        for _, option in ipairs(visibles) do
             if option.groupe and option.groupe ~= groupe then
                 groupe = option.groupe
                 nIntertitres = nIntertitres + 1
@@ -2335,6 +2579,27 @@ function UI.Choix(cle, titre)
         end
         for index = nLignes + 1, #self.lignes do self.lignes[index]:Hide() end
         for index = nIntertitres + 1, #self.intertitres do self.intertitres[index]:Hide() end
+        self.zone.decalage = 0
+        self.zone:Regler(y)
+    end
+
+    function d:Proposer(ancre, options, onChoix)
+        self.onChoix = onChoix
+        self.options = options or {}
+        -- Filtres : sur une liste longue, ou faite d'entrees du compendium.
+        local entrees = false
+        for _, option in ipairs(self.options) do
+            if tostring(option.id or ""):match("^[%w_]+/.+$") then entrees = true break end
+        end
+        local filtres = entrees or #self.options > 12
+        self.recherche:SetShown(filtres)
+        self.tagsBouton:SetShown(entrees)
+        if not filtres then self.texte, self.tags = nil, nil end
+        if self.recherche:IsShown() and not self.recherche:HasFocus() then self.recherche:SetText(self.texte or "") end
+        self.zone:ClearAllPoints()
+        self.zone:SetPoint("TOPLEFT", self, "TOPLEFT", 8, filtres and -52 or -30)
+        self.zone:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -8, 8)
+        self:Rendre()
 
         self:ClearAllPoints()
         if ancre then
@@ -2342,10 +2607,8 @@ function UI.Choix(cle, titre)
         else
             self:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
         end
-        self.zone.decalage = 0
         self:Show()
         self:Raise()
-        self.zone:Regler(y)
     end
 
     if UISpecialFrames then UISpecialFrames[#UISpecialFrames + 1] = d:GetName() end
@@ -2932,7 +3195,12 @@ function Glisser.Suivre()
         if fantome then fantome.etat:SetText("") end
         return
     end
-    local ok, raison = cible.glisserAccepte(Glisser.objet)
+    local ok, raison
+    if Glisser.objet.refs and #Glisser.objet.refs > 1 and not cible.glisserMultiple then
+        ok, raison = false, "cet emplacement ne reçoit qu'une entrée"
+    else
+        ok, raison = cible.glisserAccepte(Glisser.objet)
+    end
     -- Une cible qui REFUSE s'eclaire en rouge. Elle ne montrait rien du tout :
     -- on ne savait pas si on survolait une case qui n'en voulait pas, ou si on
     -- avait rate la case.
@@ -2970,7 +3238,12 @@ function Glisser.Lacher()
         if Glisser.DansLeVide then return Glisser.DansLeVide(objet) and true or false end
         return false
     end
-    local ok, raison = cible.glisserAccepte(objet)
+    local ok, raison
+    if objet.refs and #objet.refs > 1 and not cible.glisserMultiple then
+        ok, raison = false, "cet emplacement ne reçoit qu'une entrée"
+    else
+        ok, raison = cible.glisserAccepte(objet)
+    end
     if ok then
         cible.glisserDepose(objet)
         return true

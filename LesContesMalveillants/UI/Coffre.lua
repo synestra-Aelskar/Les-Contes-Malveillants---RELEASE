@@ -48,19 +48,9 @@ local ResoudreOutils, ConsommerOutil = O.Resoudre, O.Consommer
 Ecran.SacTotal, Ecran.InventaireTotal = SacTotal, InventaireTotal
 Ecran.ResoudreOutils, Ecran.ConsommerOutil = ResoudreOutils, ConsommerOutil
 
-local function UserOutil(entity, ref)
-    local objetId = tostring(ref or ""):match("^objets/(.+)$")
-    if not objetId or not LCM.Objets then return false end
-    if LCM.Objets.EstEquipe(entity, objetId) then
-        LCM.Objets.Encaisser(entity, objetId, 1)
-        return true
-    end
-    if SacTotal(entity, ref) > 0 and LCM.Objets.UserInventaire then
-        LCM.Objets.UserInventaire(entity, objetId, 1)
-        return true
-    end
-    return false
-end
+-- Descendu dans Core/OutilsRequis.lua (3 novembre 2026) : la recolte use
+-- ses outils par la meme regle.
+local function UserOutil(entity, ref) return LCM.OutilsRequis.User(entity, ref) end
 Ecran.UserOutil = UserOutil
 
 local function BonusObjet(entity, ref, expertise)

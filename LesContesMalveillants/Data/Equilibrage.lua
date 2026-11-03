@@ -268,6 +268,15 @@ E.metiers = {
         { nom = "Violet", niveau = 3, rangCouleur = 6, xp = 420,  couleur = { 0.70, 0.45, 0.95 } },
         { nom = "Violet", niveau = 4, rangCouleur = 6, xp = 480,  couleur = { 0.70, 0.45, 0.95 } },
         { nom = "Violet", niveau = 5, rangCouleur = 6, xp = 540,  couleur = { 0.70, 0.45, 0.95 } },
+
+        -- Le Noir, septieme couleur de metier (le MJ, 3 novembre 2026). Ses
+        -- couts n'ont pas ete donnes : ceux du Violet EN ATTENDANT, a regler
+        -- en seance. Teinte : celle du Noir des Nommages (9999A6).
+        { nom = "Noir", niveau = 1, rangCouleur = 7, xp = 300,  couleur = { 0.60, 0.60, 0.65 } },
+        { nom = "Noir", niveau = 2, rangCouleur = 7, xp = 360,  couleur = { 0.60, 0.60, 0.65 } },
+        { nom = "Noir", niveau = 3, rangCouleur = 7, xp = 420,  couleur = { 0.60, 0.60, 0.65 } },
+        { nom = "Noir", niveau = 4, rangCouleur = 7, xp = 480,  couleur = { 0.60, 0.60, 0.65 } },
+        { nom = "Noir", niveau = 5, rangCouleur = 7, xp = 540,  couleur = { 0.60, 0.60, 0.65 } },
     },
 }
 
@@ -275,14 +284,17 @@ E.metiers = {
 -- Ajout de l'addon, absent du template (le MJ, 2 novembre 2026).
 --
 -- Une DIFFICULTE est un nombre (celui qu'on posera sur un filon) rangé dans
--- une des six couleurs des metiers, Rose a Violet (`rangCouleur` de
--- E.metiers.paliers). `niveaux` : difficulte -> rang de couleur. La liste part
+-- un palier de l'echelle des Nommages (E.nommages, reglable en seance).
+-- `niveaux` : difficulte -> rang du palier. La liste part
 -- vide : le MJ ajoute ses difficultes en seance, dans l'ordre qu'il veut
 -- (onglet Equilibrage du Panel MJ), et elles s'exportent comme les autres
 -- reglages. Un rang 0 ecarte une difficulte publiee sans l'effacer.
 --
 -- `matrice` : le coefficient d'XP pour CHAQUE couple (couleur du metier,
--- couleur de la difficulte). matrice[metier][difficulte]. L'XP gagnee vaut
+-- palier de la difficulte). matrice[metier][difficulte] : le premier indice
+-- est une des SEPT couleurs de base des metiers (Rose 1 a Noir 7), le second
+-- un rang des Nommages — les deux ne se suivent plus depuis que le MJ a
+-- decoupe son echelle (3 novembre 2026). L'XP gagnee vaut
 -- N x coefficient, N etant pose sur ce qu'on affronte : une ressource, une
 -- action de campement (a venir).
 --
@@ -295,6 +307,19 @@ E.metiers = {
 -- la premiere version.
 E.difficultes = {
     niveaux = {},
+    -- La grille PAR DEFAUT, dite en regle et non en cases (le MJ, 3 novembre
+    -- 2026 : un bouton qui « remet tout »). C'est la regle qui a rempli
+    -- `matrice` plus bas, appliquee a la COULEUR d'un palier de l'echelle :
+    -- « Rose Facile », « Rose » et « Rose Difficile » sont du Rose. La
+    -- matrice, rangee par numero sur l'echelle de depart, ne vaut plus des
+    -- que le MJ decoupe son echelle. Facile et Difficile n'ont pas de regle
+    -- propre : elles valent leur couleur, au MJ d'affiner case par case.
+    defaut = {
+        egale = 1,               -- metier et difficulte de meme couleur
+        parCouleurAuDessus = 0.5, -- ajoute par couleur au-dessus du metier
+        uneEnDessous = 0.5,      -- une couleur en dessous
+        auDela = 0,              -- deux couleurs en dessous ou plus
+    },
     matrice = {
         --          Rose  Vert  Bleu  Orange Rouge Violet Noir
         [1] = { [1] = 1,   [2] = 1.5, [3] = 2,   [4] = 2.5, [5] = 3,   [6] = 3.5, [7] = 4 },   -- Rose
@@ -303,17 +328,19 @@ E.difficultes = {
         [4] = { [1] = 0,   [2] = 0,   [3] = 0.5, [4] = 1,   [5] = 1.5, [6] = 2,   [7] = 2.5 }, -- Orange
         [5] = { [1] = 0,   [2] = 0,   [3] = 0,   [4] = 0.5, [5] = 1,   [6] = 1.5, [7] = 2 },   -- Rouge
         [6] = { [1] = 0,   [2] = 0,   [3] = 0,   [4] = 0,   [5] = 0.5, [6] = 1,   [7] = 1.5 }, -- Violet
+        -- Le metier Noir (3 novembre 2026) : meme pas que les autres, a regler.
+        [7] = { [1] = 0,   [2] = 0,   [3] = 0,   [4] = 0,   [5] = 0,   [6] = 0.5, [7] = 1 },   -- Noir
     },
 }
 
 -- ===== Nommages ===========================================================
--- L'ECHELLE des paliers, de bas en haut (le MJ, 2 novembre 2026) : une seule
--- pour tout le jeu — les difficultes, les couleurs des metiers (« Rose 1 »)
--- et la grille d'XP la lisent. Ce sont les valeurs de depart : le MJ renomme,
+-- L'ECHELLE des paliers, de bas en haut (le MJ, 2 novembre 2026) : elle nomme
+-- les DIFFICULTES et les lignes de la grille d'XP. Les couleurs des metiers
+-- n'en dependent plus (3 novembre 2026) : ce sont les sept de
+-- E.metiers.paliers. Ce sont les valeurs de depart : le MJ renomme,
 -- recolore, ajoute, retire et reordonne en seance (onglet Equilibrage ›
 -- Nommages), par des reglages en TEXTE (`nommages.<n>.nom`, `.couleur`, et
--- `nommages.nombre`), diffuses et exportes comme les autres. Le Noir n'a pas
--- de niveau de metier : une difficulte Noire est au-dessus de tout metier.
+-- `nommages.nombre`), diffuses et exportes comme les autres.
 -- Teintes : celles des paliers de metier, et pour le Noir celle de la rarete
 -- Unique (9999A6).
 E.nommages = {
@@ -344,6 +371,16 @@ E.recolte = {
 -- `rayon` : a combien de yards d'un vendeur pose sur la carte on peut
 -- commercer. Pas une regle du template, comme pour la recolte : il faut
 -- pouvoir se tenir devant l'etal sans etre pile dessus (13 octobre 2026).
+-- ===== Cadavres (3 novembre 2026) ==========================================
+-- Ajout de l'addon, absent du template. `rayon` : a combien de yards d'un
+-- cadavre on peut le fouiller. `verrou` : en secondes, combien de temps la
+-- fouille d'un joueur qui ne fait plus rien (deconnecte, parti) bloque les
+-- autres avant de se liberer d'elle-meme.
+E.cadavres = {
+    rayon = 4,
+    verrou = 90,
+}
+
 E.marchands = {
     rayon = 4,
     -- « Acheter pour… » (31 octobre 2026) : a quelle distance de l'acheteur un

@@ -384,6 +384,76 @@ function ZG:SetZoneCountry(zoneId, countryId)
     ZG:ScheduleBroadcast()
 end
 
+-- ── Couleurs des zones ────────────────────────────────────────────────────
+-- Une région porte SA couleur, et chacun de ses lieux en reçoit une variante :
+-- la région se lit d'un coup d'œil, ses lieux se distinguent entre eux sans en
+-- sortir. Un lieu peut imposer la sienne par-dessus.
+--
+-- Sans rien de réglé, on garde l'ancienne teinte tirée de l'identifiant : le
+-- contenu déjà dessiné ne change pas de couleur du jour au lendemain.
+ZG.Palette = {
+    { .45, .70, .40 }, { .75, .55, .30 }, { .40, .60, .80 }, { .70, .45, .65 },
+    { .80, .75, .40 }, { .40, .72, .68 }, { .78, .45, .40 }, { .55, .55, .80 },
+}
+
+local function Empreinte(id)
+    local h = 0
+    for i = 1, #(id or "") do h = (h * 31 + id:byte(i)) % 2147483647 end
+    return h
+end
+
+function ZG:TeinteDeDefaut(id)
+    return ZG.Palette[Empreinte(id) % #ZG.Palette + 1]
+end
+
+local function Borne(v) return math.max(0, math.min(1, tonumber(v) or 0)) end
+
+-- La variante d'un lieu : même teinte, luminosité et virage décalés d'un cran
+-- choisi par son identifiant. Deux lieux voisins ne se confondent pas, et la
+-- région reste reconnaissable.
+function ZG:Variante(base, id)
+    if not base then return nil end
+    local h = Empreinte(id)
+    local f = 0.80 + (h % 7) * 0.065
+    local d = (math.floor(h / 7) % 5 - 2) * 0.05
+    return { Borne(base[1] * f + d), Borne(base[2] * f), Borne(base[3] * f - d) }
+end
+
+function ZG:ZoneColor(zone)
+    if not zone then return { .6, .6, .6 } end
+    return zone.couleur or ZG:TeinteDeDefaut(zone.id)
+end
+
+-- `place` peut être nil (une zone qui ne mène à aucun lieu) : on rend alors la
+-- couleur de la région.
+function ZG:PlaceColor(place, zone)
+    if place and place.couleur then return place.couleur end
+    if place and zone and zone.couleur then
+        -- Le contour de la région EST la région : sa couleur, pas une variante.
+        if place.pourRegion then return zone.couleur end
+        return ZG:Variante(zone.couleur, place.id)
+    end
+    if place then return ZG:TeinteDeDefaut(place.id) end
+    return ZG:ZoneColor(zone)
+end
+
+function ZG:SetZoneColor(zoneId, r, g, b)
+    local zone = ZG:GetZone(zoneId)
+    if not zone or zone.creator ~= MyName() then return false end
+    zone.couleur = r and { Borne(r), Borne(g), Borne(b) } or nil
+    ZG:ScheduleBroadcast()
+    return true
+end
+
+function ZG:SetPlaceColor(placeId, r, g, b)
+    -- Pas MyPlace : il est déclaré plus bas dans le fichier, hors de portée ici.
+    local place, zone = ZG:FindPlace(placeId)
+    if not place or not zone or zone.creator ~= MyName() then return false end
+    place.couleur = r and { Borne(r), Borne(g), Borne(b) } or nil
+    ZG:ScheduleBroadcast()
+    return true
+end
+
 -- ── Dossier des tuiles de minimap ─────────────────────────────────────────
 -- Le jeu range la minimap de chaque carte en BLP, une par bloc ADT, sous
 -- world\minimaps\<dossier>\mapXX_YY.blp. L'éditeur les lit pour poser le
@@ -796,11 +866,46 @@ function ZG:ForgetPlaceLinks(placeId)
     end
 end
 
+-- Ce qu'un lieu emporterait en disparaissant : ses zones à lui, celles qui ne
+-- mènent QUE chez lui. Rend le nombre de zones et de sommets, pour que la
+-- confirmation dise ce qu'elle efface.
+function ZG:PlaceEmporterait(id)
+    local place, zone = MyPlace(id)
+    if not place then return 0, 0 end
+    local zones, sommets = 0, 0
+    for _, sub in pairs(zone.subZones) do
+        if sub.enterPlace == id and not sub.leavePlace then
+            zones = zones + 1
+            sommets = sommets + #(sub.points or {})
+        end
+    end
+    return zones, sommets
+end
+
 function ZG:RemovePlace(id)
     local place, zone = MyPlace(id)
     if not place then return end
     zone.places[id] = nil
+    -- Les zones du lieu s'en vont AVEC lui. Elles restaient là, sans lieu où
+    -- aller : un fantôme qui se dessinait encore sur la carte, portait encore
+    -- ses auras, et qu'on ne pouvait plus régler nulle part. Ce qu'un lieu a
+    -- fait naître disparaît avec lui, et la confirmation l'annonce (voir
+    -- ZG:PlaceEmporterait).
+    --
+    -- Sauf celles qui servent AUSSI à quelqu'un d'autre : une porte dont on
+    -- sort chez ce lieu garde son tracé, elle appartient à son autre bout.
+    for sid, sub in pairs(zone.subZones) do
+        if sub.enterPlace == id then
+            if sub.leavePlace then
+                sub.enterPlace = nil
+            else
+                zone.subZones[sid] = nil
+                ZG.state[sid] = nil
+            end
+        end
+    end
     ZG:ForgetPlaceLinks(id)
+    ZG:PruneWelds()
     -- Les portes rangées sous ce lieu ne disparaissent pas avec lui : elles
     -- remontent d'un cran. Une porte perdue en supprimant son lieu serait une
     -- perte silencieuse, et son tracé est du travail.
@@ -2158,15 +2263,13 @@ local function Savoir(id)
     return type(p) == "table" and p or nil
 end
 
--- Le personnage sait-il `cle` dans l'ensemble `champ` ? Ce qui a ete appris
--- AVANT ce decoupage, sans personnage actif a la migration, reste sous « _ »
--- et vaut pour tous : on ne perd pas un nom deja connu.
-local function Sait(champ, cle)
-    for _, id in ipairs({ PersoActif(), "_" }) do
-        local s = Savoir(id)
-        if s and type(s[champ]) == "table" and s[champ][cle] == true then return true end
-    end
-    return false
+-- Les connaissances attestées en joueur sont distinctes des anciennes
+-- tables, où les visites MJ étaient aussi enregistrées. Ces tables historiques
+-- restent intactes, mais ne donnent aucun passe-droit dans /lcm switch.
+local function Sait(champ,cle)
+    local p=Savoir()
+    local received=p and p.receivedKnowledge
+    return received and received[champ] and received[champ][cle]==true or false
 end
 
 local function SavoirPourEcrire()
@@ -2177,7 +2280,16 @@ local function SavoirPourEcrire()
     if type(p) ~= "table" then p = {} c.parPerso[id] = p end
     p.learnedZones = p.learnedZones or {}
     p.learnedSubZones = p.learnedSubZones or {}
+    p.learnedCountries = p.learnedCountries or {}
     return p
+end
+
+local function ApprendreNom(champ,id,grant)
+    if not id or id=="" or (MJVoitTout() and not grant) then return end
+    local p=SavoirPourEcrire()
+    p.receivedKnowledge=p.receivedKnowledge or {}
+    p.receivedKnowledge[champ]=p.receivedKnowledge[champ] or {}
+    p.receivedKnowledge[champ][id]=true
 end
 
 -- Ce qu'Omega savait par personnage WoW va au personnage joue, une fois.
@@ -2202,10 +2314,27 @@ function ZG:HasLearnedZoneName(zoneId)
     return Sait("learnedZones", zoneId)
 end
 
-function ZG:MarkLearnedZoneName(zoneId)
-    if not zoneId or zoneId == "" then return end
-    SavoirPourEcrire().learnedZones[zoneId] = true
+function ZG:MarkLearnedZoneName(zoneId,grant)
+    ApprendreNom("learnedZones",zoneId,grant)
 end
+
+-- Connaissance du NOM DU PAYS. Un joueur peut connaître une région sans
+-- savoir de quel royaume elle relève : le MJ lui a nommé la vallée, pas la
+-- couronne. Le nom reste masqué jusqu'à ce qu'on y ait mis les pieds.
+function ZG:HasLearnedCountryName(countryId)
+    if countryId == nil or countryId == "" then return false end
+    if MJVoitTout() then return true end
+    return Sait("learnedCountries", countryId)
+end
+
+function ZG:MarkLearnedCountryName(countryId,grant)
+    ApprendreNom("learnedCountries",countryId,grant)
+end
+
+-- Vrai quand on voit tout sans rien avoir appris : le MJ, hors mode joueur.
+-- Exposé parce que les cartes s'en servent pour décider ce qu'elles DESSINENT,
+-- et plus seulement ce qu'elles nomment.
+function ZG:VoitTout() return MJVoitTout() end
 
 -- Connaissance du NOM DE LA SOUS-ZONE, indépendante de celle de la Zone.
 function ZG:HasLearnedSubZoneName(subZoneId)
@@ -2214,9 +2343,8 @@ function ZG:HasLearnedSubZoneName(subZoneId)
     return Sait("learnedSubZones", subZoneId)
 end
 
-function ZG:MarkLearnedSubZoneName(subZoneId)
-    if not subZoneId or subZoneId == "" then return end
-    SavoirPourEcrire().learnedSubZones[subZoneId] = true
+function ZG:MarkLearnedSubZoneName(subZoneId,grant)
+    ApprendreNom("learnedSubZones",subZoneId,grant)
 end
 
 -- Un lieu fusionné garde ses anciens ids : un nom appris sous l'un d'eux reste connu.
@@ -2236,12 +2364,11 @@ end
 --   2. Région seule     → "<région>"       / "??????"
 --   3. Lieu seul        → "?????"          / "<lieu>"
 --   4. les deux connus  → "<région>"       / "<lieu>"
--- L'auteur de la région voit toujours tout en clair.
+-- Seul le mode MJ voit tout ; être auteur ne débloque pas les noms en joueur.
 function ZG:ResolveBannerText(place, zone)
     if not place or not zone then return nil end
-    local mine = zone.creator == MyName()
-    local zoneKnown = mine or ZG:HasLearnedZoneName(zone.id)
-    local placeKnown = mine or ZG:KnowsPlaceName(place)
+    local zoneKnown = ZG:HasLearnedZoneName(zone.id)
+    local placeKnown = ZG:KnowsPlaceName(place)
     local title = zoneKnown and zone.name or ZG:MaskText(zone.name)
     -- Le contour de la région porte le nom de la région : l'écrire deux fois,
     -- en titre et en sous-titre, n'apprend rien.
@@ -2338,6 +2465,9 @@ local function DansLaTranche(sub, pz)
 end
 ZG.DansLaTranche = DansLaTranche
 
+-- Rend aussi la DISTANCE au contour, en yards : c'est elle qui décide de la
+-- découverte (voir ZG:RayonDeVue), et elle est déjà calculée ici — la compter
+-- une seconde fois dans le tick doublerait le travail sur 2000 sommets.
 local function ClassifySide(sub, px, py, pz)
     if sub.shape == "polygon" then
         if not sub.regionReady or not sub.points or #sub.points < 3 then return nil end
@@ -2345,14 +2475,218 @@ local function ClassifySide(sub, px, py, pz)
         -- hauteur — un plancher se franchit net, contrairement à un contour
         -- qu'on longe.
         if not DansLaTranche(sub, pz) then return -1 end
-        if MinDistToPolygonEdges(sub.points, px, py) < WIDTH_MARGIN then return nil end
-        return PointInPolygon(sub.points, px, py) and 1 or -1
+        local ecart = MinDistToPolygonEdges(sub.points, px, py)
+        if ecart < WIDTH_MARGIN then return nil, ecart end
+        return (PointInPolygon(sub.points, px, py) and 1 or -1), ecart
     end
 
     local along, across = Project(sub, px, py)
     local halfWidth = (sub.width or DEFAULT_WIDTH) / 2 + WIDTH_MARGIN
     if math.abs(across) > halfWidth then return nil end
     return (along >= 0) and 1 or -1
+end
+
+-- ── Jusqu'où l'on découvre ────────────────────────────────────────────────
+-- Un brouillard de guerre : on ne voit sur la carte que ce qu'on a vu en jeu.
+-- La portée, c'est la perception visuelle du personnage — 20 yards par point
+-- de l'expertise « Vue ». Sans personnage ni expertise, on ne découvre qu'en
+-- entrant : le contour franchi, lui, s'inscrit toujours (voir TriggerCrossing).
+local YARDS_PAR_POINT_DE_VUE = 20
+-- Un plancher : une Vue nulle — ou négative, un malus la fait descendre sous
+-- zéro — ne rend pas aveugle. Sans lui la portée tombait à zéro et plus rien
+-- ne se dévoilait, jamais : le brouillard passait pour une panne. Dix yards,
+-- c'est le bout de ses pieds.
+local RAYON_MINIMUM = 10
+
+-- Rend le rayon en yards, ET les points de Vue qui le donnent : la carte les
+-- affiche, pour qu'on sache pourquoi on découvre peu.
+function ZG:RayonDeVue()
+    local P, E = LCM.Personnages, LCM.Expertises
+    local perso = P and P.Actif and P.Actif()
+    if not (perso and E and E.Valeur) then return RAYON_MINIMUM, nil end
+    local points = tonumber(E.Valeur(perso, "vue")) or 0
+    return math.max(RAYON_MINIMUM, points * YARDS_PAR_POINT_DE_VUE), points
+end
+
+-- ── Brouillard persistant, indépendant du cadrage et des régions ──────────
+-- Une ligne par yard du monde, avec une union triée d'intervalles X visibles.
+-- La résolution concerne le masque uniquement, pas les couleurs de la carte.
+-- Aucun journal de pas n'est ajouté : revisiter ne grossit pas la sauvegarde.
+local MAILLE = 50 -- lecture de l'ancien format uniquement
+ZG.MAILLE = MAILLE
+local function Brouillard(mapID, pourEcrire)
+    if not mapID then return nil end
+    local p = pourEcrire and SavoirPourEcrire() or Savoir()
+    if not p then return nil end
+    if pourEcrire then
+        p.brouillard=p.brouillard or {}
+        p.brouillard[mapID]=p.brouillard[mapID] or {}
+    end
+    return p.brouillard and p.brouillard[mapID]
+end
+
+local function Union(row,lo,hi)
+    if hi<=lo then return false end
+    -- Recherche binaire du premier intervalle qui touche l'ajout.
+    local left,right=1,#row/2
+    while left<=right do
+        local m=math.floor((left+right)/2)
+        if row[2*m]<lo then left=m+1 else right=m-1 end
+    end
+    local i=left*2-1
+    if row[i] and row[i]<=lo and row[i+1]>=hi then return false end
+    local j=i
+    while row[j] and row[j]<=hi do
+        lo=math.min(lo,row[j]);hi=math.max(hi,row[j+1]);j=j+2
+    end
+    local removed=j-i
+    if removed==0 then
+        table.insert(row,i,hi);table.insert(row,i,lo)
+    else
+        row[i],row[i+1]=lo,hi
+        for k=i+2,#row-removed+2 do row[k]=row[k+removed-2] end
+        for k=#row,#row-removed+3,-1 do row[k]=nil end
+    end
+    row.revision=(row.revision or 0)+1
+    return true
+end
+local function RevealRow(state,y,lo,hi)
+    local row=state.rows[y]
+    if not row then row={};state.rows[y]=row end
+    if not Union(row,lo,hi) then return false end
+    state.revision=state.revision+1
+    ZG.revisionBrouillard=(ZG.revisionBrouillard or 0)+1
+    return true
+end
+local function Disk(state,x,y,r,yieldRow)
+    local changed=false
+    for line=math.floor(y-r),math.floor(y+r) do
+        local dy=line+.5-y
+        if math.abs(dy)<r then
+            local half=math.sqrt(r*r-dy*dy)
+            if RevealRow(state,line,x-half,x+half) then changed=true end
+        end
+        if yieldRow then yieldRow() end
+    end
+    return changed
+end
+
+-- Conversion une seule fois ; les sources restent intactes pour compatibilité.
+-- Le curseur de migration est sauvegardé, une conversion interrompue se reprend.
+local migrations={}
+local scheduled=setmetatable({}, {__mode="k"})
+local function Prepare(grille)
+    if not grille then return nil end
+    local state=grille.surface
+    if not state then
+        state={version=2,rows={},revision=0,circleIndex=0}
+        grille.surface=state
+    end
+    if state.ready or scheduled[state] then return state end
+    local hasLegacy=false
+    for key in pairs(grille) do if type(key)=="number" then hasLegacy=true;break end end
+    if not hasLegacy and (state.circleIndex or 0)>=#(grille.cercles or {}) then state.ready=true;return state end
+    scheduled[state]=true
+    migrations[#migrations+1]=coroutine.create(function()
+        for i=(state.circleIndex or 0)+1,#(grille.cercles or {}) do
+            local c=grille.cercles[i]
+            Disk(state,c.x,c.y,c.r,coroutine.yield)
+            state.circleIndex=i
+        end
+        if not state.legacyDone then
+            for key in pairs(grille) do
+                if type(key)=="number" then
+                    local x=(math.floor(key/4096)-2048)*MAILLE
+                    local y=(key%4096-2048)*MAILLE
+                    for line=y,y+MAILLE-1 do RevealRow(state,line,x,x+MAILLE);coroutine.yield() end
+                end
+            end
+            state.legacyDone=true
+        end
+        state.ready=true;scheduled[state]=nil
+        ZG.revisionBrouillard=(ZG.revisionBrouillard or 0)+1
+    end)
+    return state
+end
+function ZG:PreparerBrouillard(mapID)
+    return Prepare(Brouillard(mapID,true))
+end
+-- Travail limité en lignes ET en temps, indépendant du nombre de pas sauvegardés.
+function ZG:AvancerMigrationBrouillard(limite)
+    local debut=debugprofilestop and debugprofilestop()
+    local n=0
+    while #migrations>0 and n<(limite or 2048) do
+        local job=migrations[1]
+        local ok,err=coroutine.resume(job)
+        if not ok then error(err) end
+        n=n+1
+        if coroutine.status(job)=="dead" then table.remove(migrations,1) end
+        if debut and debugprofilestop()-debut>=1.5 then break end
+    end
+    return n
+end
+local fogWorker=CreateFrame("Frame")
+fogWorker:SetScript("OnUpdate",function() if #migrations>0 then ZG:AvancerMigrationBrouillard() end end)
+
+function ZG:EstVu(mapID,x,y)
+    if MJVoitTout() then return true end
+    local grille=Brouillard(mapID,false)
+    local state=grille and grille.surface
+    local row=state and state.rows[math.floor(y)]
+    for i=1,#(row or {}),2 do if x>=row[i] and x<=row[i+1] then return true end end
+    -- Pendant la migration, les appels ponctuels conservent l'ancien savoir.
+    if grille and (not state or not state.ready) then
+        for _,c in ipairs(grille.cercles or {}) do if (x-c.x)^2+(y-c.y)^2<=c.r^2 then return true end end
+        local key=(math.floor(x/MAILLE)+2048)*4096+math.floor(y/MAILLE)+2048
+        return grille[key]~=nil
+    end
+    return false
+end
+local lastPose=setmetatable({}, {__mode="k"})
+function ZG:MarquerVu(mapID,x,y,rayon)
+    if MJVoitTout() then return false end
+    rayon=math.max(0,tonumber(rayon) or 0)
+    local state=self:PreparerBrouillard(mapID)
+    if not state or rayon==0 then return false end
+    local last=lastPose[state]
+    if last and last.r==rayon and (x-last.x)^2+(y-last.y)^2<1 then return false end
+    lastPose[state]={x=x,y=y,r=rayon}
+    return Disk(state,x,y,rayon)
+end
+
+-- Tout oublier d'une carte : le MJ rend un joueur à son ignorance.
+function ZG:OublierBrouillard(mapID)
+    self.revisionBrouillard=(self.revisionBrouillard or 0)+1
+    local p = SavoirPourEcrire()
+    if not p.brouillard then return end
+    if mapID then p.brouillard[mapID] = nil else p.brouillard = {} end
+end
+
+-- Oublier TOUT : le brouillard et les noms appris. Sert à éprouver la
+-- découverte sans refaire un personnage — et à rendre sa page blanche à qui
+-- recommence. Rend le nombre de cases effacées, pour le dire.
+function ZG:OublierDecouvertes()
+    self.revisionBrouillard=(self.revisionBrouillard or 0)+1
+    local p = SavoirPourEcrire()
+    local cases = 0
+    for _, grille in pairs(p.brouillard or {}) do
+        for _ in pairs(grille) do cases = cases + 1 end
+    end
+    p.brouillard = {}
+    p.learnedZones, p.learnedSubZones, p.learnedCountries = {}, {}, {}
+    p.playerKnowledge=nil
+    p.receivedKnowledge=nil
+    -- Ce qui avait été appris AVANT le découpage par personnage vit sous « _ »
+    -- et vaut pour tous : l'oublier aussi, sinon la carte garderait des noms
+    -- que plus rien n'explique.
+    local c = LCM_CrossingsChar
+    local partage = type(c) == "table" and type(c.parPerso) == "table" and c.parPerso["_"]
+    if type(partage) == "table" then
+        partage.learnedZones, partage.learnedSubZones = {}, {}
+        partage.learnedCountries, partage.brouillard = {}, {}
+    end
+    wipe(ZG.state)
+    return cases
 end
 
 -- Exposé pour le radar d'édition (UI_Radar.lua) : où se trouve le joueur par
@@ -2710,13 +3044,17 @@ end
 function ZG:Tick()
     local px, py, _, instanceID, pz = ZG:GetPlayerPose()
     if not px then return end
+    local rayon = ZG:RayonDeVue()
+    -- La découverte dépend uniquement de la position et de la portée visuelle.
+    ZG:MarquerVu(instanceID, px, py, rayon)
 
     local live, crossings = {}, {}
     for _, zone in pairs(EnsureDB().zones) do
         for id, sub in pairs(zone.subZones) do
             if sub.enabled and sub.mapID == instanceID then
                 live[id] = true
-                local side = ClassifySide(sub, px, py, pz)
+                local side, ecart = ClassifySide(sub, px, py, pz)
+                -- Voir ou traverser un lieu dévoile son terrain, pas son nom.
                 if side then
                     local prev = ZG.state[id]
                     if prev and prev ~= side then
@@ -2847,6 +3185,7 @@ function ZG:TriggerCrossing(sub, fromId, toId, retour)
     local from, fromZone = ZG:FindPlace(fromId)
     local to, toZone = ZG:FindPlace(toId)
 
+    -- Les noms proviennent d'une connaissance reçue, jamais du franchissement.
     if to then
         local theme = ZG:ResolveTheme(to, toZone)
         local title, subtitle = ZG:ResolveBannerText(to, toZone)
@@ -3010,7 +3349,10 @@ local function PackState()
     -- Ordre : la région, ses lieux, puis ses passages (qui les référencent).
     for zid, zone in pairs(db.zones) do
         if zone.creator == me then
-            table.insert(lines, table.concat({ "ZONE", Enc(zid), Enc(zone.name), Enc(zone.themeId or ""), Enc(zone.countryId or "") }, SEP))
+            -- La couleur en queue : un auteur plus ancien ne l'envoie pas, et
+            -- la région reprend alors la teinte tirée de son identifiant.
+            table.insert(lines, table.concat({ "ZONE", Enc(zid), Enc(zone.name), Enc(zone.themeId or ""), Enc(zone.countryId or ""),
+                zone.couleur and PackColor(zone.couleur) or "" }, SEP))
             for pid, place in pairs(zone.places) do
                 local aliases = {}
                 for alias in pairs(place.aliases or {}) do aliases[#aliases + 1] = Enc(alias) end
@@ -3029,6 +3371,7 @@ local function PackState()
                     -- ancien, c'est un lieu nommé comme sa région.
                     place.porte and 1 or 0, Enc(place.parent or ""),
                     place.pourRegion and 1 or 0, place.batiment and 1 or 0,
+                    place.couleur and PackColor(place.couleur) or "",
                 }, SEP))
             end
             for sid, sub in pairs(zone.subZones) do
@@ -3096,6 +3439,7 @@ local function ApplyStateLine(line, sender)
             zone.name, zone.creator = name, sender
             zone.themeId = (themeId and themeId ~= "") and themeId or nil
             zone.countryId = (countryId and countryId ~= "") and countryId or nil
+            zone.couleur = (fields[6] and fields[6] ~= "") and UnpackColor(fields[6]) or nil
             zone.subZones = zone.subZones or {}
             zone.places = zone.places or {}
         end
@@ -3115,6 +3459,7 @@ local function ApplyStateLine(line, sender)
             place.parent = (fields[16] and fields[16] ~= "") and fields[16] or nil
             place.pourRegion = fields[17] == "1" or nil
             place.batiment = fields[18] == "1" or nil
+            place.couleur = (fields[19] and fields[19] ~= "") and UnpackColor(fields[19]) or nil
             zone.places[id] = place
         end
     elseif tag == "PASS" then
@@ -3443,11 +3788,13 @@ end
 function ZG:ForgetLearnedZoneName(zoneId)
     local s = Savoir()
     if zoneId and s and s.learnedZones then s.learnedZones[zoneId] = nil end
+    if zoneId and s and s.receivedKnowledge and s.receivedKnowledge.learnedZones then s.receivedKnowledge.learnedZones[zoneId]=nil end
 end
 
 function ZG:ForgetLearnedSubZoneName(subZoneId)
     local s = Savoir()
     if subZoneId and s and s.learnedSubZones then s.learnedSubZones[subZoneId] = nil end
+    if subZoneId and s and s.receivedKnowledge and s.receivedKnowledge.learnedSubZones then s.receivedKnowledge.learnedSubZones[subZoneId]=nil end
 end
 
 local function HandleGrant(rest)
@@ -3455,9 +3802,11 @@ local function HandleGrant(rest)
     if not scope or not id or id == "" then return end
     if StripRealm(targetName or ""):lower() ~= MyName():lower() then return end
     if scope == "Z" then
-        ZG:MarkLearnedZoneName(id)
+        ZG:MarkLearnedZoneName(id,true)
+    elseif scope == "C" then
+        ZG:MarkLearnedCountryName(id,true)
     elseif scope == "S" then
-        ZG:MarkLearnedSubZoneName(id)
+        ZG:MarkLearnedSubZoneName(id,true)
     else
         return
     end

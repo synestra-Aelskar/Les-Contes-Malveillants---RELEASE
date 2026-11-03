@@ -79,11 +79,13 @@ Menu.STRUCTURE = {
                 { id = "coffres", label = "Coffres", icone = RADIAL .. "fenetres-coffres.tga", mjSeulement = true },
                 { id = "vendeur", label = "Vendeurs", icone = RADIAL .. "fenetres-vendeurs.tga", mjSeulement = true },
                 { id = "ressources", label = "Ressources", icone = RADIAL .. "fenetres-recoltes.tga", mjSeulement = true },
-                -- Ajouts du 31 octobre 2026, demandés par le MJ. Ils n'ouvrent
-                -- encore rien : un module les habillera par Menu.Lier. Pas
-                -- encore d'icône noire et dorée : celles du jeu en attendant.
-                { id = "cartes", label = "Cartes", icone = ICONE .. "inv_misc_map_01", mjSeulement = true },
-                { id = "affichage", label = "Affichage", icone = ICONE .. "inv_misc_spyglass_03", mjSeulement = true },
+                -- « Cartes » a été retirée le 3 novembre 2026 (le MJ) : une
+                -- carte se crée au compendium, et se pose comme toute
+                -- trouvaille dans l'atelier Ressources.
+                { id = "affichage", label = "Affichage", icone = RADIAL .. "fenetres-affichage.tga", mjSeulement = true },
+                -- Poser une creature deja morte, sans combat (le MJ, 3 novembre
+                -- 2026 : MJ/CadavresUI.lua).
+                { id = "cadavres", label = "Cadavres", icone = RADIAL .. "fenetres-cadavres.tga", mjSeulement = true },
             } },
           { id = "regles", label = "Règles", icone = RADIAL .. "fenetres-regles.tga" },
       } },

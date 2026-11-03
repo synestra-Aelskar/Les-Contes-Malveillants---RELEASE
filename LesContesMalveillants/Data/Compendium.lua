@@ -161,21 +161,25 @@ C.Categorie({
 
 -- Les quatre listes de valeurs. « Table de niveaux » n'a de sens que pour les
 -- metiers (la table XP METIER) ; le template la propose partout, vide.
-local function Liste(id, label, listeId)
+-- `extras` : des champs propres a CETTE liste, ajoutes apres les communs.
+local function Liste(id, label, listeId, extras)
+    local champs = {
+        Icone(), Description(false),
+        -- Combien d'objets de CE type on peut porter a la fois. Vide : pas
+        -- de limite. C'est ici et non dans le code : « une seule cape » est
+        -- une decision de jeu, elle doit se regler en seance
+        -- (10 octobre 2026).
+        { cle = "maxEquipe", label = "Max équipé", type = "nombre", emplacement = "meta", min = 0 },
+        { cle = "niveaux", label = "Table de niveaux", type = "table_niveaux", emplacement = "meta", carte = false,
+          aide = "la table d'XP du template ; elle ne sert qu'aux métiers, laisse « Aucune »" },
+    }
+    for _, champ in ipairs(extras or {}) do champs[#champs + 1] = champ end
     C.Categorie({
         id = id, label = label, type = "list",
         registre = "Listes", famille = "listes",
         filtre = function(element) return element.liste == listeId end,
         defaut = { liste = listeId },
-        champs = {
-            Icone(), Description(false),
-            -- Combien d'objets de CE type on peut porter a la fois. Vide : pas
-            -- de limite. C'est ici et non dans le code : « une seule cape » est
-            -- une decision de jeu, elle doit se regler en seance
-            -- (10 octobre 2026).
-            { cle = "maxEquipe", label = "Max équipé", type = "nombre", emplacement = "meta", min = 0 },
-            { cle = "niveaux", label = "Table de niveaux", type = "table_niveaux", emplacement = "meta", carte = false },
-        },
+        champs = champs,
     })
 end
 Liste("type_armures", "Type Armures", "type_armures")
@@ -194,10 +198,38 @@ C.Categorie({
     },
 })
 Liste("liste_origine", "Liste origine", "origines")
-Liste("liste_ressources", "Liste ressources", "ressources")
+-- Les metiers d'un type de ressource (le MJ, 3 novembre 2026) : « Minerais »
+-- a Mineur. Un DEFAUT : la forge les coche sur une ressource qui prend ce
+-- type, et le MJ en ajoute ou en retire ensuite. `coches` : on les choisit
+-- dans la fenetre rangee par categories, comme dans la forge.
+Liste("liste_ressources", "Liste ressources", "ressources", {
+    { cle = "metiers", label = "Métiers", type = "liste", source = "metiers", multiple = true,
+      coches = true, emplacement = "meta",
+      aide = "cochés par défaut sur une ressource de ce type (modifiables ensuite dans la forge)" },
+})
 -- Ajout de l'addon (23 octobre 2026, le MJ) : les types de la categorie
 -- Consommables.
 Liste("liste_consommables", "Liste consommable", "consommables")
+
+-- Les TAGS (le MJ, 3 novembre 2026), avec les autres listes.
+-- Retrouver vite une entree parmi des milliers (Core/Etiquettes.lua). La
+-- liste des tags : chacun a un nom, plusieurs ORIGINES possibles et, s'il
+-- est un sous-tag, un PARENT (Valienne › Raptor › Électrique).
+C.Categorie({
+    id = "liste_tags", label = "Tags", type = "list",
+    registre = "Listes", famille = "listes", editeur = "TagsUI",
+    filtre = function(element) return element.liste == "tags" end,
+    defaut = { liste = "tags" },
+    colonnesTableau = { "description", "origines", "parent" },
+    champs = {
+        Icone(), Description(false),
+        { cle = "origines", label = "Origines", type = "liste", source = "listes:origines", multiple = true,
+          emplacement = "meta", aide = "Liste origine ; aucune pour un tag général" },
+        { cle = "parent", label = "Parent", type = "liste", source = "tags", emplacement = "meta",
+          aide = "facultatif ; le sous-tag peut garder certaines origines du parent" },
+    },
+})
+
 
 -- Les metiers sont figes dans Data/Metiers.lua (du code, pas du contenu de
 -- seance) : la categorie les montre, le MJ ne les cree pas en jeu. Leur
@@ -349,7 +381,12 @@ C.Categorie({
 -- metier employe : de l'argent rapporte 3 XP, quel que soit le metier.
 Generique({ id = "ressources", label = "Ressources", liste = "ressources",
     registre = "Ressources", famille = "ressources", avantage = false,
+    -- Le DD de recolte (3 novembre 2026) : il a quitte le point de recolte
+    -- pour la ressource. Les metiers qui la recoltent se cochent dans la
+    -- forge (une liste d'identifiants, pas un champ de carte).
     extras = { { cle = "xpRecolte", label = "XP de récolte", type = "nombre", emplacement = "meta",
+                 min = 0, carte = true },
+               { cle = "dd", label = "DD de récolte", type = "nombre", emplacement = "meta",
                  min = 0, carte = true } } })
 -- Ajout de l'addon (23 octobre 2026, le MJ) : bandages, baumes et boissons
 -- sortent des ressources. Leur Type se choisit dans la « Liste consommable »,
@@ -671,3 +708,19 @@ C.Categorie({
         { cle = "equipement", label = "Équipement", type = "contenu", source = "objets", emplacement = "body" },
     },
 })
+
+-- ===== Les TAGS (le MJ, 3 novembre 2026) ===================================
+-- Le champ « Tags » des categories ou le MJ range ce qu'il cree. La forge a
+-- son propre bouton (MJ/Forge.lua) ; l'editeur du compendium lit ce champ.
+local AVEC_TAGS = { "sacs", "devises", "ressources", "consommables", "armes", "armures", "accessoires",
+    "livres", "cartes", "outils", "lanternes", "cristaux", "tentes", "accessoires_camping" }
+C.AVEC_TAGS = {}
+for _, id in ipairs(AVEC_TAGS) do
+    C.AVEC_TAGS[id] = true
+    local categorie = C.Get(id)
+    if categorie and type(categorie.champs) == "table" then
+        table.insert(categorie.champs, { cle = "etiquettes", label = "Tags", type = "liste", source = "tags",
+            multiple = true, coches = true, emplacement = "meta", carte = false,
+            aide = "pour retrouver vite l'entrée : filtre « Tags » du compendium" })
+    end
+end

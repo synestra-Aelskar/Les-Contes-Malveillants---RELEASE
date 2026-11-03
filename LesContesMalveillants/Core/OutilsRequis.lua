@@ -114,3 +114,22 @@ local function ConsommerOutil(entity, ref)
     return false
 end
 OutilsRequis.Consommer = ConsommerOutil
+
+-- User un outil d'un cran : son etat baisse, il n'est pas perdu (Core/
+-- Objets.lua). Porte, il encaisse ; au sac, il s'use la. Ne dans l'ecran des
+-- coffres (« Usure outils ») ; descendu ici le 3 novembre 2026, quand les
+-- lignes de metier d'un point de recolte ont eu la meme case : une seule regle.
+local function UserOutil(entity, ref)
+    local objetId = tostring(ref or ""):match("^objets/(.+)$")
+    if not objetId or not LCM.Objets then return false end
+    if LCM.Objets.EstEquipe and LCM.Objets.EstEquipe(entity, objetId) then
+        LCM.Objets.Encaisser(entity, objetId, 1)
+        return true
+    end
+    if SacTotal(entity, ref) > 0 and LCM.Objets.UserInventaire then
+        LCM.Objets.UserInventaire(entity, objetId, 1)
+        return true
+    end
+    return false
+end
+OutilsRequis.User = UserOutil

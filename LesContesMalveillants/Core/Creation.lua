@@ -53,7 +53,39 @@ Creation.ETAPES = {
     { id = "resistances",  label = "Résistances" },
     { id = "traits",       label = "Traits" },
     { id = "metiers",      label = "Métiers" },
+    -- Le butin d'un PNJ (le MJ, 3 novembre 2026) : ce que portera son cadavre.
+    -- Un joueur n'a pas cet onglet.
+    { id = "loot",         label = "Loot", pnjSeulement = true },
 }
+
+-- Le butin d'un brouillon : lecture sans rien creer, ecriture qui cree.
+local VIDE_LOOT = {}
+function Creation.Loot(brouillon)
+    return type(brouillon) == "table" and type(brouillon.loot) == "table" and brouillon.loot or VIDE_LOOT
+end
+function Creation.LootPourEcrire(brouillon)
+    brouillon.loot = type(brouillon.loot) == "table" and brouillon.loot or {}
+    return brouillon.loot
+end
+
+-- Le butin tel qu'il s'enregistre : sans section vide, des quantites entieres.
+local function LootPropre(loot)
+    local out
+    for _, section in ipairs(LCM.SECTIONS_LOOT or {}) do
+        local lignes = {}
+        for _, l in ipairs(type(loot) == "table" and loot[section] or {}) do
+            local q = math.max(1, math.floor(tonumber(l.quantite) or 1))
+            if tostring(l.entree or "") ~= "" then
+                local propre = { entree = l.entree, quantite = q }
+                if section == "ventre" and tostring(l.dd or "") ~= "" then propre.dd = tonumber(l.dd) or l.dd end
+                lignes[#lignes + 1] = propre
+            end
+        end
+        if lignes[1] then out = out or {}; out[section] = lignes end
+    end
+    return out
+end
+Creation.LootPropre = LootPropre
 
 function Creation.Nouveau(niveau)
     return {
@@ -715,6 +747,7 @@ function Creation.DefinitionPNJ(brouillon, id)
         valeurs = valeurs,
         traits = LCM.Copie(brouillon.traits or {}),
         metiersNiveaux = LCM.Copie(brouillon.metiers or {}),
+        loot = LootPropre(brouillon.loot),
     }
 end
 
@@ -891,6 +924,8 @@ function Creation.DepuisPNJ(modele)
     brouillon.pnj = tostring(modele.id or "")
     brouillon.nom = tostring(modele.label or "")
     brouillon.race = tostring(valeurs.race or "")
+    -- Son butin se reprend avec lui (3 novembre 2026).
+    brouillon.loot = modele.loot and LCM.Copie(modele.loot) or nil
 
     -- Seulement ce que la creation sait depenser. Le reste du modele
     -- (equipement, etats, apprentissages) ne la regarde pas et doit survivre
