@@ -1,0 +1,8 @@
+## Interface: 110200
+## Title: LCM - Core Add-On
+## Notes: Module en jeu indispensable à LCM : position, personnage, cible et exécution des commandes de l'application.
+## Author: Akriax
+## Version: 0.2.0
+## SavedVariables: LCMCapteurDB
+
+LCMCoreAddon.lua

@@ -1,3 +1,0 @@
--- Catalogue predetermine volontairement vide : aucune mecanique n'est active.
--- Voir Core/IC.lua pour le contrat de declaration des futures proprietes.
--- Les budgets et taux vivent dans Data/Equilibrage.lua.

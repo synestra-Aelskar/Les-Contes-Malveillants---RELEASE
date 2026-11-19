@@ -1,13 +1,14 @@
-# Publie une Release GitHub a chaque tag de version (v0.2.0, v0.3.1…).
+# Publie une Release GitHub a chaque tag de version (v3.0.0, v3.0.1…).
 #
-# Le joueur telecharge un zip qui contient le seul dossier
-# LesContesMalveillants/, a deposer tel quel dans Interface/AddOns. L'archive
-# « Source code » que GitHub ajoute d'office emporte aussi le readme et se
-# dezippe sous un autre nom : ce zip-ci est celui a prendre.
+# Depuis la v3 (19 novembre 2026), LCM est une application (l'overlay) et un
+# petit module en jeu. Le joueur telecharge un zip qui contient :
+#   * Les Contes Malveillants v3.0.exe : l'application, a lancer sous Windows ;
+#   * LCMCoreAddon/ : le module en jeu, a deposer dans Interface/AddOns.
+# L'archive « Source code » que GitHub ajoute d'office n'est pas celle a prendre.
 #
 # Les notes de la Release sont le message du tag annote (git tag -a).
-# Un tag qui ne correspond pas a la version du .toc est refuse : une Release
-# « 0.3.0 » qui installerait un addon « 0.2.0 » mentirait au joueur.
+# Un tag qui ne correspond pas au fichier VERSION est refuse : une Release
+# « 3.0.1 » qui livrerait la 3.0.0 mentirait au joueur.
 
 name: Release
 
@@ -28,26 +29,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verifier que le tag est la version du .toc
+      - name: Verifier le contenu et la version
         run: |
           TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG#v}"
-          TOC="LesContesMalveillants/LesContesMalveillants.toc"
-          if [ ! -f "$TOC" ]; then
-            echo "::error::$TOC introuvable : le dossier de l'addon doit etre a la racine du depot."
-            exit 1
-          fi
-          DECLAREE="$(grep -m1 '^## Version:' "$TOC" | sed 's/^## Version:[[:space:]]*//' | tr -d '\r')"
+          EXE="Les Contes Malveillants v3.0.exe"
+          TOC="LCMCoreAddon/LCMCoreAddon.toc"
+          for f in "$EXE" "$TOC" VERSION; do
+            if [ ! -f "$f" ]; then echo "::error::$f introuvable a la racine du depot."; exit 1; fi
+          done
+          DECLAREE="$(head -n1 VERSION | tr -d '\r[:space:]')"
           if [ "$DECLAREE" != "$VERSION" ]; then
-            echo "::error::le tag $TAG ne correspond pas a la version du .toc ($DECLAREE)."
+            echo "::error::le tag $TAG ne correspond pas au fichier VERSION ($DECLAREE)."
             exit 1
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Fabriquer le zip de l'addon
+      - name: Fabriquer le zip
         run: |
           ZIP="LesContesMalveillants-${VERSION}.zip"
-          git archive --format=zip -o "$ZIP" "$GITHUB_REF_NAME" LesContesMalveillants
+          git archive --format=zip -o "$ZIP" "$GITHUB_REF_NAME" "Les Contes Malveillants v3.0.exe" LCMCoreAddon
           unzip -l "$ZIP" | tail -n 1
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
 
