@@ -708,7 +708,8 @@ end
 -- de WoW, seule (rien de ce qui s'y accroche), rectangulaire, qui remplit tout
 -- l'interieur. Elle est plus grande que l'interieur (sa diagonale) et masquee
 -- en rectangle : en Lock Cursor elle tourne sans jamais montrer de coin noir.
--- « trace on <nom> », « trace pts x,y;x,y… » (repere de Crossings), « trace off ».
+-- « trace on <nom> », « trace pts x,y;x,y… » (repere de Crossings), « trace add
+-- x,y… » (sommets en plus), « trace off ».
 local TR = {}
 TR.DIAMETRES = {   -- yards couverts par la minimap, par zoom (HereBeDragons-Pins)
   exterieur = { 466 + 2 / 3, 400, 333 + 1 / 3, 266 + 2 / 3, 200, 133 + 1 / 3 },
@@ -1184,8 +1185,11 @@ local function Trace(reste)
     end
     PrendreMinimap()
     cadreTrace:Show()
-  elseif mot == "pts" then
-    sommetsTrace = {}
+  elseif mot == "pts" or mot == "add" then
+    -- « pts » remplace la liste, « add » la prolonge (21 novembre 2026) :
+    -- renvoyer TOUS les sommets a chaque point faisait taper une ligne de
+    -- plus en plus longue dans la saisie du capteur, et le jeu gelait.
+    if mot == "pts" then sommetsTrace = {} end
     for x, y in (suite or ""):gmatch("(%-?[%d%.]+),(%-?[%d%.]+)") do
       sommetsTrace[#sommetsTrace + 1] = { tonumber(x), tonumber(y) }
     end
