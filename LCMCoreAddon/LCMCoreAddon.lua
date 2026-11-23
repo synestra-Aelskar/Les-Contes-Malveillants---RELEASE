@@ -331,16 +331,15 @@ local function Peindre()
   for i = 1, NOCTETS - 2 do a = (a + oct[i]) % 255; b = (b + a) % 255 end
   u8(b); u8(a)
 
-  -- 144 octets -> 288 nibbles -> 96 carrés
+  -- 144 octets -> 288 nibbles -> 96 carrés. Sans table par carré (23 novembre
+  -- 2026) : 96 tables neuves a CHAQUE image chargeaient le ramasse-miettes.
   for i = 1, DATA do
     local k = (i - 1) * 3            -- index du premier nibble (0-based)
-    local nib = {}
-    for j = 0, 2 do
-      local m = k + j
-      local o = oct[floor(m / 2) + 1]
-      nib[j + 1] = (m % 2 == 0) and floor(o / 16) or (o % 16)
-    end
-    carres[MARQ + i]:SetColorTexture(nib[1] / 15, nib[2] / 15, nib[3] / 15)
+    local o1, o2, o3 = oct[floor(k / 2) + 1], oct[floor((k + 1) / 2) + 1], oct[floor((k + 2) / 2) + 1]
+    local r = (k % 2 == 0) and floor(o1 / 16) or (o1 % 16)
+    local v = ((k + 1) % 2 == 0) and floor(o2 / 16) or (o2 % 16)
+    local b = ((k + 2) % 2 == 0) and floor(o3 / 16) or (o3 % 16)
+    carres[MARQ + i]:SetColorTexture(r / 15, v / 15, b / 15)
   end
 end
 
