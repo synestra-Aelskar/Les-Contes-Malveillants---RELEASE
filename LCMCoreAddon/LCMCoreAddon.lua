@@ -509,13 +509,16 @@ end
 -- La carte compacte de la cible (UI/HUD.lua, MasquerCibleBlizzard) : quand
 -- l'overlay montre la sienne, TargetFrame se cache. Protege en combat : la
 -- consigne attend la fin du combat.
+--
+-- ECART (le MJ, 25 novembre 2026) : « ne retire plus l'unitframe des
+-- personnages ; on le cachera juste en mettant notre truc par dessus ». Les
+-- cadres de WoW ne se cachent PLUS : la consigne est gardee (l'overlay la lit,
+-- flag 128), mais elle ne fait que rendre un cadre qu'on aurait cache avant.
 local cibleVoulue = nil
 local function AppliquerCible()
   if cibleVoulue == nil or not TargetFrame then return end
   if InCombatLockdown and InCombatLockdown() then return end
-  if cibleVoulue then
-    if TargetFrame:IsShown() then TargetFrame:Hide() end
-  elseif UnitExists and UnitExists("target") and not TargetFrame:IsShown() then
+  if UnitExists and UnitExists("target") and not TargetFrame:IsShown() then
     TargetFrame:Show()
   end
 end
@@ -539,9 +542,8 @@ local function SuivrePortrait()
     local pile = debugstack and debugstack(2, 6, 0) or ""
     NoterPortrait("portrait MONTRE (voulu caché : " .. tostring(portraitVoulu) .. ") "
       .. pile:gsub("Interface[/\\]", ""):gsub("\n", " | "):sub(1, 400))
-    -- Garde : l'overlay montre son HUD, le portrait de WoW reste cache, quel
-    -- que soit le code qui l'a remontre. Pas en combat (cadre protege).
-    if portraitVoulu and not (InCombatLockdown and InCombatLockdown()) then self:Hide() end
+    -- Plus de garde qui le recache (25 novembre 2026) : le portrait de WoW
+    -- reste affiche, l'overlay se pose par-dessus.
   end)
   PlayerFrame:HookScript("OnHide", function() NoterPortrait("portrait caché") end)
 end
@@ -551,11 +553,8 @@ local function AppliquerPortrait()
   SuivrePortrait()
   if portraitVoulu == nil or not PlayerFrame then return end
   if InCombatLockdown and InCombatLockdown() then return end
-  if portraitVoulu then
-    if PlayerFrame:IsShown() then PlayerFrame:Hide() end
-  elseif not PlayerFrame:IsShown() then
-    PlayerFrame:Show()
-  end
+  -- Jamais cache (25 novembre 2026, voir AppliquerCible) : seulement rendu.
+  if not PlayerFrame:IsShown() then PlayerFrame:Show() end
 end
 
 -- UI/HUD.lua, InstallerBasculeBlizzard : portrait de WoW affiche (affichage
